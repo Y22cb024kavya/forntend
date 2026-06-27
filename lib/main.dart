@@ -21,6 +21,7 @@ import 'package:myapp/skincare.dart';
 import 'package:myapp/bills_page.dart';
 import 'package:myapp/calendar.dart';
 import 'package:myapp/diet_fitness.dart';
+import 'package:myapp/medi_tracker.dart';
 
 import 'package:myapp/theme/accent_palette.dart';
 import 'package:myapp/theme/base_theme.dart';
@@ -36,6 +37,24 @@ import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart'; // 🆕 Localization
 import 'package:myapp/app_localizations.dart'; // 🆕 Localization
 
+final GlobalKey<NavigatorState> ahviNavigatorKey =
+    GlobalKey<NavigatorState>();
+
+void _openMediFromNotification(Map<String, String> data) {
+  void push() {
+    final navigator = ahviNavigatorKey.currentState;
+    if (navigator == null) return;
+    navigator.pushNamed(AppRoutes.medi, arguments: data);
+  }
+
+  if (ahviNavigatorKey.currentState == null) {
+    Future<void>.delayed(const Duration(milliseconds: 600), push);
+    return;
+  }
+
+  push();
+}
+
 Future<void> main() async {
   // Ensure Flutter bindings are initialized before calling async methods
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,6 +63,9 @@ Future<void> main() async {
   await dotenv.load(fileName: ".env");
   Env.debugPrintMissingConfig();
   Env.debugPrintRuntimeTarget();
+  AhviNotificationService.instance.configureMediReminderHandler(
+    _openMediFromNotification,
+  );
 
   runApp(const MyApp());
 }
@@ -149,6 +171,7 @@ class _MyAppState extends State<MyApp> {
             selector: (_, p) => p.state.lang,
             builder: (context, lang, _) {
               return MaterialApp(
+                navigatorKey: ahviNavigatorKey,
                 debugShowCheckedModeBanner: false,
                 theme: lightTheme,
                 darkTheme: darkTheme,
@@ -193,6 +216,8 @@ class _MyAppState extends State<MyApp> {
                   AppRoutes.wardrobe: (_) => const WardrobeScreen(),
                   AppRoutes.calendar: (_) => const CalendarShell(),
                   AppRoutes.boards: (_) => const BoardsScreen(),
+                  AppRoutes.medi: (_) =>
+                      const MediTrackScreen(fromHome: true),
                 },
 
                 // DailyWear uses PageRouteBuilder to skip the default

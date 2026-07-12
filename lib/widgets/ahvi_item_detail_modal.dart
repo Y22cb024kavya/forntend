@@ -9,7 +9,7 @@
 //     with this item (via the existing showAhviStylistChatSheet API)
 //   - Like / Share / Remove in an overflow menu
 //
-// NOTE: WardrobeItem is the existing repo model from wardrobe.dart — not a
+// NOTE: WardrobeItem is the existing repo model from wardrobe.dart ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â not a
 // separate model file. Chat is opened through showAhviStylistChatSheet, the
 // only public entry point the chat widget exposes.
 // ============================================================
@@ -23,10 +23,11 @@ import 'package:myapp/wardrobe.dart'; // WardrobeItem lives here
 import 'package:myapp/services/backend_service.dart'; // styleWardrobeItem
 import 'package:myapp/style_board/board_models.dart';
 import 'package:myapp/style_board/board_layout_engine.dart';
-import 'package:myapp/app_localizations.dart'; // 🆕 Localization
-import 'style_boards.dart'; // 🆕 STYLE BOARDS INTEGRATION (consolidated, same folder)
+import 'package:myapp/app_localizations.dart'; // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ Localization
+import 'style_boards.dart'; // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ STYLE BOARDS INTEGRATION (consolidated, same folder)
 import 'pairing_engine.dart';
-import 'build_outfit_screen.dart'; // 🆕 BUILD OUTFIT SCREEN
+import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
+import 'build_outfit_screen.dart'; // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ BUILD OUTFIT SCREEN
 
 // ============================================================
 // SEMANTIC COLORS
@@ -38,19 +39,19 @@ const Color _kDangerColor = Color(0xFFA32D2D);
 // PUBLIC ENTRY POINT
 // ============================================================
 void showItemDetailModal(
-    BuildContext context, {
-      required WardrobeItem item,
-      required List<WardrobeItem> allItems,
-      VoidCallback? onWore,
-      VoidCallback? onEdit,
-      VoidCallback? onLike,
-      VoidCallback? onShare,
-      VoidCallback? onRemove,
-      VoidCallback? onBuildOutfit,
-      VoidCallback? onViewWearHistory,
-      VoidCallback? onSetWearReminder,
-      VoidCallback? onSetCareReminder,
-    }) {
+  BuildContext context, {
+  required WardrobeItem item,
+  required List<WardrobeItem> allItems,
+  VoidCallback? onWore,
+  VoidCallback? onEdit,
+  VoidCallback? onLike,
+  VoidCallback? onShare,
+  VoidCallback? onRemove,
+  VoidCallback? onBuildOutfit,
+  VoidCallback? onViewWearHistory,
+  VoidCallback? onSetWearReminder,
+  VoidCallback? onSetCareReminder,
+}) {
   showDialog(
     context: context,
     useRootNavigator: true,
@@ -176,9 +177,14 @@ class _ItemDetailModal extends StatelessWidget {
                         const SizedBox(width: 8),
                         _Pill(
                           label: item.worn == 0
-                              ? AppLocalizations.t(context, 'item_detail_never_worn')
-                              : AppLocalizations.t(context, 'item_detail_worn_times')
-                              .replaceAll('{n}', '${item.worn}'),
+                              ? AppLocalizations.t(
+                                  context,
+                                  'item_detail_never_worn',
+                                )
+                              : AppLocalizations.t(
+                                  context,
+                                  'item_detail_worn_times',
+                                ).replaceAll('{n}', '${item.worn}'),
                           bg: const Color(0xFFF2F2F7),
                           fg: const Color(0xFF8A8A8E),
                         ),
@@ -199,17 +205,17 @@ class _ItemDetailModal extends StatelessWidget {
                             ),
                             clipBehavior: Clip.antiAlias,
                             child:
-                            item.displayUrl != null &&
-                                item.displayUrl!.isNotEmpty
+                                item.displayUrl != null &&
+                                    item.displayUrl!.isNotEmpty
                                 ? Image.network(
-                              item.displayUrl!,
-                              fit: BoxFit.contain,
-                            )
+                                    item.displayUrl!,
+                                    fit: BoxFit.contain,
+                                  )
                                 : const Icon(
-                              Icons.checkroom,
-                              size: 64,
-                              color: Color(0xFFBFBFD6),
-                            ),
+                                    Icons.checkroom,
+                                    size: 64,
+                                    color: Color(0xFFBFBFD6),
+                                  ),
                           ),
                         );
 
@@ -257,12 +263,12 @@ class _ItemDetailModal extends StatelessWidget {
                         children: item.occasions
                             .map(
                               (o) => _Pill(
-                            label: o,
-                            bg: const Color(0xFFF7F7FB),
-                            fg: const Color(0xFF3C3C43),
-                            border: const Color(0xFFE5E5EA),
-                          ),
-                        )
+                                label: o,
+                                bg: const Color(0xFFF7F7FB),
+                                fg: const Color(0xFF3C3C43),
+                                border: const Color(0xFFE5E5EA),
+                              ),
+                            )
                             .toList(),
                       ),
                       const SizedBox(height: 16),
@@ -303,7 +309,10 @@ class _ItemDetailModal extends StatelessWidget {
                           Expanded(
                             child: _SecondaryActionButton(
                               icon: Icons.groups_2_outlined,
-                              label: AppLocalizations.t(context, 'item_detail_build_outfit'),
+                              label: AppLocalizations.t(
+                                context,
+                                'item_detail_build_outfit',
+                              ),
                               onTap: () => _onBuildOutfit(context, item),
                             ),
                           ),
@@ -315,7 +324,10 @@ class _ItemDetailModal extends StatelessWidget {
                           Expanded(
                             child: _SecondaryActionButton(
                               icon: Icons.check,
-                              label: AppLocalizations.t(context, 'item_detail_wore_today'),
+                              label: AppLocalizations.t(
+                                context,
+                                'item_detail_wore_today',
+                              ),
                               onTap: () => _onWoreToday(context, item),
                               accentColor: _kSuccessColor,
                             ),
@@ -382,7 +394,7 @@ class _ItemDetailModal extends StatelessWidget {
   // Both show a loading spinner, then a result sheet, and never dead-end.
   // ============================================================
   void _onStyleThis(BuildContext context, WardrobeItem item) {
-    // 🆕 STYLE BOARDS INTEGRATION
+    // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ STYLE BOARDS INTEGRATION
     // Open style boards bottom sheet instead of chat
     showStyleBoardsSheet(
       context,
@@ -403,20 +415,23 @@ class _ItemDetailModal extends StatelessWidget {
   }
 
   void _onBuildOutfit(BuildContext context, WardrobeItem item) {
-    Navigator.of(context).pop(); // item detail modal close చేయి
+    Navigator.of(
+      context,
+    ).pop(); // item detail modal close ÃƒÂ Ã‚Â°Ã…Â¡ÃƒÂ Ã‚Â±Ã¢â‚¬Â¡ÃƒÂ Ã‚Â°Ã‚Â¯ÃƒÂ Ã‚Â°Ã‚Â¿
     showBuildOutfitSheet(
       context,
       selectedItem: item,
       allItems: allItems,
-      onStyleSelected: onBuildOutfit, // optional callback (caller provided అయితే trigger అవుతుంది)
+      onStyleSelected:
+          onBuildOutfit, // optional callback (caller provided ÃƒÂ Ã‚Â°Ã¢â‚¬Â¦ÃƒÂ Ã‚Â°Ã‚Â¯ÃƒÂ Ã‚Â°Ã‚Â¿ÃƒÂ Ã‚Â°Ã‚Â¤ÃƒÂ Ã‚Â±Ã¢â‚¬Â¡ trigger ÃƒÂ Ã‚Â°Ã¢â‚¬Â¦ÃƒÂ Ã‚Â°Ã‚ÂµÃƒÂ Ã‚Â±Ã‚ÂÃƒÂ Ã‚Â°Ã‚Â¤ÃƒÂ Ã‚Â±Ã‚ÂÃƒÂ Ã‚Â°Ã¢â‚¬Å¡ÃƒÂ Ã‚Â°Ã‚Â¦ÃƒÂ Ã‚Â°Ã‚Â¿)
     );
   }
 
   Future<void> _runStyleCta(
-      BuildContext context,
-      WardrobeItem item, {
-        required String mode,
-      }) async {
+    BuildContext context,
+    WardrobeItem item, {
+    required String mode,
+  }) async {
     final rootNav = Navigator.of(context, rootNavigator: true);
     final BuildContext appContext = rootNav.context;
     rootNav.pop(); // close the item-detail dialog
@@ -430,24 +445,23 @@ class _ItemDetailModal extends StatelessWidget {
   // alert or the normal result sheet.
   //
   // Assumes any modal that needed dismissing (the item-detail dialog) has
-  // already been popped by the caller — this lets it be called a second
+  // already been popped by the caller ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â this lets it be called a second
   // time directly from the insufficient-wardrobe alert's "Stylize Using
   // Curated Assets" fallback without trying to pop anything extra.
   // ============================================================
   Future<void> _performStyleRequest(
-      BuildContext appContext,
-      WardrobeItem item, {
-        required String mode,
-      }) async {
+    BuildContext appContext,
+    WardrobeItem item, {
+    required String mode,
+  }) async {
     final rootNav = Navigator.of(appContext, rootNavigator: true);
 
     // Loading state.
     showDialog<void>(
       context: appContext,
       barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(color: Colors.white),
-      ),
+      builder: (_) =>
+          const Center(child: CircularProgressIndicator(color: Colors.white)),
     );
 
     debugPrint('AHVI_MODAL_GUARD start flow=styleCta mode=$mode');
@@ -458,15 +472,15 @@ class _ItemDetailModal extends StatelessWidget {
       // barrierDismissible:false spinner (ANR / frozen-screen class).
       result = await BackendService()
           .styleWardrobeItem(
-        itemId: item.id,
-        scenario: mode,
-        anchorItem: {
-          'item_id': item.id,
-          'name': item.name,
-          'category': item.cat,
-          if (item.displayUrl != null) 'image_url': item.displayUrl,
-        },
-      )
+            itemId: item.id,
+            scenario: mode,
+            anchorItem: {
+              'item_id': item.id,
+              'name': item.name,
+              'category': item.cat,
+              if (item.displayUrl != null) 'image_url': item.displayUrl,
+            },
+          )
           .timeout(const Duration(seconds: 15));
     } on TimeoutException {
       timedOut = true;
@@ -483,18 +497,21 @@ class _ItemDetailModal extends StatelessWidget {
     if (timedOut) {
       ScaffoldMessenger.maybeOf(appContext)?.showSnackBar(
         SnackBar(
-          content: Text(AppLocalizations.t(appContext, 'item_detail_timeout_message')),
+          content: Text(
+            AppLocalizations.t(appContext, 'item_detail_timeout_message'),
+          ),
         ),
       );
       return;
     }
 
-    // DATA SUFFICIENCY CHECK — the backend couldn't assemble a real
+    // DATA SUFFICIENCY CHECK ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the backend couldn't assemble a real
     // outfit/board from the user's own pieces. Surface a dedicated alert
     // (with a one-tap fallback into curated-asset styling) instead of
     // dropping the user into an empty/broken result sheet.
     final bool insufficientWardrobe =
-        result?['intent'] == 'insufficient_wardrobe' || result?['alert'] == true;
+        result?['intent'] == 'insufficient_wardrobe' ||
+        result?['alert'] == true;
     if (insufficientWardrobe) {
       _showInsufficientWardrobeAlert(appContext, item: item, result: result!);
       return;
@@ -514,16 +531,16 @@ class _ItemDetailModal extends StatelessWidget {
   //     than requiring real pairings from the user's own wardrobe.
   // ============================================================
   void _showInsufficientWardrobeAlert(
-      BuildContext appContext, {
-        required WardrobeItem item,
-        required Map<String, dynamic> result,
-      }) {
+    BuildContext appContext, {
+    required WardrobeItem item,
+    required Map<String, dynamic> result,
+  }) {
     final String message =
         (result['context'] ?? result['message'])?.toString() ??
-            AppLocalizations.t(
-              appContext,
-              'item_detail_insufficient_wardrobe_default',
-            );
+        AppLocalizations.t(
+          appContext,
+          'item_detail_insufficient_wardrobe_default',
+        );
 
     showDialog<void>(
       context: appContext,
@@ -602,7 +619,10 @@ class _ItemDetailModal extends StatelessWidget {
                             ),
                           ),
                           child: Text(
-                            AppLocalizations.t(dialogContext, 'item_detail_wardrobe_alert_dismiss'),
+                            AppLocalizations.t(
+                              dialogContext,
+                              'item_detail_wardrobe_alert_dismiss',
+                            ),
                             style: GoogleFonts.inter(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
@@ -619,7 +639,11 @@ class _ItemDetailModal extends StatelessWidget {
                             // Fallback: retry as 'style_this', which the
                             // backend can answer from curated assets
                             // instead of the user's own wardrobe pairings.
-                            _performStyleRequest(appContext, item, mode: 'style_this');
+                            _performStyleRequest(
+                              appContext,
+                              item,
+                              mode: 'style_this',
+                            );
                           },
                           borderRadius: BorderRadius.circular(12),
                           child: Container(
@@ -670,29 +694,41 @@ class _ItemDetailModal extends StatelessWidget {
   }
 
   void _showStyleResultSheet(
-      BuildContext context, {
-        required String mode,
-        required WardrobeItem item,
-        required Map<String, dynamic>? result,
-      }) {
+    BuildContext context, {
+    required String mode,
+    required WardrobeItem item,
+    required Map<String, dynamic>? result,
+  }) {
     final bool ok = result != null && result['success'] == true;
     final String? message = result?['message']?.toString();
     final List<Map<String, dynamic>> directions = mode == 'style_this'
         ? _asMapList(result?['style_directions'])
         : <Map<String, dynamic>>[];
     final Map<String, dynamic>? outfit =
-    (mode == 'build_outfit' && result?['outfit'] is Map)
+        (mode == 'build_outfit' && result?['outfit'] is Map)
         ? Map<String, dynamic>.from(result!['outfit'] as Map)
         : null;
     final bool isAnchorBoard =
         outfit != null && outfit['payload_type'] == 'ANCHOR_OUTFIT_BOARD';
+    final bool hasBuildBoardContract =
+        outfit != null &&
+        (outfit['board_id'] ?? '').toString().trim().isNotEmpty &&
+        outfit['revision'] is num;
+
+    final bool hasStyleBoardContract = directions.any(
+      (direction) =>
+          (direction['board_id'] ?? '').toString().trim().isNotEmpty &&
+          direction['revision'] is num,
+    );
+
+    final bool usesActiveBoard = hasBuildBoardContract || hasStyleBoardContract;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => DraggableScrollableSheet(
-        initialChildSize: isAnchorBoard ? 0.9 : 0.7,
+        initialChildSize: isAnchorBoard || usesActiveBoard ? 0.9 : 0.7,
         minChildSize: 0.4,
         maxChildSize: 0.95,
         expand: false,
@@ -703,7 +739,9 @@ class _ItemDetailModal extends StatelessWidget {
           return Container(
             decoration: BoxDecoration(
               color: colors.sheetBg,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
             ),
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
             child: ListView(
@@ -733,10 +771,7 @@ class _ItemDetailModal extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   item.name,
-                  style: TextStyle(
-                    color: colors.subtitle,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(color: colors.subtitle, fontSize: 13),
                 ),
                 const SizedBox(height: 16),
                 if (!ok || (message != null && message.isNotEmpty))
@@ -746,13 +781,51 @@ class _ItemDetailModal extends StatelessWidget {
                         : AppLocalizations.t(ctx, 'item_detail_friendly_fail'),
                     colors: colors,
                   ),
-                if (mode == 'style_this')
+                if (mode == 'style_this' && hasStyleBoardContract)
                   ...directions.map(
-                        (d) => _StyleDirectionCard(direction: d, colors: colors),
+                    (direction) => Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: AhviOutfitBoardCard(
+                        direction: <String, dynamic>{
+                          ...direction,
+                          'direction_name': direction['title'],
+                          'board_items': direction['items'],
+                        },
+                        width: MediaQuery.sizeOf(ctx).width - 40,
+                      ),
+                    ),
                   ),
-                if (mode == 'build_outfit' && isAnchorBoard && outfit != null)
+
+                if (mode == 'style_this' && !hasStyleBoardContract)
+                  ...directions.map(
+                    (direction) => _StyleDirectionCard(
+                      direction: direction,
+                      colors: colors,
+                    ),
+                  ),
+
+                if (mode == 'build_outfit' &&
+                    hasBuildBoardContract &&
+                    outfit != null)
+                  AhviOutfitBoardCard(
+                    direction: <String, dynamic>{
+                      ...outfit,
+                      'direction_name': outfit['title'],
+                      'board_items': outfit['items'],
+                    },
+                    width: MediaQuery.sizeOf(ctx).width - 40,
+                  ),
+
+                if (mode == 'build_outfit' &&
+                    !hasBuildBoardContract &&
+                    isAnchorBoard &&
+                    outfit != null)
                   _AnchorOutfitBoardCard(outfit: outfit, colors: colors),
-                if (mode == 'build_outfit' && !isAnchorBoard && outfit != null)
+
+                if (mode == 'build_outfit' &&
+                    !hasBuildBoardContract &&
+                    !isAnchorBoard &&
+                    outfit != null)
                   _StyleDirectionCard(
                     direction: outfit,
                     reasonKey: 'reason',
@@ -771,8 +844,10 @@ class _ItemDetailModal extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          AppLocalizations.t(context, 'item_detail_marked_worn')
-              .replaceAll('{name}', item.name),
+          AppLocalizations.t(
+            context,
+            'item_detail_marked_worn',
+          ).replaceAll('{name}', item.name),
         ),
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
@@ -952,52 +1027,52 @@ class _WorksWellWithCard extends StatelessWidget {
                 .take(3)
                 .map(
                   (p) => InkWell(
-                onTap: onSelectPairing != null
-                    ? () => onSelectPairing!(p)
-                    : null,
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          color: const Color(0xFFEFEFF7),
-                          child:
-                          (p.displayUrl != null &&
-                              p.displayUrl!.isNotEmpty)
-                              ? Image.network(
-                            p.displayUrl!,
-                            fit: BoxFit.contain,
-                          )
-                              : const Icon(
-                            Icons.checkroom,
-                            size: 16,
-                            color: Color(0xFFBFBFD6),
+                    onTap: onSelectPairing != null
+                        ? () => onSelectPairing!(p)
+                        : null,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              width: 32,
+                              height: 32,
+                              color: const Color(0xFFEFEFF7),
+                              child:
+                                  (p.displayUrl != null &&
+                                      p.displayUrl!.isNotEmpty)
+                                  ? Image.network(
+                                      p.displayUrl!,
+                                      fit: BoxFit.contain,
+                                    )
+                                  : const Icon(
+                                      Icons.checkroom,
+                                      size: 16,
+                                      color: Color(0xFFBFBFD6),
+                                    ),
+                            ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          p.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF1A1A1A),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              p.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF1A1A1A),
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ),
           if (pairings.length > 3)
             InkWell(
               onTap: onShowAllPairings,
@@ -1123,7 +1198,7 @@ class _InsightColumn extends StatelessWidget {
         const SizedBox(height: 8),
         if (items.isEmpty)
           Text(
-            '—',
+            'ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â',
             style: GoogleFonts.inter(
               fontSize: 13,
               color: const Color(0xFF8A8A8E),
@@ -1131,7 +1206,7 @@ class _InsightColumn extends StatelessWidget {
           )
         else
           ...items.map(
-                (label) => Padding(
+            (label) => Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1212,7 +1287,9 @@ class _WardrobeMatchCard extends StatelessWidget {
           Text(
             AppLocalizations.t(
               context,
-              matchCount == 1 ? 'item_detail_match_item' : 'item_detail_match_items',
+              matchCount == 1
+                  ? 'item_detail_match_item'
+                  : 'item_detail_match_items',
             ).replaceAll('{n}', '$matchCount'),
             style: GoogleFonts.inter(
               fontSize: 14,
@@ -1368,13 +1445,21 @@ class ItemMoreOptionsSheet extends StatelessWidget {
             const Divider(height: 0.5, color: Color(0xFFF0F0F4)),
             _OptionRow(
               icon: Icons.favorite_border,
-              label: AppLocalizations.t(context, 'item_detail_add_to_favorites'),
+              label: AppLocalizations.t(
+                context,
+                'item_detail_add_to_favorites',
+              ),
               onTap: () {
                 Navigator.of(context).pop();
                 onAddToFavorites?.call();
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(AppLocalizations.t(context, 'item_detail_added_favorites')),
+                    content: Text(
+                      AppLocalizations.t(
+                        context,
+                        'item_detail_added_favorites',
+                      ),
+                    ),
                     duration: const Duration(seconds: 2),
                     behavior: SnackBarBehavior.floating,
                     shape: const RoundedRectangleBorder(
@@ -1418,7 +1503,10 @@ class ItemMoreOptionsSheet extends StatelessWidget {
             ),
             _OptionRow(
               icon: Icons.delete_outline,
-              label: AppLocalizations.t(context, 'item_detail_delete_permanently'),
+              label: AppLocalizations.t(
+                context,
+                'item_detail_delete_permanently',
+              ),
               color: _kDangerColor,
               showDivider: false,
               onTap: onDelete,
@@ -1577,7 +1665,7 @@ class _AllPairingsSheet extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 itemCount: pairings.length,
                 separatorBuilder: (_, __) =>
-                const Divider(height: 0.5, color: Color(0xFFF0F0F4)),
+                    const Divider(height: 0.5, color: Color(0xFFF0F0F4)),
                 itemBuilder: (context, index) {
                   final p = pairings[index];
                   return InkWell(
@@ -1599,17 +1687,17 @@ class _AllPairingsSheet extends StatelessWidget {
                               height: 40,
                               color: const Color(0xFFEFEFF7),
                               child:
-                              (p.displayUrl != null &&
-                                  p.displayUrl!.isNotEmpty)
+                                  (p.displayUrl != null &&
+                                      p.displayUrl!.isNotEmpty)
                                   ? Image.network(
-                                p.displayUrl!,
-                                fit: BoxFit.contain,
-                              )
+                                      p.displayUrl!,
+                                      fit: BoxFit.contain,
+                                    )
                                   : const Icon(
-                                Icons.checkroom,
-                                size: 18,
-                                color: Color(0xFFBFBFD6),
-                              ),
+                                      Icons.checkroom,
+                                      size: 18,
+                                      color: Color(0xFFBFBFD6),
+                                    ),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -1709,7 +1797,7 @@ class _ResultSheetColors {
   final Color noticeBg;
   final Color noticeText;
   // The flat-lay board canvas intentionally stays a light, neutral
-  // "photography backdrop" in both modes — the tiles use dark drop
+  // "photography backdrop" in both modes ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the tiles use dark drop
   // shadows that read correctly only against a light surface, and
   // outfit-board UIs conventionally keep the image canvas light even
   // inside a dark shell (Pinterest, Instagram, etc). Flip this if you'd
@@ -1854,14 +1942,18 @@ class _StyleDirectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = (direction['title'] ?? AppLocalizations.t(context, 'item_detail_your_look')).toString();
+    final title =
+        (direction['title'] ??
+                AppLocalizations.t(context, 'item_detail_your_look'))
+            .toString();
     final items = _names(direction['items']);
     final missing = _missing(direction['missing_items']);
-    final note = (direction[reasonKey] ??
-        direction['styling_note'] ??
-        direction['reason'] ??
-        '')
-        .toString();
+    final note =
+        (direction[reasonKey] ??
+                direction['styling_note'] ??
+                direction['reason'] ??
+                '')
+            .toString();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -1908,7 +2000,9 @@ class _StyleDirectionCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: items
-                  .map((n) => _StyleChip(label: n, accent: false, colors: colors))
+                  .map(
+                    (n) => _StyleChip(label: n, accent: false, colors: colors),
+                  )
                   .toList(),
             ),
           ],
@@ -1927,7 +2021,9 @@ class _StyleDirectionCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: missing
-                  .map((n) => _StyleChip(label: n, accent: true, colors: colors))
+                  .map(
+                    (n) => _StyleChip(label: n, accent: true, colors: colors),
+                  )
                   .toList(),
             ),
           ],
@@ -1970,7 +2066,7 @@ class _StyleChip extends StatelessWidget {
 }
 
 // ============================================================
-// ANCHOR OUTFIT BOARD — visual 9:16 board with source badges
+// ANCHOR OUTFIT BOARD ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â visual 9:16 board with source badges
 // ============================================================
 
 BoardItemRole _anchorBoardRoleFromRaw(Map<String, dynamic> raw) {
@@ -2011,19 +2107,13 @@ class _AnchorOutfitBoardCard extends StatelessWidget {
   List<Map<String, dynamic>> _rawItems() {
     final v = outfit['board_items'] ?? outfit['items'];
     if (v is! List) return <Map<String, dynamic>>[];
-    return v
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
+    return v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
   List<Map<String, dynamic>> _missingItems() {
     final v = outfit['missing_items'];
     if (v is! List) return <Map<String, dynamic>>[];
-    return v
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
+    return v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
   @override
@@ -2031,7 +2121,9 @@ class _AnchorOutfitBoardCard extends StatelessWidget {
     final rawItems = _rawItems();
     final missing = _missingItems();
     final stylingNote =
-        outfit['styling_notes']?.toString() ?? outfit['reason']?.toString() ?? '';
+        outfit['styling_notes']?.toString() ??
+        outfit['reason']?.toString() ??
+        '';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2054,11 +2146,7 @@ class _AnchorOutfitBoardCard extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             stylingNote,
-            style: TextStyle(
-              color: colors.cardBody,
-              fontSize: 13,
-              height: 1.4,
-            ),
+            style: TextStyle(color: colors.cardBody, fontSize: 13, height: 1.4),
           ),
         ],
         if (missing.isNotEmpty) ...[
@@ -2076,8 +2164,7 @@ class _AnchorOutfitBoardCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: missing.map((m) {
-              final label =
-              (m['label'] ?? m['name'] ?? '').toString().trim();
+              final label = (m['label'] ?? m['name'] ?? '').toString().trim();
               return _StyleChip(label: label, accent: true, colors: colors);
             }).toList(),
           ),
@@ -2103,11 +2190,13 @@ class _AnchorItemRow extends StatelessWidget {
     final sourceLabel = isAnchor
         ? AppLocalizations.t(context, 'item_detail_source_your_piece')
         : (source == 'wardrobe'
-        ? AppLocalizations.t(context, 'item_detail_source_wardrobe')
-        : AppLocalizations.t(context, 'item_detail_source_suggested'));
+              ? AppLocalizations.t(context, 'item_detail_source_wardrobe')
+              : AppLocalizations.t(context, 'item_detail_source_suggested'));
     final sourceColor = isAnchor
         ? const Color(0xFF7B61FF)
-        : (source == 'wardrobe' ? const Color(0xFF34C759) : const Color(0xFFFF9500));
+        : (source == 'wardrobe'
+              ? const Color(0xFF34C759)
+              : const Color(0xFFFF9500));
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -2122,7 +2211,11 @@ class _AnchorItemRow extends StatelessWidget {
               color: colors.anchorItemThumbBg,
               child: imageUrl.isNotEmpty
                   ? Image.network(imageUrl, fit: BoxFit.contain)
-                  : const Icon(Icons.checkroom, size: 20, color: Color(0xFFBFBFD6)),
+                  : const Icon(
+                      Icons.checkroom,
+                      size: 20,
+                      color: Color(0xFFBFBFD6),
+                    ),
             ),
           ),
           const SizedBox(width: 12),
@@ -2162,7 +2255,7 @@ class _AnchorItemRow extends StatelessWidget {
 }
 
 // ============================================================
-// FLAT-LAY BOARD CANVAS — absolute-positioned 9:16 layout
+// FLAT-LAY BOARD CANVAS ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â absolute-positioned 9:16 layout
 // ============================================================
 
 class _TileCfg {
@@ -2179,38 +2272,45 @@ class _AnchorBoardCanvas extends StatelessWidget {
   const _AnchorBoardCanvas({required this.items});
 
   static const _l3Classic = <String, _TileCfg>{
-    'top':      _TileCfg(0.08, 0.04, 0.62, 0.40, 1),
-    'bottom':   _TileCfg(0.36, 0.46, 0.54, 0.42, 2),
+    'top': _TileCfg(0.08, 0.04, 0.62, 0.40, 1),
+    'bottom': _TileCfg(0.36, 0.46, 0.54, 0.42, 2),
     'footwear': _TileCfg(0.08, 0.76, 0.44, 0.20, 3),
   };
   static const _l3Dress = <String, _TileCfg>{
-    'dress':     _TileCfg(0.10, 0.04, 0.58, 0.64, 1),
-    'footwear':  _TileCfg(0.08, 0.72, 0.40, 0.22, 2),
+    'dress': _TileCfg(0.10, 0.04, 0.58, 0.64, 1),
+    'footwear': _TileCfg(0.08, 0.72, 0.40, 0.22, 2),
     'accessory': _TileCfg(0.52, 0.68, 0.40, 0.26, 2),
   };
   static const _l4Classic = <String, _TileCfg>{
-    'top':       _TileCfg(0.08, 0.04, 0.55, 0.34, 1),
+    'top': _TileCfg(0.08, 0.04, 0.55, 0.34, 1),
     'accessory': _TileCfg(0.55, 0.06, 0.38, 0.26, 1),
-    'bottom':    _TileCfg(0.34, 0.42, 0.52, 0.38, 2),
-    'footwear':  _TileCfg(0.08, 0.72, 0.42, 0.22, 3),
+    'bottom': _TileCfg(0.34, 0.42, 0.52, 0.38, 2),
+    'footwear': _TileCfg(0.08, 0.72, 0.42, 0.22, 3),
   };
   static const _l5 = <String, _TileCfg>{
     'outerwear': _TileCfg(0.06, 0.04, 0.44, 0.30, 1),
-    'top':       _TileCfg(0.48, 0.04, 0.46, 0.28, 1),
-    'bottom':    _TileCfg(0.24, 0.36, 0.52, 0.36, 2),
-    'footwear':  _TileCfg(0.06, 0.68, 0.40, 0.22, 3),
+    'top': _TileCfg(0.48, 0.04, 0.46, 0.28, 1),
+    'bottom': _TileCfg(0.24, 0.36, 0.52, 0.36, 2),
+    'footwear': _TileCfg(0.06, 0.68, 0.40, 0.22, 3),
     'accessory': _TileCfg(0.50, 0.64, 0.42, 0.28, 2),
   };
 
   static String _roleKey(BoardItemRole r) {
     switch (r) {
-      case BoardItemRole.top: return 'top';
-      case BoardItemRole.bottom: return 'bottom';
-      case BoardItemRole.footwear: return 'footwear';
-      case BoardItemRole.outerwear: return 'outerwear';
-      case BoardItemRole.dress: return 'dress';
-      case BoardItemRole.accessory: return 'accessory';
-      case BoardItemRole.unknown: return 'unknown';
+      case BoardItemRole.top:
+        return 'top';
+      case BoardItemRole.bottom:
+        return 'bottom';
+      case BoardItemRole.footwear:
+        return 'footwear';
+      case BoardItemRole.outerwear:
+        return 'outerwear';
+      case BoardItemRole.dress:
+        return 'dress';
+      case BoardItemRole.accessory:
+        return 'accessory';
+      case BoardItemRole.unknown:
+        return 'unknown';
     }
   }
 
@@ -2235,45 +2335,60 @@ class _AnchorBoardCanvas extends StatelessWidget {
       }
     }
     final ordered = slots.entries.toList()
-      ..sort((a, b) =>
-          template[a.key]!.zIndex.compareTo(template[b.key]!.zIndex));
+      ..sort(
+        (a, b) => template[a.key]!.zIndex.compareTo(template[b.key]!.zIndex),
+      );
 
-    return LayoutBuilder(builder: (ctx, constraints) {
-      final W = constraints.maxWidth;
-      final H = constraints.maxHeight;
-      if (W <= 0 || H <= 0 || !W.isFinite || !H.isFinite) {
-        return const SizedBox.shrink();
-      }
-      debugPrint(
-        'AHVI_BOARD_CANVAS slots=${ordered.length} W=${W.toStringAsFixed(0)} H=${H.toStringAsFixed(0)}',
-      );
-      return Stack(
-        clipBehavior: Clip.hardEdge,
-        children: ordered.map((entry) {
-          final cfg = template[entry.key]!;
-          final left = cfg.left * W;
-          final top = cfg.top * H;
-          final w = cfg.width * W;
-          final h = cfg.height * H;
-          if (!left.isFinite || !top.isFinite || !w.isFinite || !h.isFinite || w <= 0 || h <= 0) {
-            return const SizedBox.shrink();
-          }
-          final raw = entry.value;
-          final imageUrl = raw['image_url']?.toString() ?? '';
-          final isAnchor = raw['is_anchor'] == true;
-          final name = raw['name']?.toString() ?? '';
-          debugPrint(
-            'AHVI_BOARD_TILE role=${entry.key} name=$name '
-                'x=${left.toStringAsFixed(1)} y=${top.toStringAsFixed(1)} '
-                'w=${w.toStringAsFixed(1)} h=${h.toStringAsFixed(1)} z=${cfg.zIndex} anchor=$isAnchor',
-          );
-          return Positioned(
-            left: left, top: top, width: w, height: h,
-            child: _FlatLayTile(imageUrl: imageUrl, isAnchor: isAnchor, name: name),
-          );
-        }).toList(),
-      );
-    });
+    return LayoutBuilder(
+      builder: (ctx, constraints) {
+        final W = constraints.maxWidth;
+        final H = constraints.maxHeight;
+        if (W <= 0 || H <= 0 || !W.isFinite || !H.isFinite) {
+          return const SizedBox.shrink();
+        }
+        debugPrint(
+          'AHVI_BOARD_CANVAS slots=${ordered.length} W=${W.toStringAsFixed(0)} H=${H.toStringAsFixed(0)}',
+        );
+        return Stack(
+          clipBehavior: Clip.hardEdge,
+          children: ordered.map((entry) {
+            final cfg = template[entry.key]!;
+            final left = cfg.left * W;
+            final top = cfg.top * H;
+            final w = cfg.width * W;
+            final h = cfg.height * H;
+            if (!left.isFinite ||
+                !top.isFinite ||
+                !w.isFinite ||
+                !h.isFinite ||
+                w <= 0 ||
+                h <= 0) {
+              return const SizedBox.shrink();
+            }
+            final raw = entry.value;
+            final imageUrl = raw['image_url']?.toString() ?? '';
+            final isAnchor = raw['is_anchor'] == true;
+            final name = raw['name']?.toString() ?? '';
+            debugPrint(
+              'AHVI_BOARD_TILE role=${entry.key} name=$name '
+              'x=${left.toStringAsFixed(1)} y=${top.toStringAsFixed(1)} '
+              'w=${w.toStringAsFixed(1)} h=${h.toStringAsFixed(1)} z=${cfg.zIndex} anchor=$isAnchor',
+            );
+            return Positioned(
+              left: left,
+              top: top,
+              width: w,
+              height: h,
+              child: _FlatLayTile(
+                imageUrl: imageUrl,
+                isAnchor: isAnchor,
+                name: name,
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
   }
 }
 
@@ -2281,7 +2396,11 @@ class _FlatLayTile extends StatelessWidget {
   final String imageUrl;
   final bool isAnchor;
   final String name;
-  const _FlatLayTile({required this.imageUrl, required this.isAnchor, required this.name});
+  const _FlatLayTile({
+    required this.imageUrl,
+    required this.isAnchor,
+    required this.name,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2292,29 +2411,42 @@ class _FlatLayTile extends StatelessWidget {
             color: Colors.white,
             borderRadius: BorderRadius.circular(10),
             boxShadow: const [
-              BoxShadow(color: Color(0x1A000000), blurRadius: 12, offset: Offset(0, 4)),
+              BoxShadow(
+                color: Color(0x1A000000),
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
             ],
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: imageUrl.isNotEmpty
                 ? Image.network(
-              imageUrl,
-              fit: BoxFit.contain,
-              width: double.infinity,
-              height: double.infinity,
-              errorBuilder: (_, __, ___) => const Center(
-                child: Icon(Icons.checkroom, color: Color(0xFFD0CAC3), size: 32),
-              ),
-            )
+                    imageUrl,
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                    height: double.infinity,
+                    errorBuilder: (_, __, ___) => const Center(
+                      child: Icon(
+                        Icons.checkroom,
+                        color: Color(0xFFD0CAC3),
+                        size: 32,
+                      ),
+                    ),
+                  )
                 : const Center(
-              child: Icon(Icons.checkroom, color: Color(0xFFD0CAC3), size: 32),
-            ),
+                    child: Icon(
+                      Icons.checkroom,
+                      color: Color(0xFFD0CAC3),
+                      size: 32,
+                    ),
+                  ),
           ),
         ),
         if (isAnchor)
           Positioned(
-            top: 6, left: 6,
+            top: 6,
+            left: 6,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               decoration: BoxDecoration(
@@ -2324,8 +2456,10 @@ class _FlatLayTile extends StatelessWidget {
               child: Text(
                 AppLocalizations.t(context, 'item_detail_yours_badge'),
                 style: const TextStyle(
-                  color: Colors.white, fontSize: 9,
-                  fontWeight: FontWeight.w700, letterSpacing: 0.2,
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
                 ),
               ),
             ),

@@ -182,11 +182,11 @@ _MedicineReminderIntent? _extractMedicineReminderIntent(
       caseSensitive: false,
     ),
     RegExp(
-      r'\bset\s+(?:a\s+)?(?:medicine|medication)\s+reminder\s+for\s+(.+?)(?:\s+at\s+|$)',
+      r'\bset\s+(?:a\s+)?(?:medicine|medication|meds|tablet|pill)\s+reminder\s+for\s+(.+?)(?:\s+at\s+|$)',
       caseSensitive: false,
     ),
     RegExp(
-      r'\b(?:medicine|medication)\s+reminder\s+for\s+(.+?)(?:\s+at\s+|$)',
+      r'\b(?:medicine|medication|meds|tablet|pill)\s+reminder\s+for\s+(.+?)(?:\s+at\s+|$)',
       caseSensitive: false,
     ),
   ];

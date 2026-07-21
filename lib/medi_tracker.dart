@@ -8,6 +8,8 @@ import 'package:myapp/services/appwrite_service.dart';
 import 'package:myapp/widgets/ahvi_stylist_chat.dart';
 import 'package:myapp/widgets/ahvi_lens_sheet.dart';
 
+import 'package:myapp/services/notification_service.dart';
+
 class MediTrackScreen extends StatefulWidget {
   final bool fromHome;
   const MediTrackScreen({super.key, this.fromHome = false});
@@ -100,11 +102,23 @@ class _MediTrackScreenState extends State<MediTrackScreen>
       end: 0.0,
     ).animate(CurvedAnimation(parent: _ringCtrl, curve: Curves.easeOut));
 
+    AhviNotificationService.instance.unreadCount.addListener(
+      _onMediNotificationUnreadChanged,
+    );
     _fetchData();
   }
 
+  void _onMediNotificationUnreadChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
   @override
   void dispose() {
+    AhviNotificationService.instance.unreadCount.removeListener(
+      _onMediNotificationUnreadChanged,
+    );
+
     _shimmerCtrl.dispose();
     _pulseCtrl.dispose();
     _ringCtrl.dispose();
@@ -456,11 +470,15 @@ class _MediTrackScreenState extends State<MediTrackScreen>
               size: 17,
               color: textColor,
             ),
-            onTap: () => _showToast(
-              AppLocalizations.t(context, 'medi_notifications_empty'),
-              '🔔',
-            ),
-            badge: true,
+            onTap: () {
+              AhviNotificationService.instance.markMediNotificationsRead();
+              _showToast(
+                AppLocalizations.t(context, 'medi_notifications_empty'),
+                '🔔',
+              );
+            },
+            badge:
+                AhviNotificationService.instance.unreadCount.value > 0,
           ),
         ],
       ),

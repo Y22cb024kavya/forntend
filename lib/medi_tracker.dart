@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:myapp/app_localizations.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/services/appwrite_service.dart';
+import 'package:myapp/services/backend_service.dart';
 import 'package:myapp/widgets/ahvi_stylist_chat.dart';
 import 'package:myapp/widgets/ahvi_lens_sheet.dart';
 
@@ -155,6 +156,113 @@ class _MediTrackScreenState extends State<MediTrackScreen>
     }
   }
 
+  DateTime? _nextReminderTime(String rawTime) {
+    final text = rawTime.trim();
+    if (text.isEmpty) return null;
+
+    final now = DateTime.now();
+    int? hour;
+    int minute = 0;
+
+    final meridiemMatch = RegExp(
+      r'^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$',
+      caseSensitive: false,
+    ).firstMatch(text);
+
+    if (meridiemMatch != null) {
+      hour = int.tryParse(meridiemMatch.group(1) ?? '');
+      minute = int.tryParse(meridiemMatch.group(2) ?? '0') ?? 0;
+
+      final suffix =
+          (meridiemMatch.group(3) ?? '').toLowerCase();
+
+      if (hour == null ||
+          hour < 1 ||
+          hour > 12 ||
+          minute < 0 ||
+          minute > 59) {
+        return null;
+      }
+
+      if (suffix == 'pm' && hour != 12) {
+        hour += 12;
+      }
+
+      if (suffix == 'am' && hour == 12) {
+        hour = 0;
+      }
+    } else {
+      final twentyFourMatch =
+          RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(text);
+
+      if (twentyFourMatch == null) return null;
+
+      hour = int.tryParse(twentyFourMatch.group(1) ?? '');
+      minute =
+          int.tryParse(twentyFourMatch.group(2) ?? '0') ?? 0;
+
+      if (hour == null ||
+          hour < 0 ||
+          hour > 23 ||
+          minute < 0 ||
+          minute > 59) {
+        return null;
+      }
+    }
+
+    var scheduled = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      hour,
+      minute,
+    );
+
+    if (!scheduled.isAfter(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+    }
+
+    return scheduled;
+  }
+
+  Future<void> _scheduleMedicineReminder({
+    required AppwriteService appwrite,
+    required String medId,
+    required String medName,
+    required String dose,
+    required String timeText,
+  }) async {
+    final sendAt = _nextReminderTime(timeText);
+
+    if (sendAt == null) {
+      debugPrint(
+        'AHVI_MED_REMINDER_INVALID_TIME medId=$medId time=$timeText',
+      );
+      return;
+    }
+
+    final sendAtIso = sendAt.toUtc().toIso8601String();
+
+    final ok = await BackendService(
+      appwriteService: appwrite,
+    ).scheduleReminder(
+      eventId: medId,
+      message:
+          'Time to take $medName${dose.trim().isEmpty ? '' : ' - $dose'}.',
+      sendAt: sendAt,
+      source: 'medi',
+      priority: 'normal',
+      medId: medId,
+      medName: medName,
+      dose: dose,
+      notificationKey: 'med:$medId:$sendAtIso',
+    );
+
+    debugPrint(
+      'AHVI_MED_REMINDER_SCHEDULE_REQUEST '
+      'medId=$medId ok=$ok sendAt=$sendAtIso',
+    );
+  }
   Future<void> _fetchData() async {
     try {
       final appwrite = Provider.of<AppwriteService>(context, listen: false);
@@ -2606,6 +2714,8 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                           return;
                         }
 
+                        final navigator = Navigator.of(context);
+
                         try {
                           final appwrite = Provider.of<AppwriteService>(
                             this.context,
@@ -2620,7 +2730,9 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                             // Update existing medicine. Leave `left` and
                             // `lastTaken` alone so today's taken-state and
                             // remaining count are not reset by an edit.
-                            await appwrite.updateMed(editMed['id'] as String, {
+                            final medId = editMed['id'] as String;
+
+                            await appwrite.updateMed(medId, {
                               'name': name,
                               'dose': dose,
                               'freq': resolvedFreq,
@@ -2628,9 +2740,19 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                               'cat': effectiveCat,
                               'total': supply,
                             });
+
+                            await _scheduleMedicineReminder(
+                              appwrite: appwrite,
+                              medId: medId,
+                              medName: name,
+                              dose: dose,
+                              timeText: resolvedTime,
+                            );
+
+                            if (!mounted) return;
                             _showToast('Medicine updated', '✅');
                           } else {
-                            await appwrite.createMed({
+                            final created = await appwrite.createMed({
                               'name': name,
                               'dose': dose,
                               'freq': resolvedFreq,
@@ -2640,6 +2762,16 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                               'total': supply,
                               'reminder': true,
                             });
+
+                            await _scheduleMedicineReminder(
+                              appwrite: appwrite,
+                              medId: created.$id,
+                              medName: name,
+                              dose: dose,
+                              timeText: resolvedTime,
+                            );
+
+                            if (!mounted) return;
                             _showToast(
                               AppLocalizations.t(
                                 this.context,
@@ -2648,7 +2780,7 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                               '💊',
                             );
                           }
-                          Navigator.pop(context);
+                          navigator.pop();
 
                           _nameCtrl.clear();
                           _doseCtrl.clear();

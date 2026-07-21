@@ -10,10 +10,33 @@ Map<String, dynamic> _parseJsonMap(String payload) =>
 
 String _encodeBytes(Uint8List bytes) => base64Encode(bytes);
 
+Object? _jsonSafe(Object? value) {
+  if (value == null || value is String || value is num || value is bool) {
+    return value;
+  }
+  if (value is DateTime) {
+    return value.toUtc().toIso8601String();
+  }
+  if (value is Map) {
+    return value.map((key, val) => MapEntry(key.toString(), _jsonSafe(val)));
+  }
+  if (value is Iterable) {
+    return value.map(_jsonSafe).toList();
+  }
+  return value.toString();
+}
+
 String _styleChatSnippet(Object? value, [int max = 900]) {
-  final text = value is String ? value : jsonEncode(value);
-  final flat = text.replaceAll('\n', ' | ');
-  return flat.length <= max ? flat : flat.substring(0, max);
+  try {
+    final text = value is String ? value : jsonEncode(_jsonSafe(value));
+    final flat = text.replaceAll('\n', ' | ');
+    return flat.length <= max ? flat : flat.substring(0, max);
+  } catch (_) {
+    final fallback = value.toString().replaceAll('\n', ' | ');
+    return fallback.length <= max
+        ? fallback
+        : fallback.substring(0, max);
+  }
 }
 
 class BackendRequestException implements Exception {
@@ -696,7 +719,7 @@ class BackendService {
           .post(
         Uri.parse('$baseUrl/api/module-chat'),
         headers: await _authHeaders(),
-        body: jsonEncode(modulePayload),
+        body: jsonEncode(_jsonSafe(modulePayload)),
       )
       // Backend's chat_completion has a 45s budget. Give the network +
       // serialization 30s of headroom so the frontend never wins the race
@@ -1505,25 +1528,56 @@ class BackendService {
     String source = 'app',
     String priority = 'light',
     int offsetMinutes = 0,
+    String medId = '',
+    String medName = '',
+    String dose = '',
+    String notificationKey = '',
   }) async {
     try {
+      final sendAtISO = sendAt.toUtc().toIso8601String();
+      final reminder = <String, dynamic>{
+        'sendAtISO': sendAtISO,
+        'scheduledFor': sendAtISO,
+        'message': message,
+        'body': message,
+        'title': source == 'medi'
+            ? 'Medicine reminder'
+            : 'AHVI reminder',
+        'priority': priority,
+        'offsetMinutes': offsetMinutes,
+      };
+
+      if (medId.trim().isNotEmpty) {
+        reminder['medId'] = medId.trim();
+        reminder['notificationKey'] =
+            notificationKey.trim().isNotEmpty
+                ? notificationKey.trim()
+                : 'med:${medId.trim()}:$sendAtISO';
+      }
+
+      if (medName.trim().isNotEmpty) {
+        reminder['medName'] = medName.trim();
+      }
+
+      if (dose.trim().isNotEmpty) {
+        reminder['dose'] = dose.trim();
+      }
+
       final response = await http.post(
         Uri.parse('$baseUrl/api/notifications/reminders/schedule'),
         headers: await _authHeaders(),
         body: jsonEncode({
           'eventId': eventId,
           'source': source,
-          'reminders': [
-            {
-              'sendAtISO': sendAt.toUtc().toIso8601String(),
-              'message': message,
-              'priority': priority,
-              'offsetMinutes': offsetMinutes,
-            },
-          ],
+          'medId': medId,
+          'medName': medName,
+          'dose': dose,
+          'reminders': [reminder],
         }),
       );
-      return response.statusCode >= 200 && response.statusCode < 300;
+
+      return response.statusCode >= 200 &&
+          response.statusCode < 300;
     } catch (e) {
       debugPrint('Reminder schedule error: $e');
       return false;

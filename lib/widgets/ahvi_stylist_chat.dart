@@ -107,6 +107,168 @@ String? _occasionFromStylePrompt(String value) {
   return null;
 }
 
+class _MedicineReminderIntent {
+  final String medicineName;
+  final String timeText;
+
+  const _MedicineReminderIntent({
+    required this.medicineName,
+    required this.timeText,
+  });
+}
+
+String _normalizeMedicineName(String value) => value
+    .toLowerCase()
+    .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+    .trim()
+    .replaceAll(RegExp(r'\s+'), ' ');
+
+_MedicineReminderIntent? _extractMedicineReminderIntent(
+  String value,
+) {
+  final text = value.trim();
+  if (text.isEmpty) return null;
+
+  final lower = text.toLowerCase();
+
+  final hasReminderWord =
+      lower.contains('remind') || lower.contains('reminder');
+
+  final hasMedicineWord =
+      lower.contains('medicine') ||
+      lower.contains('medication') ||
+      lower.contains('take');
+
+  if (!hasReminderWord || !hasMedicineWord) {
+    return null;
+  }
+
+  final timeMatch = RegExp(
+    r'\b(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)|\d{1,2}:\d{2})\b',
+    caseSensitive: false,
+  ).firstMatch(text);
+
+  final timeText = timeMatch?.group(1)?.trim() ?? '';
+  String medicineName = '';
+
+  final patterns = [
+    RegExp(
+      r'\bremind\s+me\s+to\s+take\s+(.+?)(?:\s+at\s+|$)',
+      caseSensitive: false,
+    ),
+    RegExp(
+      r'\bset\s+(?:a\s+)?(?:medicine|medication)\s+reminder\s+for\s+(.+?)(?:\s+at\s+|$)',
+      caseSensitive: false,
+    ),
+    RegExp(
+      r'\b(?:medicine|medication)\s+reminder\s+for\s+(.+?)(?:\s+at\s+|$)',
+      caseSensitive: false,
+    ),
+  ];
+
+  for (final pattern in patterns) {
+    final match = pattern.firstMatch(text);
+    final candidate = match?.group(1)?.trim() ?? '';
+
+    if (candidate.isNotEmpty) {
+      medicineName = candidate;
+      break;
+    }
+  }
+
+  if (medicineName.isEmpty) return null;
+
+  return _MedicineReminderIntent(
+    medicineName: medicineName,
+    timeText: timeText,
+  );
+}
+
+DateTime? _nextMedicineReminderTime(String rawTime) {
+  final text = rawTime.trim();
+  if (text.isEmpty) return null;
+
+  final now = DateTime.now();
+  int? hour;
+  int minute = 0;
+
+  final meridiemMatch = RegExp(
+    r'^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$',
+    caseSensitive: false,
+  ).firstMatch(text);
+
+  if (meridiemMatch != null) {
+    hour = int.tryParse(meridiemMatch.group(1) ?? '');
+    minute =
+        int.tryParse(meridiemMatch.group(2) ?? '0') ?? 0;
+
+    final suffix =
+        (meridiemMatch.group(3) ?? '').toLowerCase();
+
+    if (hour == null ||
+        hour < 1 ||
+        hour > 12 ||
+        minute < 0 ||
+        minute > 59) {
+      return null;
+    }
+
+    if (suffix == 'pm' && hour != 12) {
+      hour += 12;
+    }
+
+    if (suffix == 'am' && hour == 12) {
+      hour = 0;
+    }
+  } else {
+    final twentyFourMatch =
+        RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(text);
+
+    if (twentyFourMatch == null) return null;
+
+    hour = int.tryParse(twentyFourMatch.group(1) ?? '');
+    minute =
+        int.tryParse(twentyFourMatch.group(2) ?? '0') ?? 0;
+
+    if (hour == null ||
+        hour < 0 ||
+        hour > 23 ||
+        minute < 0 ||
+        minute > 59) {
+      return null;
+    }
+  }
+
+  var scheduled = DateTime(
+    now.year,
+    now.month,
+    now.day,
+    hour,
+    minute,
+  );
+
+  if (!scheduled.isAfter(now)) {
+    scheduled = scheduled.add(const Duration(days: 1));
+  }
+
+  return scheduled;
+}
+
+String _formatMedicineReminderTime(DateTime value) {
+  final hour = value.hour;
+  final minute = value.minute.toString().padLeft(2, '0');
+  final suffix = hour >= 12 ? 'PM' : 'AM';
+  final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+
+  return '$displayHour:$minute $suffix';
+}
+
+String _medicineReminderKeyTime(DateTime value) =>
+    '${value.year.toString().padLeft(4, '0')}'
+    '${value.month.toString().padLeft(2, '0')}'
+    '${value.day.toString().padLeft(2, '0')}'
+    '${value.hour.toString().padLeft(2, '0')}'
+    '${value.minute.toString().padLeft(2, '0')}';
 class AhviModuleConfig {
   final String moduleContext;
   final String subtitle;
@@ -760,6 +922,154 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
     return '';
   }
 
+  Map<String, dynamic>? _findMedicineForReminder(
+    String query,
+  ) {
+    final medications = widget.contextData['medications'];
+
+    if (medications is! Iterable) return null;
+
+    final normalizedQuery = _normalizeMedicineName(query);
+    if (normalizedQuery.isEmpty) return null;
+
+    for (final item in medications) {
+      if (item is! Map) continue;
+
+      final data = Map<String, dynamic>.from(item);
+
+      final medName =
+          (data['name'] ?? data['medName'] ?? '').toString();
+
+      final normalizedName =
+          _normalizeMedicineName(medName);
+
+      if (normalizedName.isEmpty) continue;
+
+      if (normalizedName == normalizedQuery ||
+          normalizedName.contains(normalizedQuery) ||
+          normalizedQuery.contains(normalizedName)) {
+        return data;
+      }
+    }
+
+    return null;
+  }
+
+  void _addAssistantReply(String text) {
+    if (!mounted) return;
+
+    setState(() {
+      _typing = false;
+      _messages.add(
+        _SheetMessage(text: text, isUser: false),
+      );
+      _chatHistory.add({
+        'role': 'assistant',
+        'content': text,
+      });
+    });
+
+    _scrollToBottom();
+    _saveCurrentSession();
+  }
+
+  Future<bool> _tryScheduleMedicineReminderFromChat(
+    String text,
+  ) async {
+    if (widget.moduleContext.toLowerCase() != 'medi') {
+      return false;
+    }
+
+    final intent = _extractMedicineReminderIntent(text);
+    if (intent == null) return false;
+
+    final med =
+        _findMedicineForReminder(intent.medicineName);
+
+    if (med == null) {
+      _addAssistantReply(
+        "I couldn't find ${intent.medicineName} in Medi Tracker. "
+        'Please add it first.',
+      );
+      return true;
+    }
+
+    final medId =
+        (med['id'] ?? med['medId'] ?? '').toString().trim();
+
+    final medName =
+        (med['name'] ??
+                med['medName'] ??
+                intent.medicineName)
+            .toString()
+            .trim();
+
+    final dose = (med['dose'] ?? '').toString().trim();
+
+    final sendAt =
+        _nextMedicineReminderTime(intent.timeText);
+
+    if (sendAt == null) {
+      _addAssistantReply(
+        'I found $medName. What time should I remind you?',
+      );
+      return true;
+    }
+
+    if (medId.isEmpty || medName.isEmpty) {
+      _addAssistantReply(
+        "I couldn't find ${intent.medicineName} in Medi Tracker. "
+        'Please add it first.',
+      );
+      return true;
+    }
+
+    try {
+      final backend = Provider.of<BackendService>(
+        context,
+        listen: false,
+      );
+
+      final doseText =
+          dose.isEmpty ? '' : ' - $dose';
+
+      final ok = await backend.scheduleReminder(
+        source: 'medi',
+        eventId: medId,
+        medId: medId,
+        medName: medName,
+        dose: dose,
+        sendAt: sendAt,
+        message: 'Time to take $medName$doseText.',
+        priority: 'normal',
+        notificationKey:
+            'medi:$medId:chat:${_medicineReminderKeyTime(sendAt)}',
+      );
+
+      if (ok) {
+        _addAssistantReply(
+          "Done — I'll remind you to take $medName at "
+          '${_formatMedicineReminderTime(sendAt)}.',
+        );
+      } else {
+        _addAssistantReply(
+          'I found $medName, but could not schedule the '
+          'reminder. Please try again.',
+        );
+      }
+    } catch (err) {
+      debugPrint(
+        'AHVI_MED_CHAT_REMINDER_SCHEDULE_ERROR $err',
+      );
+
+      _addAssistantReply(
+        'I found $medName, but could not schedule the '
+        'reminder. Please try again.',
+      );
+    }
+
+    return true;
+  }
   Future<void> _sendMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty && _pendingAttachment == null) return;
@@ -798,6 +1108,12 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
 
     try {
       final backend = Provider.of<BackendService>(context, listen: false);
+
+      if (trimmed.isNotEmpty &&
+          await _tryScheduleMedicineReminderFromChat(trimmed)) {
+        return;
+      }
+
       final query = prompt.isNotEmpty ? prompt : trimmed;
       final styleModules = {'style', 'wardrobe', 'daily_wear'};
       final styleModuleContext = widget.moduleContext == 'daily_wear'

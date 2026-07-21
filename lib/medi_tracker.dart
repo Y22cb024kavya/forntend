@@ -2621,7 +2621,6 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                               'left': supply,
                               'total': supply,
                               'reminder': true,
-                              'lastTaken': '',
                             });
                             _showToast(
                               AppLocalizations.t(

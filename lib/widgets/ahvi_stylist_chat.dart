@@ -157,10 +157,9 @@ _MedicineReminderIntent? _extractMedicineReminderIntent(
   final hasReminderWord =
       lower.contains('remind') || lower.contains('reminder');
 
-  final hasMedicineWord =
-      lower.contains('medicine') ||
-      lower.contains('medication') ||
-      lower.contains('take');
+  final hasMedicineWord = RegExp(
+    r'\b(?:take|medicine|medication|meds|tablet|pill)\b',
+  ).hasMatch(lower);
 
   if (!hasReminderWord || !hasMedicineWord) {
     return null;

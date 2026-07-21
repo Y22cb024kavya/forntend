@@ -122,6 +122,29 @@ String _normalizeMedicineName(String value) => value
     .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
     .trim()
     .replaceAll(RegExp(r'\s+'), ' ');
+String _normalizeMedicineReminderTimeText(String value) {
+  var text = value.trim().replaceAll('.', ':');
+
+  text = text.replaceAll(RegExp(r'\s*:\s*'), ':');
+
+  text = text.replaceAllMapped(
+    RegExp(r'(\d)(am|pm)\b', caseSensitive: false),
+    (match) => '${match.group(1)} ${match.group(2)}',
+  );
+
+  text = text.replaceAll(RegExp(r'\s+'), ' ');
+
+  text = text.replaceAllMapped(
+    RegExp(
+      r'^(\d{1,2})\s+(\d{2})(\s*(?:am|pm))$',
+      caseSensitive: false,
+    ),
+    (match) =>
+        '${match.group(1)}:${match.group(2)}${match.group(3)}',
+  );
+
+  return text.trim();
+}
 
 _MedicineReminderIntent? _extractMedicineReminderIntent(
   String value,
@@ -144,11 +167,13 @@ _MedicineReminderIntent? _extractMedicineReminderIntent(
   }
 
   final timeMatch = RegExp(
-    r'\b(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)|\d{1,2}:\d{2})\b',
+    r'\b(?:at\s+)?(\d{1,2}\s*[:.]\s*\d{2}\s*(?:am|pm)?|\d{1,2}\s+\d{2}\s*(?:am|pm)|\d{1,2}\s*(?:am|pm))\b',
     caseSensitive: false,
   ).firstMatch(text);
 
-  final timeText = timeMatch?.group(1)?.trim() ?? '';
+  final timeText = _normalizeMedicineReminderTimeText(
+    timeMatch?.group(1) ?? '',
+  );
   String medicineName = '';
 
   final patterns = [
@@ -185,7 +210,7 @@ _MedicineReminderIntent? _extractMedicineReminderIntent(
 }
 
 DateTime? _nextMedicineReminderTime(String rawTime) {
-  final text = rawTime.trim();
+  final text = _normalizeMedicineReminderTimeText(rawTime);
   if (text.isEmpty) return null;
 
   final now = DateTime.now();
@@ -1032,6 +1057,12 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
 
       final doseText =
           dose.isEmpty ? '' : ' - $dose';
+
+      debugPrint(
+        'AHVI_CHAT_MED_REMINDER_PARSED '
+        'med=$medName raw_time=${intent.timeText} '
+        'send_at=${sendAt.toIso8601String()}',
+      );
 
       final ok = await backend.scheduleReminder(
         source: 'medi',

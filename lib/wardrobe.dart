@@ -404,6 +404,7 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint('AHVI_WARDROBE_NAV route_entry scope=wardrobe');
     _loadCachedWardrobe();
     _fetchWardrobeItems();
   }
@@ -642,6 +643,7 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
 
   @override
   void dispose() {
+    debugPrint('AHVI_WARDROBE_NAV dispose_started scope=wardrobe');
     // ✅ FIX: Clear image cache to prevent memory buildup on back-nav
     imageCache.clear();
     imageCache.clearLiveImages();
@@ -653,6 +655,7 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
 
     _keyboardFocusNode.dispose();
     super.dispose();
+    debugPrint('AHVI_WARDROBE_NAV dispose_completed scope=wardrobe');
   }
 
   void _setCat(String cat) {
@@ -867,6 +870,7 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
     // V2 premium detail modal (Works Well With / Best For / Style This).
     // Callbacks reuse the existing wardrobe handlers; _ItemDetailPanel is kept
     // (unused) as a fallback and is not deleted.
+    debugPrint('AHVI_WARDROBE_NAV modal_opened type=item_detail');
     showItemDetailModal(
       context,
       item: item,
@@ -887,7 +891,9 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
       onEdit: () => _showEditSavedItem(item),
       onShare: () => _shareItem(item),
       onRemove: () => _showDeleteConfirm(id),
-    );
+    ).whenComplete(() {
+      debugPrint('AHVI_WARDROBE_NAV modal_dismissal type=item_detail');
+    });
   }
 
   void _showToast(String msg) {

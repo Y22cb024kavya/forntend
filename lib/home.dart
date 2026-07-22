@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:myapp/navigation/ahvi_back_navigation.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter/services.dart';
 import 'package:myapp/boards.dart';
@@ -2002,18 +2003,13 @@ class _Screen4State extends State<Screen4> with TickerProviderStateMixin, Widget
       _dismissOverlay();
       return;
     }
-    Navigator.of(context).maybePop();
   }
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: !_hasTransientUi,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) {
-          _handleBackNavigation();
-        }
-      },
+    return AhviTransientBackScope(
+      hasTransientUi: _hasTransientUi,
+      onDismissTransientUi: _handleBackNavigation,
       child: Scaffold(backgroundColor: _bgPrimary, resizeToAvoidBottomInset: false, body: _buildPhoneScreen()),
     );
   }

@@ -38,7 +38,7 @@ const Color _kDangerColor = Color(0xFFA32D2D);
 // ============================================================
 // PUBLIC ENTRY POINT
 // ============================================================
-void showItemDetailModal(
+Future<void> showItemDetailModal(
   BuildContext context, {
   required WardrobeItem item,
   required List<WardrobeItem> allItems,
@@ -52,7 +52,7 @@ void showItemDetailModal(
   VoidCallback? onSetWearReminder,
   VoidCallback? onSetCareReminder,
 }) {
-  showDialog(
+  return showDialog<void>(
     context: context,
     useRootNavigator: true,
     barrierColor: Colors.black54,

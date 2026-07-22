@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:myapp/navigation/ahvi_back_navigation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:myapp/boards.dart';
@@ -401,7 +402,7 @@ class _MainNavigationShellState extends State<MainNavigationShell>
     ];
     return NotificationListener<ShellBackNavigationNotification>(
       onNotification: (notification) => _handleShellBack(),
-      child: PopScope(
+      child: AhviShellBackScope(
         // 🔧 FIX: was `canPop: _tabHistory.isEmpty`, which toggled true/false
         // based on tab history. That let the OS start a *real* interactive
         // swipe-back / predictive-back transition whenever history was empty,
@@ -412,12 +413,7 @@ class _MainNavigationShellState extends State<MainNavigationShell>
         // gesture is *never* treated as a real route pop here — it's always
         // a clean, instant tab switch via onPopInvokedWithResult, so there's
         // no interactive transition left half-finished.
-        canPop: false,
-        onPopInvokedWithResult: (didPop, result) {
-          if (!didPop) {
-            _handleShellBack();
-          }
-        },
+        onBack: _handleShellBack,
         child: Scaffold(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           // 🔧 FIX: Keyboard open అయినా nav bar పైకి వెళ్ళకూడదు

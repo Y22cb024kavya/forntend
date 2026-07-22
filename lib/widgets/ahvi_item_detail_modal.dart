@@ -9,7 +9,7 @@
 //     with this item (via the existing showAhviStylistChatSheet API)
 //   - Like / Share / Remove in an overflow menu
 //
-// NOTE: WardrobeItem is the existing repo model from wardrobe.dart — not a
+// NOTE: WardrobeItem is the existing repo model from wardrobe.dart ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â not a
 // separate model file. Chat is opened through showAhviStylistChatSheet, the
 // only public entry point the chat widget exposes.
 // ============================================================
@@ -22,9 +22,12 @@ import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/wardrobe.dart'; // WardrobeItem lives here
 import 'package:myapp/services/backend_service.dart'; // styleWardrobeItem
 import 'package:myapp/style_board/board_models.dart';
-import 'package:myapp/style_board/board_renderer.dart';
 import 'package:myapp/style_board/board_layout_engine.dart';
+import 'package:myapp/app_localizations.dart'; // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ Localization
+import 'style_boards.dart'; // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ STYLE BOARDS INTEGRATION (consolidated, same folder)
 import 'pairing_engine.dart';
+import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
+import 'build_outfit_screen.dart'; // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ BUILD OUTFIT SCREEN
 
 // ============================================================
 // SEMANTIC COLORS
@@ -35,7 +38,7 @@ const Color _kDangerColor = Color(0xFFA32D2D);
 // ============================================================
 // PUBLIC ENTRY POINT
 // ============================================================
-void showItemDetailModal(
+Future<void> showItemDetailModal(
   BuildContext context, {
   required WardrobeItem item,
   required List<WardrobeItem> allItems,
@@ -49,7 +52,7 @@ void showItemDetailModal(
   VoidCallback? onSetWearReminder,
   VoidCallback? onSetCareReminder,
 }) {
-  showDialog(
+  return showDialog<void>(
     context: context,
     useRootNavigator: true,
     barrierColor: Colors.black54,
@@ -174,8 +177,14 @@ class _ItemDetailModal extends StatelessWidget {
                         const SizedBox(width: 8),
                         _Pill(
                           label: item.worn == 0
-                              ? 'Never worn'
-                              : 'Worn ${item.worn}x',
+                              ? AppLocalizations.t(
+                                  context,
+                                  'item_detail_never_worn',
+                                )
+                              : AppLocalizations.t(
+                                  context,
+                                  'item_detail_worn_times',
+                                ).replaceAll('{n}', '${item.worn}'),
                           bg: const Color(0xFFF2F2F7),
                           fg: const Color(0xFF8A8A8E),
                         ),
@@ -300,7 +309,10 @@ class _ItemDetailModal extends StatelessWidget {
                           Expanded(
                             child: _SecondaryActionButton(
                               icon: Icons.groups_2_outlined,
-                              label: 'Build Outfit',
+                              label: AppLocalizations.t(
+                                context,
+                                'item_detail_build_outfit',
+                              ),
                               onTap: () => _onBuildOutfit(context, item),
                             ),
                           ),
@@ -312,7 +324,10 @@ class _ItemDetailModal extends StatelessWidget {
                           Expanded(
                             child: _SecondaryActionButton(
                               icon: Icons.check,
-                              label: 'Wore Today',
+                              label: AppLocalizations.t(
+                                context,
+                                'item_detail_wore_today',
+                              ),
                               onTap: () => _onWoreToday(context, item),
                               accentColor: _kSuccessColor,
                             ),
@@ -321,7 +336,7 @@ class _ItemDetailModal extends StatelessWidget {
                           Expanded(
                             child: _SecondaryActionButton(
                               icon: Icons.edit_outlined,
-                              label: 'Edit',
+                              label: AppLocalizations.t(context, 'common_edit'),
                               onTap: onEdit,
                             ),
                           ),
@@ -379,16 +394,37 @@ class _ItemDetailModal extends StatelessWidget {
   // Both show a loading spinner, then a result sheet, and never dead-end.
   // ============================================================
   void _onStyleThis(BuildContext context, WardrobeItem item) {
-    _runStyleCta(context, item, mode: 'style_this');
+    // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ STYLE BOARDS INTEGRATION
+    // Open style boards bottom sheet instead of chat
+    showStyleBoardsSheet(
+      context,
+      selectedItem: item,
+      allItems: allItems,
+      onStyleSelected: () {
+        debugPrint('Style applied for: ${item.name}');
+        // Optional: Add additional logic here
+        // - Show success message
+        // - Update recommendations
+        // - Navigate to outfit builder
+      },
+      onItemReplaced: () {
+        debugPrint('Item replaced in style board');
+        // Handle replacement logic if needed
+      },
+    );
   }
 
   void _onBuildOutfit(BuildContext context, WardrobeItem item) {
-    if (onBuildOutfit != null) {
-      Navigator.of(context).pop();
-      onBuildOutfit!.call();
-      return;
-    }
-    _runStyleCta(context, item, mode: 'build_outfit');
+    Navigator.of(
+      context,
+    ).pop(); // item detail modal close ÃƒÂ Ã‚Â°Ã…Â¡ÃƒÂ Ã‚Â±Ã¢â‚¬Â¡ÃƒÂ Ã‚Â°Ã‚Â¯ÃƒÂ Ã‚Â°Ã‚Â¿
+    showBuildOutfitSheet(
+      context,
+      selectedItem: item,
+      allItems: allItems,
+      onStyleSelected:
+          onBuildOutfit, // optional callback (caller provided ÃƒÂ Ã‚Â°Ã¢â‚¬Â¦ÃƒÂ Ã‚Â°Ã‚Â¯ÃƒÂ Ã‚Â°Ã‚Â¿ÃƒÂ Ã‚Â°Ã‚Â¤ÃƒÂ Ã‚Â±Ã¢â‚¬Â¡ trigger ÃƒÂ Ã‚Â°Ã¢â‚¬Â¦ÃƒÂ Ã‚Â°Ã‚ÂµÃƒÂ Ã‚Â±Ã‚ÂÃƒÂ Ã‚Â°Ã‚Â¤ÃƒÂ Ã‚Â±Ã‚ÂÃƒÂ Ã‚Â°Ã¢â‚¬Å¡ÃƒÂ Ã‚Â°Ã‚Â¦ÃƒÂ Ã‚Â°Ã‚Â¿)
+    );
   }
 
   Future<void> _runStyleCta(
@@ -400,16 +436,35 @@ class _ItemDetailModal extends StatelessWidget {
     final BuildContext appContext = rootNav.context;
     rootNav.pop(); // close the item-detail dialog
 
+    await _performStyleRequest(appContext, item, mode: mode);
+  }
+
+  // ============================================================
+  // Shared style-request runner: shows the loading spinner, calls the
+  // backend, and routes the result to either the "insufficient wardrobe"
+  // alert or the normal result sheet.
+  //
+  // Assumes any modal that needed dismissing (the item-detail dialog) has
+  // already been popped by the caller ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â this lets it be called a second
+  // time directly from the insufficient-wardrobe alert's "Stylize Using
+  // Curated Assets" fallback without trying to pop anything extra.
+  // ============================================================
+  Future<void> _performStyleRequest(
+    BuildContext appContext,
+    WardrobeItem item, {
+    required String mode,
+  }) async {
+    final rootNav = Navigator.of(appContext, rootNavigator: true);
+
     // Loading state.
     showDialog<void>(
       context: appContext,
       barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(color: Colors.white),
-      ),
+      builder: (_) =>
+          const Center(child: CircularProgressIndicator(color: Colors.white)),
     );
 
-    debugPrint('AHVI_MODAL_GUARD start flow=styleCta');
+    debugPrint('AHVI_MODAL_GUARD start flow=styleCta mode=$mode');
     Map<String, dynamic>? result;
     var timedOut = false;
     try {
@@ -418,12 +473,16 @@ class _ItemDetailModal extends StatelessWidget {
       result = await BackendService()
           .styleWardrobeItem(
             itemId: item.id,
-            mode: mode,
+            scenario: mode,
             anchorItem: {
               'item_id': item.id,
               'name': item.name,
               'category': item.cat,
               if (item.displayUrl != null) 'image_url': item.displayUrl,
+              // Display/context hint only: this modal renders the user's own
+              // wardrobe records. The backend re-verifies the item against
+              // the authenticated wardrobe and remains the trust boundary.
+              'source': 'wardrobe',
             },
           )
           .timeout(const Duration(seconds: 15));
@@ -441,18 +500,192 @@ class _ItemDetailModal extends StatelessWidget {
     if (!appContext.mounted) return;
     if (timedOut) {
       ScaffoldMessenger.maybeOf(appContext)?.showSnackBar(
-        const SnackBar(
-          content: Text('This took too long. Please try again.'),
+        SnackBar(
+          content: Text(
+            AppLocalizations.t(appContext, 'item_detail_timeout_message'),
+          ),
         ),
       );
       return;
     }
+
+    // DATA SUFFICIENCY CHECK ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the backend couldn't assemble a real
+    // outfit/board from the user's own pieces. Surface a dedicated alert
+    // (with a one-tap fallback into curated-asset styling) instead of
+    // dropping the user into an empty/broken result sheet.
+    final bool insufficientWardrobe =
+        result?['intent'] == 'insufficient_wardrobe' ||
+        result?['alert'] == true;
+    if (insufficientWardrobe) {
+      _showInsufficientWardrobeAlert(appContext, item: item, result: result!);
+      return;
+    }
+
     _showStyleResultSheet(appContext, mode: mode, item: item, result: result);
   }
 
-  static const String _friendlyFail =
-      'AHVI could not build a complete outfit yet. '
-      'Try adding shoes or accessories.';
+  // ============================================================
+  // INSUFFICIENT WARDROBE ALERT
+  // Shown when response['intent'] == 'insufficient_wardrobe' (or
+  // response['alert'] == true). Displays the backend's own explanation
+  // verbatim and offers:
+  //   - "Got it"                         -> dismiss
+  //   - "Stylize Using Curated Assets"   -> retry in 'style_this' mode,
+  //     which the backend answers from curated styling directions rather
+  //     than requiring real pairings from the user's own wardrobe.
+  // ============================================================
+  void _showInsufficientWardrobeAlert(
+    BuildContext appContext, {
+    required WardrobeItem item,
+    required Map<String, dynamic> result,
+  }) {
+    final String message =
+        (result['context'] ?? result['message'])?.toString() ??
+        AppLocalizations.t(
+          appContext,
+          'item_detail_insufficient_wardrobe_default',
+        );
+
+    showDialog<void>(
+      context: appContext,
+      builder: (dialogContext) {
+        final t = Theme.of(dialogContext).extension<AppThemeTokens>()!;
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 380),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: const BoxDecoration(
+                          color: Color(0x33A32D2D),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.info_outline,
+                          size: 18,
+                          color: _kDangerColor,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            AppLocalizations.t(
+                              dialogContext,
+                              'item_detail_wardrobe_alert_title',
+                            ),
+                            style: GoogleFonts.inter(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF1A1A1A),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    message,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      height: 1.4,
+                      color: const Color(0xFF4A4A4A),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                            side: const BorderSide(color: Color(0xFFE5E5EA)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            AppLocalizations.t(
+                              dialogContext,
+                              'item_detail_wardrobe_alert_dismiss',
+                            ),
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF1A1A1A),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: InkWell(
+                          onTap: () {
+                            Navigator.of(dialogContext).pop();
+                            // Fallback: retry as 'style_this', which the
+                            // backend can answer from curated assets
+                            // instead of the user's own wardrobe pairings.
+                            _performStyleRequest(
+                              appContext,
+                              item,
+                              mode: 'style_this',
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              gradient: LinearGradient(
+                                colors: [t.accent.primary, t.accent.secondary],
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                              ),
+                            ),
+                            child: Text(
+                              AppLocalizations.t(
+                                dialogContext,
+                                'item_detail_wardrobe_alert_stylize',
+                              ),
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   List<Map<String, dynamic>> _asMapList(dynamic value) {
     if (value is List) {
@@ -477,78 +710,135 @@ class _ItemDetailModal extends StatelessWidget {
         : <Map<String, dynamic>>[];
     final Map<String, dynamic>? outfit =
         (mode == 'build_outfit' && result?['outfit'] is Map)
-            ? Map<String, dynamic>.from(result!['outfit'] as Map)
-            : null;
+        ? Map<String, dynamic>.from(result!['outfit'] as Map)
+        : null;
     final bool isAnchorBoard =
         outfit != null && outfit['payload_type'] == 'ANCHOR_OUTFIT_BOARD';
+    final bool hasBuildBoardContract =
+        outfit != null &&
+        (outfit['board_id'] ?? '').toString().trim().isNotEmpty &&
+        outfit['revision'] is num;
+
+    final bool hasStyleBoardContract = directions.any(
+      (direction) =>
+          (direction['board_id'] ?? '').toString().trim().isNotEmpty &&
+          direction['revision'] is num,
+    );
+
+    final bool usesActiveBoard = hasBuildBoardContract || hasStyleBoardContract;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => DraggableScrollableSheet(
-        initialChildSize: isAnchorBoard ? 0.9 : 0.7,
+        initialChildSize: isAnchorBoard || usesActiveBoard ? 0.9 : 0.7,
         minChildSize: 0.4,
         maxChildSize: 0.95,
         expand: false,
-        builder: (ctx, scrollCtrl) => Container(
-          decoration: BoxDecoration(
-            color: isAnchorBoard ? Colors.white : const Color(0xFF14110F),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
-          child: ListView(
-            controller: scrollCtrl,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: isAnchorBoard
-                        ? const Color(0x1A000000)
-                        : Colors.white24,
-                    borderRadius: BorderRadius.circular(2),
+        builder: (ctx, scrollCtrl) {
+          // Theme-aware: follows the app's current light/dark mode instead
+          // of a palette hardcoded to the content type.
+          final colors = _ResultSheetColors.of(ctx);
+          return Container(
+            decoration: BoxDecoration(
+              color: colors.sheetBg,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+            child: ListView(
+              controller: scrollCtrl,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: colors.dragHandle,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                mode == 'style_this' ? 'Style Directions' : 'Build Outfit',
-                style: TextStyle(
-                  color: isAnchorBoard
-                      ? const Color(0xFF1A1A1A)
-                      : Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w600,
+                const SizedBox(height: 16),
+                Text(
+                  mode == 'style_this'
+                      ? AppLocalizations.t(ctx, 'item_detail_style_directions')
+                      : AppLocalizations.t(ctx, 'item_detail_build_outfit'),
+                  style: TextStyle(
+                    color: colors.title,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                item.name,
-                style: TextStyle(
-                  color: isAnchorBoard
-                      ? const Color(0xFF8A8A8E)
-                      : Colors.white60,
-                  fontSize: 13,
+                const SizedBox(height: 2),
+                Text(
+                  item.name,
+                  style: TextStyle(color: colors.subtitle, fontSize: 13),
                 ),
-              ),
-              const SizedBox(height: 16),
-              if (!ok || (message != null && message.isNotEmpty))
-                _StyleNotice(
-                  text: (message != null && message.isNotEmpty)
-                      ? message
-                      : _friendlyFail,
-                ),
-              if (mode == 'style_this')
-                ...directions.map((d) => _StyleDirectionCard(direction: d)),
-              if (mode == 'build_outfit' && isAnchorBoard && outfit != null)
-                _AnchorOutfitBoardCard(outfit: outfit),
-              if (mode == 'build_outfit' && !isAnchorBoard && outfit != null)
-                _StyleDirectionCard(direction: outfit, reasonKey: 'reason'),
-            ],
-          ),
-        ),
+                const SizedBox(height: 16),
+                if (!ok || (message != null && message.isNotEmpty))
+                  _StyleNotice(
+                    text: (message != null && message.isNotEmpty)
+                        ? message
+                        : AppLocalizations.t(ctx, 'item_detail_friendly_fail'),
+                    colors: colors,
+                  ),
+                if (mode == 'style_this' && hasStyleBoardContract)
+                  ...directions.map(
+                    (direction) => Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: AhviOutfitBoardCard(
+                        direction: <String, dynamic>{
+                          ...direction,
+                          'direction_name': direction['title'],
+                          'board_items': direction['items'],
+                        },
+                        width: MediaQuery.sizeOf(ctx).width - 40,
+                      ),
+                    ),
+                  ),
+
+                if (mode == 'style_this' && !hasStyleBoardContract)
+                  ...directions.map(
+                    (direction) => _StyleDirectionCard(
+                      direction: direction,
+                      colors: colors,
+                    ),
+                  ),
+
+                if (mode == 'build_outfit' &&
+                    hasBuildBoardContract &&
+                    outfit != null)
+                  AhviOutfitBoardCard(
+                    direction: <String, dynamic>{
+                      ...outfit,
+                      'direction_name': outfit['title'],
+                      'board_items': outfit['items'],
+                    },
+                    width: MediaQuery.sizeOf(ctx).width - 40,
+                  ),
+
+                if (mode == 'build_outfit' &&
+                    !hasBuildBoardContract &&
+                    isAnchorBoard &&
+                    outfit != null)
+                  _AnchorOutfitBoardCard(outfit: outfit, colors: colors),
+
+                if (mode == 'build_outfit' &&
+                    !hasBuildBoardContract &&
+                    !isAnchorBoard &&
+                    outfit != null)
+                  _StyleDirectionCard(
+                    direction: outfit,
+                    reasonKey: 'reason',
+                    colors: colors,
+                  ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -557,7 +847,12 @@ class _ItemDetailModal extends StatelessWidget {
     onWore?.call();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Marked "${item.name}" as worn today'),
+        content: Text(
+          AppLocalizations.t(
+            context,
+            'item_detail_marked_worn',
+          ).replaceAll('{name}', item.name),
+        ),
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -626,7 +921,7 @@ class _PrimaryStyleThisButton extends StatelessWidget {
             const Icon(Icons.auto_awesome, size: 18, color: Colors.white),
             const SizedBox(width: 8),
             Text(
-              'Style This',
+              AppLocalizations.t(context, 'item_detail_style_this'),
               style: GoogleFonts.inter(
                 fontWeight: FontWeight.w800,
                 fontSize: 15,
@@ -714,7 +1009,7 @@ class _WorksWellWithCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'WORKS WELL WITH',
+            AppLocalizations.t(context, 'item_detail_works_well_with'),
             style: GoogleFonts.inter(
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -725,7 +1020,7 @@ class _WorksWellWithCard extends StatelessWidget {
           const SizedBox(height: 10),
           if (pairings.isEmpty)
             Text(
-              'Add more items to your wardrobe to see pairing ideas.',
+              AppLocalizations.t(context, 'item_detail_works_well_empty'),
               style: GoogleFonts.inter(
                 fontSize: 12,
                 color: const Color(0xFF8A8A8E),
@@ -789,7 +1084,12 @@ class _WorksWellWithCard extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Text(
-                  '+ ${pairings.length - 3} more item${pairings.length - 3 == 1 ? '' : 's'}',
+                  AppLocalizations.t(
+                    context,
+                    pairings.length - 3 == 1
+                        ? 'item_detail_more_items'
+                        : 'item_detail_more_items_plural',
+                  ).replaceAll('{n}', '${pairings.length - 3}'),
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -835,7 +1135,7 @@ class _StyleInsightsCard extends StatelessWidget {
               Icon(Icons.auto_awesome, size: 14, color: t.accent.primary),
               const SizedBox(width: 6),
               Text(
-                'STYLE INSIGHTS',
+                AppLocalizations.t(context, 'item_detail_style_insights'),
                 style: GoogleFonts.inter(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -851,7 +1151,7 @@ class _StyleInsightsCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _InsightColumn(
-                  title: 'Best for',
+                  title: AppLocalizations.t(context, 'item_detail_best_for'),
                   items: bestFor,
                   good: true,
                 ),
@@ -859,7 +1159,7 @@ class _StyleInsightsCard extends StatelessWidget {
               const SizedBox(width: 16),
               Expanded(
                 child: _InsightColumn(
-                  title: 'Avoid',
+                  title: AppLocalizations.t(context, 'item_detail_avoid'),
                   items: avoid,
                   good: false,
                 ),
@@ -902,7 +1202,7 @@ class _InsightColumn extends StatelessWidget {
         const SizedBox(height: 8),
         if (items.isEmpty)
           Text(
-            '—',
+            'ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â',
             style: GoogleFonts.inter(
               fontSize: 13,
               color: const Color(0xFF8A8A8E),
@@ -952,13 +1252,13 @@ class _WardrobeMatchCard extends StatelessWidget {
   Widget build(BuildContext context) {
     String label;
     if (matchCount >= greatThreshold) {
-      label = 'Great match potential';
+      label = AppLocalizations.t(context, 'item_detail_match_great');
     } else if (matchCount >= goodThreshold) {
-      label = 'Good match potential';
+      label = AppLocalizations.t(context, 'item_detail_match_good');
     } else if (matchCount >= limitedThreshold) {
-      label = 'Limited match potential';
+      label = AppLocalizations.t(context, 'item_detail_match_limited');
     } else {
-      label = 'Add more items to see matches';
+      label = AppLocalizations.t(context, 'item_detail_match_add_more');
     }
 
     return Container(
@@ -977,7 +1277,7 @@ class _WardrobeMatchCard extends StatelessWidget {
               Icon(Icons.checkroom, size: 14, color: t.accent.primary),
               const SizedBox(width: 6),
               Text(
-                'WARDROBE MATCH',
+                AppLocalizations.t(context, 'item_detail_wardrobe_match'),
                 style: GoogleFonts.inter(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -989,7 +1289,12 @@ class _WardrobeMatchCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '$matchCount item${matchCount == 1 ? '' : 's'}',
+            AppLocalizations.t(
+              context,
+              matchCount == 1
+                  ? 'item_detail_match_item'
+                  : 'item_detail_match_items',
+            ).replaceAll('{n}', '$matchCount'),
             style: GoogleFonts.inter(
               fontSize: 14,
               fontWeight: FontWeight.w800,
@@ -1131,7 +1436,7 @@ class ItemMoreOptionsSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'More options',
+                    AppLocalizations.t(context, 'item_detail_more_options'),
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
@@ -1144,16 +1449,24 @@ class ItemMoreOptionsSheet extends StatelessWidget {
             const Divider(height: 0.5, color: Color(0xFFF0F0F4)),
             _OptionRow(
               icon: Icons.favorite_border,
-              label: 'Add to favorites',
+              label: AppLocalizations.t(
+                context,
+                'item_detail_add_to_favorites',
+              ),
               onTap: () {
                 Navigator.of(context).pop();
                 onAddToFavorites?.call();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Added to favorites'),
-                    duration: Duration(seconds: 2),
+                  SnackBar(
+                    content: Text(
+                      AppLocalizations.t(
+                        context,
+                        'item_detail_added_favorites',
+                      ),
+                    ),
+                    duration: const Duration(seconds: 2),
                     behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
+                    shape: const RoundedRectangleBorder(
                       borderRadius: BorderRadius.all(Radius.circular(12)),
                     ),
                   ),
@@ -1162,7 +1475,7 @@ class ItemMoreOptionsSheet extends StatelessWidget {
             ),
             _OptionRow(
               icon: Icons.history,
-              label: 'Wear history',
+              label: AppLocalizations.t(context, 'item_detail_wear_history'),
               onTap: () {
                 Navigator.of(context).pop();
                 onViewWearHistory?.call();
@@ -1170,7 +1483,7 @@ class ItemMoreOptionsSheet extends StatelessWidget {
             ),
             _OptionRow(
               icon: Icons.ios_share,
-              label: 'Share',
+              label: AppLocalizations.t(context, 'item_detail_share'),
               onTap: () {
                 Navigator.of(context).pop();
                 onShare?.call();
@@ -1178,7 +1491,7 @@ class ItemMoreOptionsSheet extends StatelessWidget {
             ),
             _OptionRow(
               icon: Icons.notifications_outlined,
-              label: 'Remind me to wear it',
+              label: AppLocalizations.t(context, 'item_detail_remind_wear'),
               onTap: () {
                 Navigator.of(context).pop();
                 onSetWearReminder?.call();
@@ -1186,7 +1499,7 @@ class ItemMoreOptionsSheet extends StatelessWidget {
             ),
             _OptionRow(
               icon: Icons.local_laundry_service_outlined,
-              label: 'Care reminder',
+              label: AppLocalizations.t(context, 'item_detail_care_reminder'),
               onTap: () {
                 Navigator.of(context).pop();
                 onSetCareReminder?.call();
@@ -1194,7 +1507,10 @@ class ItemMoreOptionsSheet extends StatelessWidget {
             ),
             _OptionRow(
               icon: Icons.delete_outline,
-              label: 'Delete permanently',
+              label: AppLocalizations.t(
+                context,
+                'item_detail_delete_permanently',
+              ),
               color: _kDangerColor,
               showDivider: false,
               onTap: onDelete,
@@ -1213,7 +1529,7 @@ class ItemMoreOptionsSheet extends StatelessWidget {
                     ),
                   ),
                   child: Text(
-                    'Close',
+                    AppLocalizations.t(context, 'item_detail_close'),
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
@@ -1331,7 +1647,12 @@ class _AllPairingsSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${pairings.length} pairing match${pairings.length == 1 ? '' : 'es'}',
+                    AppLocalizations.t(
+                      context,
+                      pairings.length == 1
+                          ? 'item_detail_pairing_match'
+                          : 'item_detail_pairing_matches',
+                    ).replaceAll('{n}', '${pairings.length}'),
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
@@ -1434,7 +1755,7 @@ class _AllPairingsSheet extends StatelessWidget {
                     ),
                   ),
                   child: Text(
-                    'Close',
+                    AppLocalizations.t(context, 'item_detail_close'),
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
@@ -1453,10 +1774,124 @@ class _AllPairingsSheet extends StatelessWidget {
 
 // ============================================================
 // STYLE RESULT SHEET WIDGETS (Style This / Build Outfit)
+//
+// Theme-aware: these sheets used to be hardcoded to a fixed dark
+// palette (or fixed white, for the anchor board). They now follow the
+// app's ambient Theme brightness via _ResultSheetColors.of(context), so
+// the sheet matches whichever mode (light/dark) the rest of the app is
+// currently in.
 // ============================================================
+class _ResultSheetColors {
+  final bool isDark;
+  final Color sheetBg;
+  final Color dragHandle;
+  final Color title;
+  final Color subtitle;
+  final Color cardBg;
+  final Color cardBorder;
+  final Color cardTitle;
+  final Color cardBody;
+  final Color cardMuted;
+  final Color chipBg;
+  final Color chipBorder;
+  final Color chipText;
+  final Color chipAccentBg;
+  final Color chipAccentBorder;
+  final Color chipAccentText;
+  final Color noticeBg;
+  final Color noticeText;
+  // The flat-lay board canvas intentionally stays a light, neutral
+  // "photography backdrop" in both modes ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the tiles use dark drop
+  // shadows that read correctly only against a light surface, and
+  // outfit-board UIs conventionally keep the image canvas light even
+  // inside a dark shell (Pinterest, Instagram, etc). Flip this if you'd
+  // rather the whole board go dark too.
+  final Color boardCanvasBg;
+  final Color anchorItemThumbBg;
+  final Color anchorItemName;
+
+  const _ResultSheetColors({
+    required this.isDark,
+    required this.sheetBg,
+    required this.dragHandle,
+    required this.title,
+    required this.subtitle,
+    required this.cardBg,
+    required this.cardBorder,
+    required this.cardTitle,
+    required this.cardBody,
+    required this.cardMuted,
+    required this.chipBg,
+    required this.chipBorder,
+    required this.chipText,
+    required this.chipAccentBg,
+    required this.chipAccentBorder,
+    required this.chipAccentText,
+    required this.noticeBg,
+    required this.noticeText,
+    required this.boardCanvasBg,
+    required this.anchorItemThumbBg,
+    required this.anchorItemName,
+  });
+
+  factory _ResultSheetColors.of(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark ? _dark : _light;
+  }
+
+  static const _dark = _ResultSheetColors(
+    isDark: true,
+    sheetBg: Color(0xFF14110F),
+    dragHandle: Colors.white24,
+    title: Colors.white,
+    subtitle: Colors.white60,
+    cardBg: Color(0x0DFFFFFF), // Colors.white @ 5%
+    cardBorder: Colors.white12,
+    cardTitle: Colors.white,
+    cardBody: Colors.white60,
+    cardMuted: Colors.white38,
+    chipBg: Color(0x14FFFFFF), // Colors.white @ 8%
+    chipBorder: Colors.white12,
+    chipText: Colors.white,
+    chipAccentBg: Color(0x332E7D5B),
+    chipAccentBorder: Color(0x662E7D5B),
+    chipAccentText: Color(0xFF8FE3BE),
+    noticeBg: Color(0x33A32D2D),
+    noticeText: Colors.white70,
+    boardCanvasBg: Colors.white,
+    anchorItemThumbBg: Color(0xFFF7F4EE),
+    anchorItemName: Colors.white,
+  );
+
+  static const _light = _ResultSheetColors(
+    isDark: false,
+    sheetBg: Colors.white,
+    dragHandle: Color(0x1A000000),
+    title: Color(0xFF1A1A1A),
+    subtitle: Color(0xFF8A8A8E),
+    cardBg: Color(0xFFF7F7FA),
+    cardBorder: Color(0xFFEDEDF2),
+    cardTitle: Color(0xFF1A1A1A),
+    cardBody: Color(0xFF6B6B6B),
+    cardMuted: Color(0xFF8A8A8E),
+    chipBg: Color(0xFFF2F2F7),
+    chipBorder: Color(0xFFE5E5EA),
+    chipText: Color(0xFF1A1A1A),
+    chipAccentBg: Color(0x1A2E7D5B),
+    chipAccentBorder: Color(0x662E7D5B),
+    chipAccentText: Color(0xFF1F8F5F),
+    noticeBg: Color(0x1AA32D2D),
+    noticeText: Color(0xFF7A2323),
+    boardCanvasBg: Colors.white,
+    anchorItemThumbBg: Color(0xFFF7F4EE),
+    anchorItemName: Color(0xFF1A1A1A),
+  );
+}
+
 class _StyleNotice extends StatelessWidget {
   final String text;
-  const _StyleNotice({required this.text});
+  final _ResultSheetColors colors;
+  const _StyleNotice({required this.text, required this.colors});
 
   @override
   Widget build(BuildContext context) {
@@ -1464,12 +1899,12 @@ class _StyleNotice extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0x33A32D2D),
+        color: colors.noticeBg,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
         text,
-        style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.35),
+        style: TextStyle(color: colors.noticeText, fontSize: 13, height: 1.35),
       ),
     );
   }
@@ -1478,8 +1913,10 @@ class _StyleNotice extends StatelessWidget {
 class _StyleDirectionCard extends StatelessWidget {
   final Map<String, dynamic> direction;
   final String reasonKey;
+  final _ResultSheetColors colors;
   const _StyleDirectionCard({
     required this.direction,
+    required this.colors,
     this.reasonKey = 'styling_note',
   });
 
@@ -1509,30 +1946,34 @@ class _StyleDirectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = (direction['title'] ?? 'Your Look').toString();
+    final title =
+        (direction['title'] ??
+                AppLocalizations.t(context, 'item_detail_your_look'))
+            .toString();
     final items = _names(direction['items']);
     final missing = _missing(direction['missing_items']);
-    final note = (direction[reasonKey] ??
-            direction['styling_note'] ??
-            direction['reason'] ??
-            '')
-        .toString();
+    final note =
+        (direction[reasonKey] ??
+                direction['styling_note'] ??
+                direction['reason'] ??
+                '')
+            .toString();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
+        color: colors.cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white12),
+        border: Border.all(color: colors.cardBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: colors.cardTitle,
               fontSize: 16,
               fontWeight: FontWeight.w600,
             ),
@@ -1541,8 +1982,8 @@ class _StyleDirectionCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               note,
-              style: const TextStyle(
-                color: Colors.white60,
+              style: TextStyle(
+                color: colors.cardBody,
                 fontSize: 13,
                 height: 1.35,
               ),
@@ -1550,10 +1991,10 @@ class _StyleDirectionCard extends StatelessWidget {
           ],
           if (items.isNotEmpty) ...[
             const SizedBox(height: 12),
-            const Text(
-              'WEAR',
+            Text(
+              AppLocalizations.t(context, 'item_detail_wear_label'),
               style: TextStyle(
-                color: Colors.white38,
+                color: colors.cardMuted,
                 fontSize: 11,
                 letterSpacing: 0.6,
               ),
@@ -1562,16 +2003,19 @@ class _StyleDirectionCard extends StatelessWidget {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children:
-                  items.map((n) => _StyleChip(label: n, accent: false)).toList(),
+              children: items
+                  .map(
+                    (n) => _StyleChip(label: n, accent: false, colors: colors),
+                  )
+                  .toList(),
             ),
           ],
           if (missing.isNotEmpty) ...[
             const SizedBox(height: 12),
-            const Text(
-              'MISSING - SHOP THESE',
+            Text(
+              AppLocalizations.t(context, 'item_detail_missing_shop_these'),
               style: TextStyle(
-                color: Colors.white38,
+                color: colors.cardMuted,
                 fontSize: 11,
                 letterSpacing: 0.6,
               ),
@@ -1580,8 +2024,11 @@ class _StyleDirectionCard extends StatelessWidget {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children:
-                  missing.map((n) => _StyleChip(label: n, accent: true)).toList(),
+              children: missing
+                  .map(
+                    (n) => _StyleChip(label: n, accent: true, colors: colors),
+                  )
+                  .toList(),
             ),
           ],
         ],
@@ -1593,24 +2040,28 @@ class _StyleDirectionCard extends StatelessWidget {
 class _StyleChip extends StatelessWidget {
   final String label;
   final bool accent;
-  const _StyleChip({required this.label, required this.accent});
+  final _ResultSheetColors colors;
+  const _StyleChip({
+    required this.label,
+    required this.accent,
+    required this.colors,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color:
-            accent ? const Color(0x332E7D5B) : Colors.white.withOpacity(0.08),
+        color: accent ? colors.chipAccentBg : colors.chipBg,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: accent ? const Color(0x662E7D5B) : Colors.white12,
+          color: accent ? colors.chipAccentBorder : colors.chipBorder,
         ),
       ),
       child: Text(
         label,
         style: TextStyle(
-          color: accent ? const Color(0xFF8FE3BE) : Colors.white,
+          color: accent ? colors.chipAccentText : colors.chipText,
           fontSize: 13,
         ),
       ),
@@ -1619,7 +2070,7 @@ class _StyleChip extends StatelessWidget {
 }
 
 // ============================================================
-// ANCHOR OUTFIT BOARD — visual 9:16 board with source badges
+// ANCHOR OUTFIT BOARD ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â visual 9:16 board with source badges
 // ============================================================
 
 BoardItemRole _anchorBoardRoleFromRaw(Map<String, dynamic> raw) {
@@ -1654,24 +2105,19 @@ BoardItemRole _anchorBoardRoleFromRaw(Map<String, dynamic> raw) {
 
 class _AnchorOutfitBoardCard extends StatelessWidget {
   final Map<String, dynamic> outfit;
-  const _AnchorOutfitBoardCard({required this.outfit});
+  final _ResultSheetColors colors;
+  const _AnchorOutfitBoardCard({required this.outfit, required this.colors});
 
   List<Map<String, dynamic>> _rawItems() {
     final v = outfit['board_items'] ?? outfit['items'];
     if (v is! List) return <Map<String, dynamic>>[];
-    return v
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
+    return v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
   List<Map<String, dynamic>> _missingItems() {
     final v = outfit['missing_items'];
     if (v is! List) return <Map<String, dynamic>>[];
-    return v
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
+    return v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
   @override
@@ -1679,7 +2125,9 @@ class _AnchorOutfitBoardCard extends StatelessWidget {
     final rawItems = _rawItems();
     final missing = _missingItems();
     final stylingNote =
-        outfit['styling_notes']?.toString() ?? outfit['reason']?.toString() ?? '';
+        outfit['styling_notes']?.toString() ??
+        outfit['reason']?.toString() ??
+        '';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1690,31 +2138,27 @@ class _AnchorOutfitBoardCard extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: Container(
-              color: Colors.white,
+              color: colors.boardCanvasBg,
               child: _AnchorBoardCanvas(items: rawItems),
             ),
           ),
         ),
         const SizedBox(height: 16),
         // item list with source badges
-        ...rawItems.map((raw) => _AnchorItemRow(raw: raw)),
+        ...rawItems.map((raw) => _AnchorItemRow(raw: raw, colors: colors)),
         if (stylingNote.isNotEmpty) ...[
           const SizedBox(height: 14),
           Text(
             stylingNote,
-            style: const TextStyle(
-              color: Color(0xFF3C3C43),
-              fontSize: 13,
-              height: 1.4,
-            ),
+            style: TextStyle(color: colors.cardBody, fontSize: 13, height: 1.4),
           ),
         ],
         if (missing.isNotEmpty) ...[
           const SizedBox(height: 14),
-          const Text(
-            'MISSING — SHOP THESE',
+          Text(
+            AppLocalizations.t(context, 'item_detail_missing_shop_these'),
             style: TextStyle(
-              color: Color(0xFF8A8A8E),
+              color: colors.cardMuted,
               fontSize: 11,
               letterSpacing: 0.6,
             ),
@@ -1724,9 +2168,8 @@ class _AnchorOutfitBoardCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: missing.map((m) {
-              final label =
-                  (m['label'] ?? m['name'] ?? '').toString().trim();
-              return _StyleChip(label: label, accent: true);
+              final label = (m['label'] ?? m['name'] ?? '').toString().trim();
+              return _StyleChip(label: label, accent: true, colors: colors);
             }).toList(),
           ),
         ],
@@ -1738,7 +2181,8 @@ class _AnchorOutfitBoardCard extends StatelessWidget {
 
 class _AnchorItemRow extends StatelessWidget {
   final Map<String, dynamic> raw;
-  const _AnchorItemRow({required this.raw});
+  final _ResultSheetColors colors;
+  const _AnchorItemRow({required this.raw, required this.colors});
 
   @override
   Widget build(BuildContext context) {
@@ -1747,10 +2191,16 @@ class _AnchorItemRow extends StatelessWidget {
     final source = raw['source']?.toString() ?? 'wardrobe';
     final imageUrl = raw['image_url']?.toString() ?? '';
 
-    final sourceLabel = isAnchor ? 'Your piece' : (source == 'wardrobe' ? 'Wardrobe' : 'Suggested');
+    final sourceLabel = isAnchor
+        ? AppLocalizations.t(context, 'item_detail_source_your_piece')
+        : (source == 'wardrobe'
+              ? AppLocalizations.t(context, 'item_detail_source_wardrobe')
+              : AppLocalizations.t(context, 'item_detail_source_suggested'));
     final sourceColor = isAnchor
         ? const Color(0xFF7B61FF)
-        : (source == 'wardrobe' ? const Color(0xFF34C759) : const Color(0xFFFF9500));
+        : (source == 'wardrobe'
+              ? const Color(0xFF34C759)
+              : const Color(0xFFFF9500));
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -1762,18 +2212,22 @@ class _AnchorItemRow extends StatelessWidget {
             child: Container(
               width: 44,
               height: 44,
-              color: const Color(0xFFF7F4EE),
+              color: colors.anchorItemThumbBg,
               child: imageUrl.isNotEmpty
                   ? Image.network(imageUrl, fit: BoxFit.contain)
-                  : const Icon(Icons.checkroom, size: 20, color: Color(0xFFBFBFD6)),
+                  : const Icon(
+                      Icons.checkroom,
+                      size: 20,
+                      color: Color(0xFFBFBFD6),
+                    ),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               name,
-              style: const TextStyle(
-                color: Color(0xFF1A1A1A),
+              style: TextStyle(
+                color: colors.anchorItemName,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
@@ -1805,7 +2259,7 @@ class _AnchorItemRow extends StatelessWidget {
 }
 
 // ============================================================
-// FLAT-LAY BOARD CANVAS — absolute-positioned 9:16 layout
+// FLAT-LAY BOARD CANVAS ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â absolute-positioned 9:16 layout
 // ============================================================
 
 class _TileCfg {
@@ -1822,38 +2276,45 @@ class _AnchorBoardCanvas extends StatelessWidget {
   const _AnchorBoardCanvas({required this.items});
 
   static const _l3Classic = <String, _TileCfg>{
-    'top':      _TileCfg(0.08, 0.04, 0.62, 0.40, 1),
-    'bottom':   _TileCfg(0.36, 0.46, 0.54, 0.42, 2),
+    'top': _TileCfg(0.08, 0.04, 0.62, 0.40, 1),
+    'bottom': _TileCfg(0.36, 0.46, 0.54, 0.42, 2),
     'footwear': _TileCfg(0.08, 0.76, 0.44, 0.20, 3),
   };
   static const _l3Dress = <String, _TileCfg>{
-    'dress':     _TileCfg(0.10, 0.04, 0.58, 0.64, 1),
-    'footwear':  _TileCfg(0.08, 0.72, 0.40, 0.22, 2),
+    'dress': _TileCfg(0.10, 0.04, 0.58, 0.64, 1),
+    'footwear': _TileCfg(0.08, 0.72, 0.40, 0.22, 2),
     'accessory': _TileCfg(0.52, 0.68, 0.40, 0.26, 2),
   };
   static const _l4Classic = <String, _TileCfg>{
-    'top':       _TileCfg(0.08, 0.04, 0.55, 0.34, 1),
+    'top': _TileCfg(0.08, 0.04, 0.55, 0.34, 1),
     'accessory': _TileCfg(0.55, 0.06, 0.38, 0.26, 1),
-    'bottom':    _TileCfg(0.34, 0.42, 0.52, 0.38, 2),
-    'footwear':  _TileCfg(0.08, 0.72, 0.42, 0.22, 3),
+    'bottom': _TileCfg(0.34, 0.42, 0.52, 0.38, 2),
+    'footwear': _TileCfg(0.08, 0.72, 0.42, 0.22, 3),
   };
   static const _l5 = <String, _TileCfg>{
     'outerwear': _TileCfg(0.06, 0.04, 0.44, 0.30, 1),
-    'top':       _TileCfg(0.48, 0.04, 0.46, 0.28, 1),
-    'bottom':    _TileCfg(0.24, 0.36, 0.52, 0.36, 2),
-    'footwear':  _TileCfg(0.06, 0.68, 0.40, 0.22, 3),
+    'top': _TileCfg(0.48, 0.04, 0.46, 0.28, 1),
+    'bottom': _TileCfg(0.24, 0.36, 0.52, 0.36, 2),
+    'footwear': _TileCfg(0.06, 0.68, 0.40, 0.22, 3),
     'accessory': _TileCfg(0.50, 0.64, 0.42, 0.28, 2),
   };
 
   static String _roleKey(BoardItemRole r) {
     switch (r) {
-      case BoardItemRole.top: return 'top';
-      case BoardItemRole.bottom: return 'bottom';
-      case BoardItemRole.footwear: return 'footwear';
-      case BoardItemRole.outerwear: return 'outerwear';
-      case BoardItemRole.dress: return 'dress';
-      case BoardItemRole.accessory: return 'accessory';
-      case BoardItemRole.unknown: return 'unknown';
+      case BoardItemRole.top:
+        return 'top';
+      case BoardItemRole.bottom:
+        return 'bottom';
+      case BoardItemRole.footwear:
+        return 'footwear';
+      case BoardItemRole.outerwear:
+        return 'outerwear';
+      case BoardItemRole.dress:
+        return 'dress';
+      case BoardItemRole.accessory:
+        return 'accessory';
+      case BoardItemRole.unknown:
+        return 'unknown';
     }
   }
 
@@ -1878,45 +2339,60 @@ class _AnchorBoardCanvas extends StatelessWidget {
       }
     }
     final ordered = slots.entries.toList()
-      ..sort((a, b) =>
-          template[a.key]!.zIndex.compareTo(template[b.key]!.zIndex));
+      ..sort(
+        (a, b) => template[a.key]!.zIndex.compareTo(template[b.key]!.zIndex),
+      );
 
-    return LayoutBuilder(builder: (ctx, constraints) {
-      final W = constraints.maxWidth;
-      final H = constraints.maxHeight;
-      if (W <= 0 || H <= 0 || !W.isFinite || !H.isFinite) {
-        return const SizedBox.shrink();
-      }
-      debugPrint(
-        'AHVI_BOARD_CANVAS slots=${ordered.length} W=${W.toStringAsFixed(0)} H=${H.toStringAsFixed(0)}',
-      );
-      return Stack(
-        clipBehavior: Clip.hardEdge,
-        children: ordered.map((entry) {
-          final cfg = template[entry.key]!;
-          final left = cfg.left * W;
-          final top = cfg.top * H;
-          final w = cfg.width * W;
-          final h = cfg.height * H;
-          if (!left.isFinite || !top.isFinite || !w.isFinite || !h.isFinite || w <= 0 || h <= 0) {
-            return const SizedBox.shrink();
-          }
-          final raw = entry.value;
-          final imageUrl = raw['image_url']?.toString() ?? '';
-          final isAnchor = raw['is_anchor'] == true;
-          final name = raw['name']?.toString() ?? '';
-          debugPrint(
-            'AHVI_BOARD_TILE role=${entry.key} name=$name '
-            'x=${left.toStringAsFixed(1)} y=${top.toStringAsFixed(1)} '
-            'w=${w.toStringAsFixed(1)} h=${h.toStringAsFixed(1)} z=${cfg.zIndex} anchor=$isAnchor',
-          );
-          return Positioned(
-            left: left, top: top, width: w, height: h,
-            child: _FlatLayTile(imageUrl: imageUrl, isAnchor: isAnchor, name: name),
-          );
-        }).toList(),
-      );
-    });
+    return LayoutBuilder(
+      builder: (ctx, constraints) {
+        final W = constraints.maxWidth;
+        final H = constraints.maxHeight;
+        if (W <= 0 || H <= 0 || !W.isFinite || !H.isFinite) {
+          return const SizedBox.shrink();
+        }
+        debugPrint(
+          'AHVI_BOARD_CANVAS slots=${ordered.length} W=${W.toStringAsFixed(0)} H=${H.toStringAsFixed(0)}',
+        );
+        return Stack(
+          clipBehavior: Clip.hardEdge,
+          children: ordered.map((entry) {
+            final cfg = template[entry.key]!;
+            final left = cfg.left * W;
+            final top = cfg.top * H;
+            final w = cfg.width * W;
+            final h = cfg.height * H;
+            if (!left.isFinite ||
+                !top.isFinite ||
+                !w.isFinite ||
+                !h.isFinite ||
+                w <= 0 ||
+                h <= 0) {
+              return const SizedBox.shrink();
+            }
+            final raw = entry.value;
+            final imageUrl = raw['image_url']?.toString() ?? '';
+            final isAnchor = raw['is_anchor'] == true;
+            final name = raw['name']?.toString() ?? '';
+            debugPrint(
+              'AHVI_BOARD_TILE role=${entry.key} name=$name '
+              'x=${left.toStringAsFixed(1)} y=${top.toStringAsFixed(1)} '
+              'w=${w.toStringAsFixed(1)} h=${h.toStringAsFixed(1)} z=${cfg.zIndex} anchor=$isAnchor',
+            );
+            return Positioned(
+              left: left,
+              top: top,
+              width: w,
+              height: h,
+              child: _FlatLayTile(
+                imageUrl: imageUrl,
+                isAnchor: isAnchor,
+                name: name,
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
   }
 }
 
@@ -1924,7 +2400,11 @@ class _FlatLayTile extends StatelessWidget {
   final String imageUrl;
   final bool isAnchor;
   final String name;
-  const _FlatLayTile({required this.imageUrl, required this.isAnchor, required this.name});
+  const _FlatLayTile({
+    required this.imageUrl,
+    required this.isAnchor,
+    required this.name,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1935,7 +2415,11 @@ class _FlatLayTile extends StatelessWidget {
             color: Colors.white,
             borderRadius: BorderRadius.circular(10),
             boxShadow: const [
-              BoxShadow(color: Color(0x1A000000), blurRadius: 12, offset: Offset(0, 4)),
+              BoxShadow(
+                color: Color(0x1A000000),
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
             ],
           ),
           child: ClipRRect(
@@ -1947,28 +2431,39 @@ class _FlatLayTile extends StatelessWidget {
                     width: double.infinity,
                     height: double.infinity,
                     errorBuilder: (_, __, ___) => const Center(
-                      child: Icon(Icons.checkroom, color: Color(0xFFD0CAC3), size: 32),
+                      child: Icon(
+                        Icons.checkroom,
+                        color: Color(0xFFD0CAC3),
+                        size: 32,
+                      ),
                     ),
                   )
                 : const Center(
-                    child: Icon(Icons.checkroom, color: Color(0xFFD0CAC3), size: 32),
+                    child: Icon(
+                      Icons.checkroom,
+                      color: Color(0xFFD0CAC3),
+                      size: 32,
+                    ),
                   ),
           ),
         ),
         if (isAnchor)
           Positioned(
-            top: 6, left: 6,
+            top: 6,
+            left: 6,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               decoration: BoxDecoration(
                 color: const Color(0xFF7B61FF),
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: const Text(
-                'Yours',
-                style: TextStyle(
-                  color: Colors.white, fontSize: 9,
-                  fontWeight: FontWeight.w700, letterSpacing: 0.2,
+              child: Text(
+                AppLocalizations.t(context, 'item_detail_yours_badge'),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
                 ),
               ),
             ),

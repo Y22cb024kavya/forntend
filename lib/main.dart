@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:myapp/navigation/ahvi_back_navigation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:myapp/boards.dart';
@@ -21,6 +22,7 @@ import 'package:myapp/skincare.dart';
 import 'package:myapp/bills_page.dart';
 import 'package:myapp/calendar.dart';
 import 'package:myapp/diet_fitness.dart';
+import 'package:myapp/medi_tracker.dart';
 
 import 'package:myapp/theme/accent_palette.dart';
 import 'package:myapp/theme/base_theme.dart';
@@ -36,6 +38,24 @@ import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart'; // 🆕 Localization
 import 'package:myapp/app_localizations.dart'; // 🆕 Localization
 
+final GlobalKey<NavigatorState> ahviNavigatorKey =
+    GlobalKey<NavigatorState>();
+
+void _openMediFromNotification(Map<String, String> data) {
+  void push() {
+    final navigator = ahviNavigatorKey.currentState;
+    if (navigator == null) return;
+    navigator.pushNamed(AppRoutes.medi, arguments: data);
+  }
+
+  if (ahviNavigatorKey.currentState == null) {
+    Future<void>.delayed(const Duration(milliseconds: 600), push);
+    return;
+  }
+
+  push();
+}
+
 Future<void> main() async {
   // Ensure Flutter bindings are initialized before calling async methods
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,6 +64,9 @@ Future<void> main() async {
   await dotenv.load(fileName: ".env");
   Env.debugPrintMissingConfig();
   Env.debugPrintRuntimeTarget();
+  AhviNotificationService.instance.configureMediReminderHandler(
+    _openMediFromNotification,
+  );
 
   runApp(const MyApp());
 }
@@ -149,6 +172,7 @@ class _MyAppState extends State<MyApp> {
             selector: (_, p) => p.state.lang,
             builder: (context, lang, _) {
               return MaterialApp(
+                navigatorKey: ahviNavigatorKey,
                 debugShowCheckedModeBanner: false,
                 theme: lightTheme,
                 darkTheme: darkTheme,
@@ -181,7 +205,7 @@ class _MyAppState extends State<MyApp> {
                 routes: {
                   AppRoutes.intro: (_) => const SignInScreen(),
                   AppRoutes.signin: (_) => const SignInScreen(),
-                  AppRoutes.emailAuth: (_) => const EmailAuthScreen(),
+                  AppRoutes.emailAuth: (_) => const EmailOTPLoginScreen(),
                   AppRoutes.main: (_) => const MainNavigationShell(),
                   AppRoutes.onboarding1: (_) => const Screen1(),
                   AppRoutes.onboarding2: (_) => const Screen2(),
@@ -193,6 +217,8 @@ class _MyAppState extends State<MyApp> {
                   AppRoutes.wardrobe: (_) => const WardrobeScreen(),
                   AppRoutes.calendar: (_) => const CalendarShell(),
                   AppRoutes.boards: (_) => const BoardsScreen(),
+                  AppRoutes.medi: (_) =>
+                      const MediTrackScreen(fromHome: true),
                 },
 
                 // DailyWear uses PageRouteBuilder to skip the default
@@ -268,7 +294,7 @@ class _MainNavigationShellState extends State<MainNavigationShell>
 
     _navRiseCtrls = List.generate(
       5,
-      (i) => AnimationController(vsync: this, duration: _A.normal, value: 0.0),
+          (i) => AnimationController(vsync: this, duration: _A.normal, value: 0.0),
     );
 
     // Home tab (index 0) active గా start చేయి
@@ -312,6 +338,15 @@ class _MainNavigationShellState extends State<MainNavigationShell>
       _switchToIndex(previousIndex, addToHistory: false);
       return true;
     }
+    // No tab history — if we're not already on Home (0), go there.
+    // This prevents Android's predictive-back gesture from closing the
+    // app when the user back-swipes on Wardrobe (or any non-Home tab)
+    // without having navigated from another tab first.
+    if (_currentIndex != 0) {
+      _switchToIndex(0, addToHistory: false);
+      return true;
+    }
+    // Already on Home with no history → allow the OS to exit the app normally.
     return false;
   }
 
@@ -341,16 +376,16 @@ class _MainNavigationShellState extends State<MainNavigationShell>
     final navItems = <({IconData icon, String label})>[
       (icon: Icons.home_outlined, label: l?.translate('home') ?? 'Home'),
       (
-        icon: Icons.dry_cleaning_outlined,
-        label: l?.translate('wardrobe') ?? 'Wardrobe',
+      icon: Icons.dry_cleaning_outlined,
+      label: l?.translate('wardrobe') ?? 'Wardrobe',
       ),
       (
-        icon: Icons.grid_view_rounded,
-        label: l?.translate('planner') ?? 'Planner',
+      icon: Icons.grid_view_rounded,
+      label: l?.translate('planner') ?? 'Planner',
       ),
       (
-        icon: Icons.explore_outlined,
-        label: l?.translate('explore') ?? 'Explore',
+      icon: Icons.explore_outlined,
+      label: l?.translate('explore') ?? 'Explore',
       ),
     ];
 
@@ -367,13 +402,18 @@ class _MainNavigationShellState extends State<MainNavigationShell>
     ];
     return NotificationListener<ShellBackNavigationNotification>(
       onNotification: (notification) => _handleShellBack(),
-      child: PopScope(
-        canPop: _tabHistory.isEmpty,
-        onPopInvokedWithResult: (didPop, result) {
-          if (!didPop) {
-            _handleShellBack();
-          }
-        },
+      child: AhviShellBackScope(
+        // 🔧 FIX: was `canPop: _tabHistory.isEmpty`, which toggled true/false
+        // based on tab history. That let the OS start a *real* interactive
+        // swipe-back / predictive-back transition whenever history was empty,
+        // then flip to false mid-gesture in other cases — the interactive
+        // pop animation and our manual IndexedStack index swap (setState in
+        // _switchToIndex) would race, leaving the screen visually stuck
+        // half-swiped. Keeping canPop constantly false means the swipe/back
+        // gesture is *never* treated as a real route pop here — it's always
+        // a clean, instant tab switch via onPopInvokedWithResult, so there's
+        // no interactive transition left half-finished.
+        onBack: _handleShellBack,
         child: Scaffold(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           // 🔧 FIX: Keyboard open అయినా nav bar పైకి వెళ్ళకూడదు
@@ -478,31 +518,31 @@ class _MainNavigationShellState extends State<MainNavigationShell>
                                 height: 44,
                                 decoration: active
                                     ? BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                          colors: [
-                                            t.accent.primary,
-                                            t.accent.secondary,
-                                          ],
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: t.accent.primary.withValues(
-                                              alpha: 0.45,
-                                            ),
-                                            blurRadius: 16,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                          BoxShadow(
-                                            color: t.accent.primary.withValues(
-                                              alpha: 0.25,
-                                            ),
-                                            blurRadius: 28,
-                                          ),
-                                        ],
-                                      )
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      t.accent.primary,
+                                      t.accent.secondary,
+                                    ],
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: t.accent.primary.withValues(
+                                        alpha: 0.45,
+                                      ),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                    BoxShadow(
+                                      color: t.accent.primary.withValues(
+                                        alpha: 0.25,
+                                      ),
+                                      blurRadius: 28,
+                                    ),
+                                  ],
+                                )
                                     : null,
                                 child: Icon(
                                   item.icon,
@@ -844,12 +884,12 @@ class _LensOptionState extends State<_LensOption> {
           boxShadow: _pressed
               ? []
               : [
-                  BoxShadow(
-                    color: widget.color.withValues(alpha: 0.07),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+            BoxShadow(
+              color: widget.color.withValues(alpha: 0.07),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Row(
           children: [
@@ -1057,10 +1097,10 @@ class _NavPillPainter extends CustomPainter {
   @override
   bool shouldRepaint(_NavPillPainter old) =>
       old.activeIdx != activeIdx ||
-      old.bulgeT != bulgeT ||
-      old.fillColor != fillColor ||
-      old.glowColor != glowColor ||
-      old.borderColor != borderColor;
+          old.bulgeT != bulgeT ||
+          old.fillColor != fillColor ||
+          old.glowColor != glowColor ||
+          old.borderColor != borderColor;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1145,6 +1185,17 @@ class _AuthWrapperState extends State<AuthWrapper> {
         } catch (e) {
           debugPrint('Cold-start profile hydration failed: $e');
           profile = appwrite.cachedUserProfileData;
+        }
+
+        // AHVI fix: `profile` was previously only used for routing below —
+        // gender/dob/skinTone/faceShape/bodyShape/styles/shopPrefs were
+        // fetched but never pushed into ProfileController, so the UI fell
+        // back to ProfileState()'s hardcoded defaults (gender: 'Female')
+        // on every cold start regardless of what the user had picked.
+        try {
+          profileController.hydrateFromProfileDoc(profile);
+        } catch (e) {
+          debugPrint('Profile field hydration skipped: $e');
         }
       }
 

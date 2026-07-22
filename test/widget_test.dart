@@ -1,30 +1,61 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:myapp/theme/accent_palette.dart';
+import 'package:myapp/theme/theme_tokens.dart';
+import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 
-import 'package:myapp/main.dart';
+const _accent = AccentPalette(
+  primary: Color(0xFFFF8EC7),
+  secondary: Color(0xFF8D7DFF),
+  tertiary: Color(0xFF04D7C8),
+);
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('AHVI prompt bar submits a trimmed message without bootstrap', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    final sent = <String>[];
+    final tokens = AppThemeTokens.light(_accent);
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AhviChatPromptBar(
+            controller: controller,
+            focusNode: focusNode,
+            hintText: 'Ask AHVI anything',
+            surface: Colors.white,
+            border: Colors.black12,
+            accent: _accent.primary,
+            accentSecondary: _accent.secondary,
+            textHeading: Colors.black,
+            textMuted: Colors.black54,
+            shadowMedium: Colors.black12,
+            onAccent: Colors.white,
+            themeTokens: tokens,
+            onSendMessage: sent.add,
+            onPlusTap: () {},
+            onVoiceTap: () {},
+          ),
+        ),
+      ),
+    );
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    expect(find.text('Ask AHVI anything'), findsOneWidget);
+    expect(find.byIcon(Icons.add_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_forward_rounded), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '  Plan my office look  ');
+    await tester.tap(find.byIcon(Icons.arrow_forward_rounded));
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(sent, ['Plan my office look']);
+    expect(controller.text, isEmpty);
+    expect(tester.takeException(), isNull);
   });
 }

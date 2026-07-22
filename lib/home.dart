@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:myapp/navigation/ahvi_back_navigation.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter/services.dart';
 import 'package:myapp/boards.dart';
 import 'package:myapp/profile.dart' as profile;
@@ -11,62 +15,384 @@ import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 import 'package:myapp/widgets/ahvi_lens_sheet.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
 import 'package:myapp/widgets/ahvi_header.dart';
-import 'package:myapp/services/ahvi_speech_service.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:provider/provider.dart';
 import 'package:myapp/services/appwrite_service.dart';
-import 'package:myapp/services/ahvi_response_parser.dart';
 import 'package:myapp/services/backend_service.dart';
-import 'package:myapp/chat.dart'; // 🚀 Added Chat Screen Integration
+import 'package:myapp/widgets/ahvi_stylist_chat.dart'; // AhVi single chat implementation
 import 'package:myapp/app_localizations.dart'; // 🆕 Localization
 import 'package:myapp/daily_wear.dart';
 import 'package:myapp/diet_fitness.dart';
-import 'package:myapp/diet_page.dart' as diet_page;
+import 'package:myapp/fitness_page.dart';
+import 'package:myapp/diet_page.dart';
 import 'package:myapp/skincare.dart';
 import 'package:myapp/home_card_summary_provider.dart';
+// skincare & medicine state now merged into HomeCardSummaryProvider
+import 'package:myapp/medi_tracker.dart';
+import 'package:http/http.dart' as http;
+
+/// ═══════════════════════════════════════════════════════════════════════════
+/// 🎯 AHVI HOME SCREEN - COMPLETE LOCALIZATION
+/// ═══════════════════════════════════════════════════════════════════════════
+///
+/// This screen implements full localization for 8 languages:
+/// English, Hindi, Telugu, Tamil, Kannada, Malayalam, Marathi, Bengali
+///
+/// 📋 MAIN LOCALIZATION KEYS:
+/// ───────────────────────────────────────────────────────────────────────────
+/// Navigation (Bottom Nav):
+///   • nav_home, nav_chat, nav_wardrobe, nav_planner, nav_explore
+///
+/// Hero Card:
+///   • home_hero_title → "Your Effortlessly Put-Together Day ✨"
+///   • home_hero_badge_routine → "Routine"
+///
+/// Routine Items:
+///   • routine_wear, routine_wear_desc
+///   • routine_move, routine_move_desc
+///   • routine_eat, routine_eat_desc
+///   • routine_care, routine_care_desc
+///
+/// Greetings (Time-based):
+///   • home_greeting_morning, home_greeting_afternoon, home_greeting_evening
+///
+/// ✅ HELPER METHODS FOR EASY ACCESS:
+/// ───────────────────────────────────────────────────────────────────────────
+///   _getTimeBasedGreeting() → Returns "Good morning"/"Good afternoon"/"Good evening"
+///   _getPersonalizedGreeting(name) → Returns "Good morning, John"
+///   _getNavLabels() → Returns List<String> of 5 nav item labels
+///   _getHeroTitle() → Returns localized hero card title with emoji
+///   _getRoutineItems() → Returns List of routine items with labels
+///   _getCtaLabels() → Returns gym outfit & plan workout labels
+///   _getAskPlaceholder() → Returns chat input placeholder
+///
+/// 🚀 QUICK USAGE EXAMPLES:
+/// ───────────────────────────────────────────────────────────────────────────
+///   // Direct key usage
+///   Text(AppLocalizations.t(context, 'nav_home'))
+///
+///   // Using helper methods
+///   Text(_getPersonalizedGreeting(_userName))
+///   final labels = _getNavLabels() // All 5 nav labels
+///
+///   // Greeting in chat
+///   greeting: _getTimeBasedGreeting()
+///
+/// ═══════════════════════════════════════════════════════════════════════════
 
 // ─── Colors ──────────────────────────────────────────────
+
+// 🆕 LOCALIZATION KEYS REFERENCE
+// ─────────────────────────────────────────────────────────
+// Navigation Keys (Bottom Nav):
+//   'nav_home', 'nav_chat', 'nav_wardrobe', 'nav_planner', 'nav_explore'
+// Hero Card Keys:
+//   'home_hero_title' - "Your Effortlessly Put-Together Day ✨"
+//   'home_hero_badge_routine' - "Routine"
+// Routine Items:
+//   'routine_wear', 'routine_wear_desc'
+//   'routine_move', 'routine_move_desc'
+//   'routine_eat', 'routine_eat_desc'
+//   'routine_care', 'routine_care_desc'
+// Greeting Keys:
+//   'home_greeting_morning', 'home_greeting_afternoon', 'home_greeting_evening'
+// CTA Keys:
+//   'cta_gym_outfit', 'cta_plan_workout', 'cta_ask_ahvi'
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🆕 WEATHER SERVICE - Open Meteo API Integration
+// ═══════════════════════════════════════════════════════════════════════════
+class _WeatherService {
+  static const String openMeteoUrl = 'https://api.open-meteo.com/v1/forecast';
+
+  /// Fetch temperature from Open Meteo API (Hyderabad default)
+  static Future<Map<String, dynamic>> fetchWeather({
+    double latitude = 17.3850,
+    double longitude = 78.4867,
+  }) async {
+    try {
+      final uri = Uri.parse(openMeteoUrl).replace(
+        queryParameters: {
+          'latitude': latitude.toString(),
+          'longitude': longitude.toString(),
+          'current': 'temperature_2m,weather_code,is_day',
+          'temperature_unit': 'celsius',
+          'timezone': 'auto',
+        },
+      );
+
+      final response = await http.get(uri).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final current = data['current'] ?? {};
+        final rawIsDay = current['is_day'];
+        return {
+          'temperature': current['temperature_2m'] ?? 28.0,
+          'weather_code': current['weather_code'] ?? 0,
+          // Open-Meteo returns is_day as an int (1/0), not a bool — normalize it.
+          'is_day': rawIsDay is bool ? rawIsDay : (rawIsDay == 1 || rawIsDay == null),
+          'success': true,
+        };
+      }
+      return {'success': false, 'temperature': 28.0};
+    } catch (e) {
+      debugPrint('weather_api_error: $e');
+      return {'success': false, 'temperature': 28.0};
+    }
+  }
+
+  /// Map weather code to description - returns localization key
+  static String getWeatherDescription(int code, {bool isDay = true}) {
+    if (code == 0) return 'weather_clear';
+    if (code == 1 || code == 2) return 'weather_partly_cloudy';
+    if (code == 3) return 'weather_overcast';
+    if ([45, 48].contains(code)) return 'weather_foggy';
+    if ([51, 53, 55, 61, 63, 65, 80, 81, 82].contains(code)) return 'weather_rainy';
+    if ([71, 73, 75, 77, 85, 86].contains(code)) return 'weather_snowy';
+    if ([80, 81, 82].contains(code)) return 'weather_showers';
+    if (code == 95 || code == 96 || code == 99) return 'weather_thunderstorm';
+    return 'weather_partly_cloudy';
+  }
+}
 
 // 🆕 Nav items are now built dynamically in _buildBottomNav() using localization
 // _homeNavItems icons only — labels come from JSON
 const _homeNavIcons = <IconData>[
   Icons.home_outlined,
+  Icons.chat_bubble_outline_rounded,
   Icons.dry_cleaning_outlined,
   Icons.grid_view_rounded,
   Icons.explore_outlined,
 ];
+
+// 🆕 Localization keys for navigation (used by _buildBottomNav)
+const _homeNavKeys = <String>[
+  'nav_home',
+  'nav_chat',
+  'nav_wardrobe',
+  'nav_planner',
+  'nav_explore',
+];
+
 // Keep original for fallback / non-localized usage
 const _homeNavItems = <({IconData icon, String label})>[
   (icon: Icons.home_outlined, label: 'Home'),
+  (icon: Icons.chat_bubble_outline_rounded, label: 'Chat'),
   (icon: Icons.dry_cleaning_outlined, label: 'Wardrobe'),
   (icon: Icons.grid_view_rounded, label: 'Planner'),
   (icon: Icons.explore_outlined, label: 'Explore'),
 ];
 
+/// 🆕 SINGLE SOURCE OF TRUTH for the screen's responsive horizontal gutter.
+///
+/// Previously this breakpoint math was duplicated: once inline inside the
+/// body's LayoutBuilder (drives padding for the greeting/cards/routine
+/// sections), and the fixed AHVI logo bar never used it at all — it was
+/// rendered via a full-bleed `Positioned(left: 0, right: 0)` while
+/// `AhviHeader` applied its own hardcoded 20px inset. On small phones the
+/// body gutter can be as low as 8px while the header stayed at 20px, and on
+/// tablets the body content is centered (gutter = (screenW-620)/2, often
+/// >20px) while the header still sat at a flat 20 — so the logo never lined
+/// up with the greeting/date text beneath it except by coincidence at
+/// exactly the 480–640dp bucket. Both call sites now read from here, so the
+/// logo is guaranteed to share the same left edge as everything below it on
+/// every screen size.
+({double horizontalPad, double maxContentWidth}) _responsiveGutter(double screenW) {
+  if (screenW < 340) {
+    // Very small phones (iPhone SE) - 280-340dp
+    return (horizontalPad: 8.0, maxContentWidth: screenW - 16.0);
+  } else if (screenW < 360) {
+    // Small phones (Galaxy A12) - 340-360dp
+    return (horizontalPad: 10.0, maxContentWidth: screenW - 20.0);
+  } else if (screenW < 480) {
+    // Small/Standard phones (iPhone 11, Pixel 5) - 360-480dp
+    return (horizontalPad: 16.0, maxContentWidth: screenW - 32.0);
+  } else if (screenW < 640) {
+    // Large phones (iPhone 14 Pro Max, Pixel 7 Pro) - 480-640dp
+    return (horizontalPad: 20.0, maxContentWidth: screenW - 40.0);
+  } else {
+    // Tablets and large devices (iPad, foldables) - 640+dp — content is
+    // centered at a fixed max width, so the gutter grows to fill the rest.
+    const maxContentWidth = 620.0;
+    return (horizontalPad: (screenW - maxContentWidth) / 2, maxContentWidth: maxContentWidth);
+  }
+}
+
 Color _accent(AppThemeTokens t) => t.accent.primary;
 Color _accentSecondary(AppThemeTokens t) => t.accent.secondary;
 Color _accentTertiary(AppThemeTokens t) => t.accent.tertiary;
 
-// 🆕 AI suggestions keys — values come from JSON
-const _aiSuggestionKeys = [
-  'ai_sug_1',
-  'ai_sug_2',
-  'ai_sug_3',
-  'ai_sug_4',
-  'ai_sug_5',
-  'ai_sug_6',
-  'ai_sug_7',
-];
-// Keep original English as fallback
-const _aiSuggestions = [
-  "Your 2pm meeting is in 4 hrs — want to prep an outfit?",
-  "It's 14°C and partly cloudy — shall I suggest a layered look?",
-  "You haven't planned your week yet — want me to help?",
-  "Feeling indecisive? I can style you in seconds.",
-  "New drops match your saved style — want to see them?",
-  "Your Friday dinner is coming up — let's plan the look.",
-  "I noticed you love minimal styles — new picks are in.",
-];
+// ─── Dynamic Recommendation Engine ──────────────────────────────────────────
+
+/// Dynamic content for a home card (title, subtitle, CTA, icon, prompt).
+class _CardContent {
+  const _CardContent({
+    required this.title,
+    required this.subtitle,
+    required this.cta,
+    required this.icon,
+    required this.prompt,
+  });
+
+  final String title;
+  final String subtitle;
+  final String cta;
+  final IconData icon;
+  final String prompt;
+}
+
+// ── Weather signal ────────────────────────────────────────────────────────────
+
+enum _WeatherCondition { clear, cloudy, rainy, cold, hot, unknown }
+
+class _WeatherSignal {
+  const _WeatherSignal({
+    this.tempCelsius,
+    this.condition = _WeatherCondition.unknown,
+    this.description = '',
+  });
+
+  final double? tempCelsius;
+  final _WeatherCondition condition;
+  final String description; // e.g. "partly cloudy", "heavy rain"
+
+  bool get isCold => tempCelsius != null && tempCelsius! < 18;
+  bool get isHot => tempCelsius != null && tempCelsius! > 32;
+  bool get isRainy => condition == _WeatherCondition.rainy;
+  bool get isClear => condition == _WeatherCondition.clear;
+
+  String get tempLabel =>
+      tempCelsius != null ? '${tempCelsius!.round()}°C' : '';
+}
+
+// ── Calendar signal ───────────────────────────────────────────────────────────
+
+enum _EventType { meeting, occasion, workout, travel, dinner, other }
+
+class _CalendarEvent {
+  const _CalendarEvent({
+    required this.title,
+    required this.startsAt,
+    this.type = _EventType.other,
+  });
+
+  final String title;
+  final DateTime startsAt;
+  final _EventType type;
+
+  /// Hours until this event from now.
+  int get hoursUntil =>
+      startsAt.difference(DateTime.now()).inHours.clamp(0, 999);
+
+  bool get isSoon => hoursUntil <= 4;
+  bool get isToday {
+    final now = DateTime.now();
+    return startsAt.year == now.year &&
+        startsAt.month == now.month &&
+        startsAt.day == now.day;
+  }
+}
+
+// ── Wardrobe signal ───────────────────────────────────────────────────────────
+
+class _WardrobeSignal {
+  const _WardrobeSignal({
+    this.lastWornItemName = '',
+    this.daysSinceLastWorn = 0,
+    this.totalItems = 0,
+    this.unwornItems = 0,
+    this.favoriteStyle = '',
+  });
+
+  final String lastWornItemName;
+  final int daysSinceLastWorn;
+  final int totalItems;
+  final int unwornItems;
+  final String favoriteStyle; // e.g. "minimal", "streetwear"
+
+  bool get hasUnwornItems => unwornItems > 0;
+  bool get wardrobeNeedsAttention => daysSinceLastWorn >= 2;
+}
+
+// ── Fitness signal ────────────────────────────────────────────────────────────
+
+class _FitnessSignal {
+  const _FitnessSignal({
+    this.workoutStreakDays = 0,
+    this.calorieGoalMet = false,
+    this.stepGoalMet = false,
+    this.nextWorkoutLabel = '',
+    this.waterGlassesToday = 0,
+  });
+
+  final int workoutStreakDays;
+  final bool calorieGoalMet;
+  final bool stepGoalMet;
+  final String nextWorkoutLabel; // e.g. "Leg Day", "Cardio"
+  final int waterGlassesToday;
+
+  bool get hasActiveStreak => workoutStreakDays >= 2;
+  bool get mealPlanNeeded => !calorieGoalMet;
+}
+
+// ── Unified context ───────────────────────────────────────────────────────────
+
+/// All context signals used to score and rank suggestions.
+class _RecommendationContext {
+  const _RecommendationContext({
+    required this.hour,
+    required this.weekday,
+    required this.userName,
+    required this.recentIntents,
+    this.weather = const _WeatherSignal(),
+    this.upcomingEvents = const [],
+    this.wardrobe = const _WardrobeSignal(),
+    this.fitness = const _FitnessSignal(),
+  });
+
+  final int hour;
+  final int weekday;
+  final String userName;
+  final List<String> recentIntents;
+  final _WeatherSignal weather;
+  final List<_CalendarEvent> upcomingEvents;
+  final _WardrobeSignal wardrobe;
+  final _FitnessSignal fitness;
+
+  // ── Time helpers ─────────────────────────────────────────────────────────
+  bool get isMorning => hour >= 5 && hour < 12;
+  bool get isAfternoon => hour >= 12 && hour < 17;
+  bool get isEvening => hour >= 17 && hour < 21;
+  bool get isNight => hour >= 21 || hour < 5;
+
+  bool get isWeekday => weekday >= 1 && weekday <= 5;
+  bool get isWeekend => weekday == 6 || weekday == 7;
+
+  bool get isMondayMorning => weekday == 1 && isMorning;
+  bool get isFridayEvening => weekday == 5 && isEvening;
+  bool get isSunday => weekday == 7;
+
+  // ── Calendar helpers ──────────────────────────────────────────────────────
+  _CalendarEvent? get nextMeeting => upcomingEvents
+      .where((e) => e.type == _EventType.meeting && e.isToday)
+      .cast<_CalendarEvent?>()
+      .firstOrNull;
+
+  _CalendarEvent? get nextOccasion => upcomingEvents
+      .where((e) => e.type == _EventType.occasion && e.isToday)
+      .cast<_CalendarEvent?>()
+      .firstOrNull;
+
+  bool get hasSoonMeeting => nextMeeting?.isSoon ?? false;
+  bool get hasSoonOccasion => nextOccasion?.isSoon ?? false;
+}
+
+// ── String helper ─────────────────────────────────────────────────────────────
+extension _StringCapitalize on String {
+  String capitalize() =>
+      isEmpty ? this : '${this[0].toUpperCase()}${substring(1)}';
+}
 
 // 🆕 Prepare chips keys for localization
 const _prepareChipKeys = [
@@ -94,7 +420,6 @@ const _prepareChips = [
   ('🌿 Gardening', '🌿 Garden Planting'),
 ];
 
-typedef _SuggestionState = ({int index, double opacity});
 typedef _ClockState = ({String greeting, String date});
 
 class Screen4 extends StatefulWidget {
@@ -106,8 +431,7 @@ class Screen4 extends StatefulWidget {
   State<Screen4> createState() => _Screen4State();
 }
 
-class _Screen4State extends State<Screen4>
-    with TickerProviderStateMixin, WidgetsBindingObserver {
+class _Screen4State extends State<Screen4> with TickerProviderStateMixin, WidgetsBindingObserver {
   AppThemeTokens get _t => context.themeTokens;
 
   // 🔧 FIX: Palette switch అయినప్పుడు full rebuild trigger చేయడానికి
@@ -119,15 +443,35 @@ class _Screen4State extends State<Screen4>
     super.didChangeDependencies();
     final newAccent = context.themeTokens.accent.primary;
     if (_cachedAccent != null && _cachedAccent != newAccent) {
-      // Palette switch జరిగింది — IndexedStack లో alive గా ఉన్న
-      // ఈ screen ని force rebuild చేయాలి
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(() {});
       });
     }
     _cachedAccent = newAccent;
-  }
 
+    // ✅ FIX: Defer heavy operations until AFTER frame completes
+    // This prevents blocking the back-nav animation (Wardrobe → Home)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        // Add delay to ensure back-nav animation fully completes (~500ms)
+        // before loading images
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            // Re-sync fitness signal whenever HomeCardSummaryProvider notifies
+            _syncFitnessSignal();
+            // 🔧 FIX: Wear card was static — _fetchWardrobeSignal() was only
+            // ever called once in initState, so picking/wearing an outfit in
+            // DailyWearScreen never refreshed Home's copy until app restart.
+            // Now it re-syncs every time Home's dependencies change (e.g.
+            // navigating back from DailyWearScreen), matching fitness signal
+            // behavior so the Wear bubble + card status update immediately.
+            _fetchWardrobeSignal();
+            _preloadHomeImages();
+          }
+        });
+      }
+    });
+  }
   Color get _bgPrimary => _t.backgroundPrimary;
   Color get _bgSecondary => _t.backgroundSecondary;
   Color get _surface => _t.phoneShellInner;
@@ -141,10 +485,10 @@ class _Screen4State extends State<Screen4>
   Color get _card => _t.card;
   Color get _phoneShell => _t.phoneShell;
   Color get _tileText => _t.tileText;
-  Color get _shadowStrong => _bgPrimary.withValues(alpha: 0.35);
-  Color get _shadowMedium => _bgPrimary.withValues(alpha: 0.20);
-  Color get _shadowLight => _bgPrimary.withValues(alpha: 0.12);
-  Color get _transparent => _bgPrimary.withValues(alpha: 0.0);
+  Color get _shadowStrong => _bgPrimary.withOpacity(0.35);
+  Color get _shadowMedium => _bgPrimary.withOpacity(0.20);
+  Color get _shadowLight => _bgPrimary.withOpacity(0.12);
+  Color get _transparent => _bgPrimary.withOpacity(0.0);
   Color get _onAccent => Theme.of(context).colorScheme.onPrimary;
   Color get _border => _t.cardBorder;
   LinearGradient get _accentGradient => LinearGradient(
@@ -170,10 +514,6 @@ class _Screen4State extends State<Screen4>
   late List<AnimationController> _heartPopCtrls;
   final List<bool> _likedState = [false, false, true, false];
 
-  final ValueNotifier<_SuggestionState> _suggestionState =
-      ValueNotifier<_SuggestionState>((index: 0, opacity: 1.0));
-  Timer? _suggestionTimer;
-
   // ── Plus menu ─────────────────────────────────────────────────────────────
   // (Lens sheet manages its own state — no local controller needed)
   late AnimationController _plusMenuCtrl; // kept to avoid dispose() errors
@@ -184,27 +524,538 @@ class _Screen4State extends State<Screen4>
   bool _seeAllOpen = false;
   late AnimationController _seeAllCtrl;
 
+  // ── Notifications ──────────────────────────────────────────────────────────
+  bool _notifPanelOpen = false;
+  // 🆕 FIX: Initialize to 0 instead of hardcoded 3
+  // Unread count is calculated dynamically from notification list
+  int _unreadNotifCount = 0;
+
+  // 🆕 Unread notifications list — synced with backend
+  List<_NotifData> _notificationsList = [];
+
   late List<AnimationController> _navRiseCtrls;
 
   final ValueNotifier<_ClockState> _clockState = ValueNotifier<_ClockState>((
-    greeting:
-        'greeting_morning', // 🆕 key గా store — display లో translate అవుతుంది
-    date: '',
+  greeting: 'greeting_morning',
+  date: '',
   ));
   Timer? _clockTimer;
+
+  // 🆕 Increments every time a signal changes — drives ValueListenableBuilder
+  // on the Style & Prep cards so they re-render without setState rebuilding
+  // the entire tree.
+  final ValueNotifier<int> _cardContextVersion = ValueNotifier<int>(0);
   final TextEditingController _chatController = TextEditingController();
   final FocusNode _chatFocusNode = FocusNode();
   final ValueNotifier<double> _keyboardHeight = ValueNotifier<double>(0.0);
-  bool _homeSummariesRefreshStarted = false;
 
   // ── Voice ──────────────────────────────────────────────────────────────────
+  final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isListening = false;
+  bool _speechAvailable = false;
   final Map<String, List<List<bool>>> _prepareExactChecksByTitle = {};
   final Map<String, List<List<String>>> _prepareExactItemsByTitle = {};
   final Map<String, List<TextEditingController>>
   _prepareExactAddControllersByTitle = {};
-  final Map<String, bool> _prepareExactSavedByTitle = {};
+  // ── Dynamic recommendation engine ─────────────────────────────────────────
+  // Tracks the last N intents the user triggered (most recent first).
+  final List<String> _recentIntents = [];
+
+  // ── Live context signals ───────────────────────────────────────────────────
+  _WeatherSignal _weatherSignal = const _WeatherSignal();
+  List<_CalendarEvent> _calendarEvents = [];
+  _WardrobeSignal _wardrobeSignal = const _WardrobeSignal();
+  _FitnessSignal _fitnessSignal = const _FitnessSignal();
+
+  /// Records an intent tap for the recommendation engine.
+  void _recordIntent(String intent) {
+    _recentIntents.remove(intent);
+    _recentIntents.insert(0, intent);
+    if (_recentIntents.length > 5) _recentIntents.removeLast();
+    _invalidateSuggestionCache();
+  }
+
+  void _invalidateSuggestionCache() {
+    // Notify card widgets to re-evaluate their dynamic content.
+    _cardContextVersion.value += 1;
+  }
+
+  /// Builds the current context snapshot for the recommendation engine.
+  _RecommendationContext get _recommendationCtx {
+    final now = DateTime.now();
+    return _RecommendationContext(
+      hour: now.hour,
+      weekday: now.weekday,
+      userName: _userName,
+      recentIntents: List.unmodifiable(_recentIntents),
+      weather: _weatherSignal,
+      upcomingEvents: _calendarEvents,
+      wardrobe: _wardrobeSignal,
+      fitness: _fitnessSignal,
+    );
+  }
+
+  // ── Signal fetchers ────────────────────────────────────────────────────────
+
+  /// Fetches weather for the user's device locale via open-meteo (no API key).
+  /// Retries once on transient network failure so a slow connection right
+  /// at app-launch doesn't leave the chip stuck on "--°" for the session.
+  Future<void> _fetchWeatherSignal({bool isRetryAttempt = false}) async {
+    // Hyderabad default (matches app's primary market); swap for device GPS
+    // via geolocator if/when that package is added to the project.
+    const lat = 17.385;
+    const lon = 78.486;
+    final uri = Uri.parse(
+      'https://api.open-meteo.com/v1/forecast'
+          '?latitude=$lat&longitude=$lon'
+          '&current=temperature_2m,weather_code'
+          '&timezone=auto',
+    );
+
+    HttpClient? client;
+    try {
+      client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 8);
+      final req = await client.getUrl(uri).timeout(const Duration(seconds: 8));
+      final res = await req.close().timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200) {
+        final body = await res.transform(const Utf8Decoder()).join();
+        final json = jsonDecode(body) as Map<String, dynamic>;
+        final current = json['current'] as Map<String, dynamic>?;
+        if (current != null) {
+          final temp = (current['temperature_2m'] as num?)?.toDouble();
+          // API migrated `weathercode` → `weather_code`; accept either key
+          // so older/newer response shapes both work.
+          final code = (current['weather_code'] as num?)?.toInt() ??
+              (current['weathercode'] as num?)?.toInt() ??
+              0;
+          final condition = _wmoCodeToCondition(code);
+          final desc = _wmoCodeToDescription(code);
+          if (mounted) {
+            setState(() {
+              _weatherSignal = _WeatherSignal(
+                tempCelsius: temp,
+                condition: condition,
+                description: desc,
+              );
+              _invalidateSuggestionCache();
+            });
+          }
+        }
+      } else {
+        debugPrint('🌦️ _fetchWeatherSignal HTTP ${res.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('🌦️ _fetchWeatherSignal error: $e');
+      // One quiet retry — covers the common case of the very first request
+      // racing the device's network interface coming up after cold start.
+      if (!isRetryAttempt) {
+        await Future.delayed(const Duration(seconds: 3));
+        if (mounted) await _fetchWeatherSignal(isRetryAttempt: true);
+      }
+    } finally {
+      client?.close();
+    }
+  }
+
+  static _WeatherCondition _wmoCodeToCondition(int code) {
+    if (code == 0) return _WeatherCondition.clear;
+    if (code <= 3) return _WeatherCondition.cloudy;
+    if (code >= 51 && code <= 82) return _WeatherCondition.rainy;
+    if (code >= 85) return _WeatherCondition.rainy; // snow/sleet → treat as rainy
+    return _WeatherCondition.unknown;
+  }
+
+  static String _wmoCodeToDescription(int code) {
+    if (code == 0) return 'clear sky';
+    if (code == 1) return 'mainly clear';
+    if (code == 2) return 'partly cloudy';
+    if (code == 3) return 'overcast';
+    if (code >= 51 && code <= 55) return 'drizzle';
+    if (code >= 61 && code <= 65) return 'rain';
+    if (code >= 71 && code <= 75) return 'snow';
+    if (code >= 80 && code <= 82) return 'rain showers';
+    if (code >= 95) return 'thunderstorm';
+    return '';
+  }
+
+  // ── Calendar ───────────────────────────────────────────────────────────────
+
+  /// Fetches today's calendar events from BackendService and maps them to
+  /// [_CalendarEvent] objects the recommendation engine can score.
+  Future<void> _fetchCalendarSignal() async {
+    try {
+      final backend = Provider.of<BackendService>(context, listen: false);
+      final raw = await backend.getTodayCalendarEvents().timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => [],
+      );
+
+      final events = raw.map<_CalendarEvent>((e) {
+        // Parse start_time — ISO-8601 string from the backend.
+        DateTime startsAt;
+        try {
+          startsAt = DateTime.parse(e['start_time']?.toString() ?? '');
+        } catch (_) {
+          startsAt = DateTime.now().add(const Duration(hours: 8));
+        }
+
+        // Map backend `type` field to our internal enum.
+        final rawType = (e['type'] ?? e['event_type'] ?? '').toString().toLowerCase();
+        final _EventType type;
+        if (rawType.contains('meet') || rawType.contains('work') || rawType.contains('call')) {
+          type = _EventType.meeting;
+        } else if (rawType.contains('travel') || rawType.contains('flight') || rawType.contains('trip')) {
+          type = _EventType.travel;
+        } else if (rawType.contains('dinner') || rawType.contains('lunch') || rawType.contains('brunch')) {
+          type = _EventType.dinner;
+        } else if (rawType.contains('workout') || rawType.contains('gym') || rawType.contains('fitness')) {
+          type = _EventType.workout;
+        } else if (rawType.contains('party') || rawType.contains('wedding') ||
+            rawType.contains('occasion') || rawType.contains('event') ||
+            rawType.contains('celebrat')) {
+          type = _EventType.occasion;
+        } else {
+          type = _EventType.other;
+        }
+
+        return _CalendarEvent(
+          title: e['title']?.toString() ?? e['summary']?.toString() ?? AppLocalizations.t(context, 'event_default_title'),
+          startsAt: startsAt,
+          type: type,
+        );
+      }).toList();
+
+      // Sort chronologically so nextMeeting / nextOccasion pick the soonest.
+      events.sort((a, b) => a.startsAt.compareTo(b.startsAt));
+
+      if (mounted) {
+        setState(() {
+          _calendarEvents = events;
+          _invalidateSuggestionCache();
+        });
+      }
+    } catch (e) {
+      debugPrint('📅 Calendar fetch error: $e');
+      // Leave _calendarEvents unchanged — app continues normally
+    }
+  }
+
+  // ── Wardrobe ───────────────────────────────────────────────────────────────
+
+  /// Fetches wardrobe items from AppwriteService and distils them into a
+  /// lightweight [_WardrobeSignal] for the recommendation engine.
+  Future<void> _fetchWardrobeSignal() async {
+    try {
+      final appwrite = Provider.of<AppwriteService>(context, listen: false);
+
+      // getWardrobeItems() uses an in-memory cache so this is cheap after
+      // the first load.
+      final items = await appwrite.getWardrobeItems();
+
+      if (items.isEmpty) return;
+
+      final totalItems = items.length;
+
+      // Items that have never been worn: no 'wornAt', 'last_worn', or 'worn_count'.
+      final unwornItems = items.where((item) {
+        final wornAt = item['wornAt'] ?? item['last_worn'] ?? item['worn_at'];
+        final wornCount = item['worn_count'] ?? item['wornCount'] ?? 0;
+        return wornAt == null && (wornCount == 0);
+      }).length;
+
+      // Most recently worn item.
+      String lastWornItemName = '';
+      int daysSinceLastWorn = 0;
+      final wornItems = items.where((item) {
+        return item['wornAt'] != null ||
+            item['last_worn'] != null ||
+            item['worn_at'] != null;
+      }).toList();
+
+      if (wornItems.isNotEmpty) {
+        wornItems.sort((a, b) {
+          final aDate = _parseDate(a['wornAt'] ?? a['last_worn'] ?? a['worn_at']);
+          final bDate = _parseDate(b['wornAt'] ?? b['last_worn'] ?? b['worn_at']);
+          return bDate.compareTo(aDate); // most recent first
+        });
+        lastWornItemName = wornItems.first['name']?.toString() ?? '';
+        final lastDate = _parseDate(
+            wornItems.first['wornAt'] ?? wornItems.first['last_worn'] ?? wornItems.first['worn_at']);
+        daysSinceLastWorn = DateTime.now().difference(lastDate).inDays;
+      } else {
+        // Nothing worn yet — treat all as fresh.
+        daysSinceLastWorn = 0;
+      }
+
+      // Dominant style tag — prefer user profile stylePreferences, then
+      // derive from item occasions/categories.
+      String favoriteStyle = '';
+      final profile = appwrite.cachedUserProfileData;
+      if (profile != null) {
+        final prefs = profile['stylePreferences'];
+        if (prefs is List && prefs.isNotEmpty) {
+          favoriteStyle = prefs.first.toString().toLowerCase();
+        }
+      }
+      if (favoriteStyle.isEmpty) {
+        // Derive from most common occasion tag in wardrobe.
+        final tagCounts = <String, int>{};
+        for (final item in items) {
+          final occ = item['occasions'];
+          if (occ is List) {
+            for (final o in occ) {
+              final tag = o.toString().toLowerCase();
+              tagCounts[tag] = (tagCounts[tag] ?? 0) + 1;
+            }
+          } else if (occ is String && occ.isNotEmpty) {
+            tagCounts[occ.toLowerCase()] = (tagCounts[occ.toLowerCase()] ?? 0) + 1;
+          }
+        }
+        if (tagCounts.isNotEmpty) {
+          favoriteStyle = (tagCounts.entries.toList()
+            ..sort((a, b) => b.value.compareTo(a.value)))
+              .first
+              .key;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _wardrobeSignal = _WardrobeSignal(
+            totalItems: totalItems,
+            unwornItems: unwornItems,
+            lastWornItemName: lastWornItemName,
+            daysSinceLastWorn: daysSinceLastWorn,
+            favoriteStyle: favoriteStyle,
+          );
+          _invalidateSuggestionCache();
+        });
+      }
+    } catch (e) {
+      debugPrint('👗 _fetchWardrobeSignal error: $e');
+    }
+  }
+
+  /// Parses a date from a dynamic value (String ISO-8601 or DateTime).
+  static DateTime _parseDate(dynamic value) {
+    if (value == null) return DateTime(2000);
+    if (value is DateTime) return value;
+    try {
+      return DateTime.parse(value.toString());
+    } catch (_) {
+      return DateTime(2000);
+    }
+  }
+
+  // ── Fitness ────────────────────────────────────────────────────────────────
+
+  /// Syncs fitness signal from two sources:
+  ///   1. BackendService.getTodayWorkout() — real workout data.
+  ///   2. HomeCardSummaryProvider — calorie/move summary strings (fast fallback).
+  void _syncFitnessSignal() {
+    // Kick off the async backend fetch in parallel; update state twice:
+    // once immediately from the provider text, once when the network responds.
+    _syncFitnessFromProvider();
+    _syncFitnessFromBackend(); // fire-and-forget
+  }
+
+  /// Fast path — parses HomeCardSummaryProvider strings for immediate display.
+  void _syncFitnessFromProvider() {
+    try {
+      final summary = Provider.of<HomeCardSummaryProvider>(context, listen: false);
+      final moveText = summary.move.toLowerCase();
+      final eatText  = summary.eat.toLowerCase();
+
+      // Streak: "3-day streak", "Day 5", "5 days"
+      int streak = 0;
+      final streakMatch = RegExp(r'(\d+)[- ]?day').firstMatch(moveText);
+      if (streakMatch != null) streak = int.tryParse(streakMatch.group(1) ?? '') ?? 0;
+
+      // Calorie goal: "1,840 / 2,000 kcal" or "1840/2000"
+      bool calorieGoalMet = false;
+      final calMatch = RegExp(r'(\d[\d,]+)\s*/\s*(\d[\d,]+)').firstMatch(eatText);
+      if (calMatch != null) {
+        final consumed = int.tryParse(calMatch.group(1)!.replaceAll(',', '')) ?? 0;
+        final goal    = int.tryParse(calMatch.group(2)!.replaceAll(',', '')) ?? 1;
+        calorieGoalMet = consumed >= goal;
+      }
+
+      // Next workout label from move summary
+      String nextWorkout = _extractWorkoutLabel(moveText);
+
+      if (mounted) {
+        setState(() {
+          _fitnessSignal = _FitnessSignal(
+            workoutStreakDays: streak,
+            calorieGoalMet: calorieGoalMet,
+            nextWorkoutLabel: nextWorkout,
+            // waterGlassesToday unchanged until backend responds
+            waterGlassesToday: _fitnessSignal.waterGlassesToday,
+          );
+          _invalidateSuggestionCache();
+        });
+      }
+    } catch (_) {}
+  }
+
+  /// ✅ FIX: Preload home screen images asynchronously AFTER back-nav animation
+  /// This prevents image loading from blocking the main thread during navigation
+  void _preloadHomeImages() {
+    try {
+      final imagesToPreload = [
+        // Style card outfit photos — ONLY the 2 gendered variants.
+        // No generic/neutral fallback image anymore: whichever one
+        // _userGender resolves to ('women' or 'men') is already warm
+        // in the image cache by the time the card first paints, and if
+        // gender can't be resolved yet, _userGender's own default
+        // ('women') is used as the fallback — not a 3rd image.
+        'assets/images/style_card_women.jpeg',
+        'assets/images/style_card_men.jpeg',
+        // Prep & Plan decorative backdrop — ONLY the 2 gendered variants,
+        // same pattern as the Style card above (no generic/neutral 3rd asset).
+        'assets/images/plan_card_women.jpg',
+        'assets/images/plan_card_men.jpg',
+      ];
+
+      for (final asset in imagesToPreload) {
+        precacheImage(AssetImage(asset), context).catchError((_) => null);
+      }
+    } catch (_) {}
+  }
+
+  /// Slow path — fetches today's workout from BackendService and updates the
+  /// signal with richer data (streak, type, water).
+  Future<void> _syncFitnessFromBackend() async {
+    try {
+      final backend = Provider.of<BackendService>(context, listen: false);
+      final data = await backend.getTodayWorkout();
+
+      if (data.isEmpty) return;
+
+      // Backend response shape (from the API):
+      //   { workout: { id, type, name, duration, streak, status, ... },
+      //     nutrition: { calories_consumed, calories_goal, water_glasses, ... } }
+      final workout   = data['workout']   as Map<String, dynamic>? ?? {};
+      final nutrition = data['nutrition'] as Map<String, dynamic>? ?? {};
+
+      // Streak
+      final streak = (workout['streak'] as num?)?.toInt() ??
+          (data['streak']   as num?)?.toInt() ??
+          _fitnessSignal.workoutStreakDays;
+
+      // Workout label
+      final workoutName = workout['name']?.toString() ??
+          workout['type']?.toString() ??
+          data['workout_type']?.toString() ?? '';
+      final nextWorkout = workoutName.isNotEmpty
+          ? _extractWorkoutLabel(workoutName.toLowerCase())
+          : _fitnessSignal.nextWorkoutLabel;
+
+      // Calorie goal
+      final consumed = (nutrition['calories_consumed'] as num?)?.toInt() ??
+          (data['calories_consumed']     as num?)?.toInt() ?? 0;
+      final goal     = (nutrition['calories_goal']    as num?)?.toInt() ??
+          (data['calories_goal']         as num?)?.toInt() ?? 0;
+      final calorieGoalMet = goal > 0 ? consumed >= goal : _fitnessSignal.calorieGoalMet;
+
+      // Water glasses
+      final water = (nutrition['water_glasses'] as num?)?.toInt() ??
+          (data['water_glasses']       as num?)?.toInt() ??
+          _fitnessSignal.waterGlassesToday;
+
+      // Step goal
+      final stepsDone = (data['steps'] as num?)?.toInt() ?? 0;
+      final stepsGoal = (data['steps_goal'] as num?)?.toInt() ?? 8000;
+      final stepGoalMet = stepsGoal > 0 && stepsDone >= stepsGoal;
+
+      if (mounted) {
+        setState(() {
+          _fitnessSignal = _FitnessSignal(
+            workoutStreakDays: streak,
+            calorieGoalMet: calorieGoalMet,
+            stepGoalMet: stepGoalMet,
+            nextWorkoutLabel: nextWorkout,
+            waterGlassesToday: water,
+          );
+          _invalidateSuggestionCache();
+        });
+      }
+    } catch (e) {
+      debugPrint('🏃 _syncFitnessFromBackend error: $e');
+    }
+  }
+
+  /// 🆕 Fetch weather from Open Meteo API (improved version)
+  Future<void> _fetchWeatherSignalImproved() async {
+    try {
+      final weather = await _WeatherService.fetchWeather();
+      final temp = (weather['temperature'] as num?)?.toDouble() ?? 28.0;
+      final rawIsDay = weather['is_day'];
+      final isDay = rawIsDay is bool ? rawIsDay : (rawIsDay == null ? true : rawIsDay == 1);
+      final description = _WeatherService.getWeatherDescription(
+        weather['weather_code'] as int? ?? 0,
+        isDay: isDay,
+      );
+
+      if (mounted) {
+        setState(() {
+          _weatherSignal = _WeatherSignal(
+            tempCelsius: temp,
+            description: description.toLowerCase(),
+          );
+          _invalidateSuggestionCache();
+        });
+      }
+    } catch (e) {
+      debugPrint('🌦️ Weather fetch error: $e');
+      if (mounted) {
+        setState(() {
+          _weatherSignal = _WeatherSignal(
+            tempCelsius: 28.0,
+            description: 'partly cloudy',
+          );
+        });
+      }
+    }
+  }
+
+  /// Extracts a workout localization key from a free-text string.
+  /// Returns key that should be localized with AppLocalizations.t(context, key)
+  static String _extractWorkoutLabel(String text) {
+    if (text.contains('leg'))    return 'workout_leg_day';
+    if (text.contains('chest'))  return 'workout_chest_day';
+    if (text.contains('back'))   return 'workout_back_day';
+    if (text.contains('arm') || text.contains('bicep') || text.contains('tricep')) return 'workout_arm_day';
+    if (text.contains('cardio') || text.contains('run') || text.contains('jog'))   return 'workout_cardio';
+    if (text.contains('yoga'))   return 'workout_yoga';
+    if (text.contains('hiit'))   return 'workout_hiit';
+    if (text.contains('full body') || text.contains('fullbody')) return 'workout_full_body';
+    if (text.contains('stretch') || text.contains('mobility'))  return 'workout_mobility';
+    if (text.contains('rest'))   return '';
+    return '';
+  }
+
+  /// 🆕 Get workout label from fitness signal or default
+  String get _workoutLabel {
+    final fit = _fitnessSignal;
+    return fit.nextWorkoutLabel.isNotEmpty ? fit.nextWorkoutLabel : AppLocalizations.t(context, 'chip_mobility_default');
+  }
+
+  /// Public method called by external code to inject a calendar event
+  /// (e.g. from a Calendar MCP response or onboarding flow).
+  void injectCalendarEvent(_CalendarEvent event) {
+    if (!mounted) return;
+    setState(() {
+      _calendarEvents.removeWhere((e) => e.title == event.title);
+      _calendarEvents.add(event);
+      _calendarEvents.sort((a, b) => a.startsAt.compareTo(b.startsAt));
+      _invalidateSuggestionCache();
+    });
+  }
   final Map<String, List<bool>> _prepareExactOutfitSavedByTitle = {};
+  final Map<String, bool> _prepareExactSavedByTitle = {};
   final Map<String, String> _boardIdByLabel = const {
     '🎉 Party Looks': 'party_looks',
     '💍 Occasion': 'occasion',
@@ -216,8 +1067,7 @@ class _Screen4State extends State<Screen4>
   _OverlayState _overlayState = _OverlayState.idle;
   String? _activeIntent;
   String _chatPlaceholderKey = 'ask_me'; // ✅ JSON key: "ask_me"
-  String get _chatPlaceholder =>
-      AppLocalizations.t(context, _chatPlaceholderKey);
+  String get _chatPlaceholder => AppLocalizations.t(context, _chatPlaceholderKey);
   bool _homeCollapsed = false;
   late AnimationController _homeCollapseCtrl;
   late AnimationController _overlayFadeCtrl;
@@ -232,18 +1082,27 @@ class _Screen4State extends State<Screen4>
   String _runningMemory = "";
   final ScrollController _overlayScrollCtrl = ScrollController();
 
+  // 🆕 Routine progress tracker + cards row now scroll together horizontally.
+  // Two separate controllers (each row is its own SingleChildScrollView) kept
+  // in sync via listeners in initState — see _syncRoutineScroll().
+  final ScrollController _routineCardsScrollCtrl = ScrollController();
+  final ScrollController _routineProgressScrollCtrl = ScrollController();
+  bool _isSyncingRoutineScroll = false;
+
   List<String> _responseTags = [];
-  final Map<String, String> _responseTagValues = {};
   bool _tagsRevealed = false;
 
   String _userName = '';
   Uint8List? _avatarBytes;
+  // 🆕 Onboarding-driven gender ('women' | 'men') — selects which outfit
+  // photo shows on the Style card. Defaults to 'women' until profile loads.
+  String _userGender = 'women';
 
   Future<void> _savePrepareExactToBoard({
     required String boardId,
     required String title,
     required List<
-      ({String name, String emoji, Color color, List<String> items})
+        ({String name, String emoji, Color color, List<String> items})
     >
     sections,
     required List<List<String>> itemsState,
@@ -264,12 +1123,89 @@ class _Screen4State extends State<Screen4>
     await Future<void>.delayed(const Duration(milliseconds: 180));
   }
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // 🆕 LOCALIZATION HELPERS - Get translated strings easily
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /// Get greeting based on current time of day
+  String _getTimeBasedGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) {
+      return AppLocalizations.t(context, 'home_greeting_morning');
+    } else if (hour < 17) {
+      return AppLocalizations.t(context, 'home_greeting_afternoon');
+    } else {
+      return AppLocalizations.t(context, 'home_greeting_evening');
+    }
+  }
+
+  /// Get personalized greeting with user name
+  String _getPersonalizedGreeting(String userName) {
+    final greeting = _getTimeBasedGreeting();
+    return '$greeting, $userName';
+  }
+
+  /// Get all navigation labels localized
+  List<String> _getNavLabels() {
+    return _homeNavKeys.map((key) => AppLocalizations.t(context, key)).toList();
+  }
+
+  /// Get hero title localized
+  String _getHeroTitle() {
+    return AppLocalizations.t(context, 'home_hero_title');
+  }
+
+  /// Get routine items with localized labels
+  List<({String label, String desc})> _getRoutineItems() {
+    return [
+      (
+      label: AppLocalizations.t(context, 'routine_wear'),
+      desc: AppLocalizations.t(context, 'routine_wear_desc'),
+      ),
+      (
+      label: AppLocalizations.t(context, 'routine_move'),
+      desc: AppLocalizations.t(context, 'routine_move_desc'),
+      ),
+      (
+      label: AppLocalizations.t(context, 'routine_eat'),
+      desc: AppLocalizations.t(context, 'routine_eat_desc'),
+      ),
+      (
+      label: AppLocalizations.t(context, 'routine_care'),
+      desc: AppLocalizations.t(context, 'routine_care_desc'),
+      ),
+    ];
+  }
+
+  /// Get CTA button labels
+  ({String gymOutfit, String planWorkout}) _getCtaLabels() {
+    return (
+    gymOutfit: AppLocalizations.t(context, 'cta_gym_outfit'),
+    planWorkout: AppLocalizations.t(context, 'cta_plan_workout'),
+    );
+  }
+
+  /// Get input field placeholder
+  String _getAskPlaceholder() {
+    return AppLocalizations.t(context, 'cta_ask_ahvi');
+  }
+
   @override
   void initState() {
     super.initState();
+    _initSpeech();
     // Keyboard height track చేయడానికి FocusNode listener
     _chatFocusNode.addListener(_onChatFocusChange);
     WidgetsBinding.instance.addObserver(this);
+
+    // 🆕 Keep the routine progress tracker and routine cards scrolling
+    // together — dragging either one moves the other by the same offset.
+    _routineCardsScrollCtrl.addListener(
+          () => _syncRoutineScroll(_routineCardsScrollCtrl, _routineProgressScrollCtrl),
+    );
+    _routineProgressScrollCtrl.addListener(
+          () => _syncRoutineScroll(_routineProgressScrollCtrl, _routineCardsScrollCtrl),
+    );
 
     _aurora1Ctrl = AnimationController(
       vsync: this,
@@ -304,7 +1240,7 @@ class _Screen4State extends State<Screen4>
 
     _heartPopCtrls = List.generate(
       4,
-      (_) => AnimationController(
+          (_) => AnimationController(
         vsync: this,
         duration: const Duration(milliseconds: 380),
       ),
@@ -321,17 +1257,12 @@ class _Screen4State extends State<Screen4>
     );
 
     _navRiseCtrls = List.generate(
-      4,
-      (i) => AnimationController(
+      5,
+          (i) => AnimationController(
         vsync: this,
         duration: const Duration(milliseconds: 280),
         value: i == 0 ? 1.0 : 0.0,
       ),
-    );
-
-    _suggestionTimer = Timer.periodic(
-      const Duration(seconds: 3),
-      (_) => _rotateSuggestion(),
     );
 
     _homeCollapseCtrl = AnimationController(
@@ -351,13 +1282,28 @@ class _Screen4State extends State<Screen4>
       duration: const Duration(milliseconds: 380),
     );
 
-    _updateClock();
-    _clockTimer = Timer.periodic(
-      const Duration(seconds: 15),
-      (_) => _updateClock(),
-    );
+    // 🔧 FIX: Defer _updateClock() to after frame completes
+    // This ensures the localization inherited widget is fully initialized
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _updateClock();
+        _clockTimer = Timer.periodic(
+          const Duration(seconds: 15),
+              (_) => _updateClock(),
+        );
+      }
+    });
 
     _fetchUserProfile();
+
+    // ── 🌦️📅👗🏃 Kick off all context signal fetches ─────────────────────────
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _fetchWeatherSignalImproved(); // 🆕 Use improved weather fetch
+      _fetchCalendarSignal();
+      _fetchWardrobeSignal();
+      _syncFitnessSignal();
+    });
 
     // 🔧 FIX: Home tab active glow — first frame లో animate చేయి
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -366,17 +1312,44 @@ class _Screen4State extends State<Screen4>
           1.0,
           curve: const Cubic(0.34, 1.56, 0.64, 1.0),
         );
-        _refreshHomeCardSummaries();
       }
     });
+
+    // 🆕 Load notifications on app start
+    _loadNotifications();
+  }
+
+  /// 🆕 Load notifications from backend and update unread count dynamically
+  Future<void> _loadNotifications() async {
+    try {
+      // TODO: Replace with actual backend API call to fetch notifications
+      // For now, this demonstrates the pattern
+      // Example:
+      // final response = await backendService.fetchNotifications();
+      // _notificationsList = response.map(_NotifData.fromJson).toList();
+
+      // Currently using empty list (no notifications by default)
+      _notificationsList = [];
+
+      // 🆕 Update unread count based on actual notifications
+      _updateUnreadNotifCount();
+
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('Error loading notifications: $e');
+    }
+  }
+
+  /// 🆕 Calculate and update unread notification count
+  void _updateUnreadNotifCount() {
+    _unreadNotifCount = _notificationsList
+        .where((notif) => notif.unread)
+        .length;
   }
 
   Future<void> _fetchUserProfile() async {
     final appwrite = Provider.of<AppwriteService>(context, listen: false);
-    final profileCtrl = Provider.of<profile.ProfileController>(
-      context,
-      listen: false,
-    );
+    final profileCtrl = Provider.of<profile.ProfileController>(context, listen: false);
     final user = await appwrite.getCurrentUser();
 
     if (user != null && mounted) {
@@ -389,7 +1362,7 @@ class _Screen4State extends State<Screen4>
 
       final firstName = rawName.isNotEmpty
           ? rawName.split(' ').first
-          : 'Stylist';
+          : AppLocalizations.t(context, 'default_stylist_name');
 
       // avatarPath లేనప్పుడు Appwrite fallback avatar తెచ్చుకో
       Uint8List? avatarBytes;
@@ -397,38 +1370,51 @@ class _Screen4State extends State<Screen4>
         avatarBytes = await appwrite.getUserAvatar(rawName);
       } catch (_) {}
 
+      // 🆕 Best-effort gender read (drives which outfit photo shows on the
+      // Style card). Uses dynamic access so this keeps compiling even if
+      // ProfileState doesn't expose one of these field names.
+      final resolvedGender = _resolveGenderFromProfile(profileCtrl.state);
+
       if (mounted) {
         setState(() {
-          _userName = _titleCaseFirstName(firstName);
+          _userName = firstName;
           _avatarBytes = avatarBytes;
+          _userGender = resolvedGender;
+          _invalidateSuggestionCache(); // name changed → rescore
         });
       }
     }
   }
 
-  String _titleCaseFirstName(String value) {
-    final trimmed = value.trim();
-    if (trimmed.isEmpty) return trimmed;
-    return trimmed[0].toUpperCase() + trimmed.substring(1).toLowerCase();
+  /// Reads the onboarding gender preference from [profile.ProfileState.gender]
+  /// (set in onboarding1.dart via `ProfileController.updateBasics(gender: ...)`
+  /// and now editable on the profile screen too) and maps it to the 'women' /
+  /// 'men' bucket used to pick the Style card outfit photo.
+  ///
+  /// 🔧 Previously this used a dynamic multi-field-name guessing hack because
+  /// it wasn't certain ProfileState exposed `gender` — it does, so we read it
+  /// directly now.
+  String _resolveGenderFromProfile(profile.ProfileState? state) {
+    if (state == null) return _userGender;
+    final v = state.gender.toLowerCase();
+    if (v.contains('women') || v.contains('female') || v == 'w' || v == 'f') {
+      return 'women';
+    }
+    if (v.contains('men') || v.contains('male') || v == 'm') {
+      return 'men';
+    }
+    // 'others' (or anything unrecognized) — no 3rd generic asset by design,
+    // so keep whatever gender was already showing.
+    return _userGender;
   }
 
   void _updateClock() {
     if (!mounted) return;
     final now = DateTime.now();
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
     ];
     // 🆕 Greeting key — translated in _buildGreetingBlock()
     String greetingKey;
@@ -442,176 +1428,11 @@ class _Screen4State extends State<Screen4>
       greetingKey = 'greeting_night';
     }
     _clockState.value = (
-      greeting: greetingKey,
-      date: '${days[now.weekday % 7]}, ${now.day} ${months[now.month - 1]}',
+    greeting: greetingKey,
+    date: '${dayNames[now.weekday % 7]}, ${now.day} ${monthNames[now.month - 1]}',
     );
-  }
-
-  Future<void> _refreshHomeCardSummaries() async {
-    if (_homeSummariesRefreshStarted) return;
-    _homeSummariesRefreshStarted = true;
-
-    final summary = Provider.of<HomeCardSummaryProvider>(
-      context,
-      listen: false,
-    );
-    final backend = Provider.of<BackendService>(context, listen: false);
-    final appwrite = Provider.of<AppwriteService>(context, listen: false);
-    // Gender-aware neutral fallback for Wear — no-ops once a real backend
-    // summary arrives, so it never overrides dynamic data.
-    summary.applyGenderFallback(
-      Provider.of<profile.ProfileController>(context, listen: false).state.gender,
-    );
-
-    try {
-      final response = await backend.getTodayWorkout();
-      final moveSummary = _moveSummaryFromWorkoutResponse(response);
-      if (!mounted) return;
-      if (moveSummary != null) {
-        summary.setMove(moveSummary);
-        debugPrint(
-          'home_summary.move source=getTodayWorkout value=$moveSummary',
-        );
-      } else {
-        debugPrint('home_summary.move fallback_kept');
-      }
-    } catch (e) {
-      debugPrint('home_summary.move fallback_kept error=$e');
-    }
-
-    try {
-      final profileDoc = await appwrite.getSkincareProfile();
-      final careSummary = _careSummaryFromSkincareProfile(profileDoc?.data);
-      if (!mounted) return;
-      if (careSummary != null) {
-        summary.setCare(careSummary);
-        debugPrint(
-          'home_summary.care source=skincareProfile value=$careSummary',
-        );
-      } else {
-        debugPrint('home_summary.care fallback_kept');
-      }
-    } catch (e) {
-      debugPrint('home_summary.care fallback_kept error=$e');
-    }
-  }
-
-  String? _moveSummaryFromWorkoutResponse(Map<String, dynamic> response) {
-    final raw = response['today_workout'] is Map
-        ? Map<String, dynamic>.from(response['today_workout'] as Map)
-        : _firstMap(response['recommendations']);
-    if (raw == null) return null;
-
-    final title = _cleanHomeSummaryText(
-      (raw['title'] ?? raw['name'] ?? raw['workout_name'] ?? '').toString(),
-    );
-    final subtitle = _cleanHomeSummaryText((raw['subtitle'] ?? '').toString());
-    final duration = _intFromAny(
-      raw['duration_minutes'] ?? raw['duration_min'] ?? raw['duration'],
-    );
-
-    var label = title;
-    final normalized = (label ?? '').toLowerCase().replaceAll('’', "'");
-    if (label == null ||
-        normalized == "today's workout" ||
-        normalized == 'todays workout') {
-      label = subtitle;
-    }
-    if (label == null) return null;
-
-    label = _stripDurationPrefix(label);
-    final hasDuration = RegExp(
-      r'\b\d+\s*-?\s*min',
-      caseSensitive: false,
-    ).hasMatch(label);
-    final summary = duration != null && duration > 0 && !hasDuration
-        ? '$duration-min ${_lowercaseFirst(label)}'
-        : label;
-    return _cleanHomeSummaryText(summary, maxLength: 32);
-  }
-
-  String? _careSummaryFromSkincareProfile(Map<String, dynamic>? data) {
-    if (data == null || data.isEmpty) return null;
-    final skinType = (data['skinType'] ?? '').toString().trim();
-    final concerns = data['concerns'] is List
-        ? (data['concerns'] as List)
-              .where((item) => item.toString().trim().isNotEmpty)
-              .toList(growable: false)
-        : const [];
-    final dayDone = _listLength(data['daySteps']);
-    final nightDone = _listLength(data['nightSteps']);
-    if (skinType.isEmpty &&
-        concerns.isEmpty &&
-        dayDone == 0 &&
-        nightDone == 0) {
-      return null;
-    }
-
-    final hour = DateTime.now().hour;
-    final isNight = hour >= 18 || hour < 5;
-    final completed = isNight ? nightDone : dayDone;
-    if (completed > 0) {
-      return '$completed/5 skincare done';
-    }
-    return isNight ? 'Night repair routine' : 'AM glow routine';
-  }
-
-  Map<String, dynamic>? _firstMap(Object? value) {
-    if (value is! List) return null;
-    for (final item in value) {
-      if (item is Map) return Map<String, dynamic>.from(item);
-    }
-    return null;
-  }
-
-  int? _intFromAny(Object? value) {
-    if (value is int) return value;
-    if (value is num) return value.round();
-    final text = value?.toString() ?? '';
-    final direct = int.tryParse(text);
-    if (direct != null) return direct;
-    final match = RegExp(r'\d+').firstMatch(text);
-    return match == null ? null : int.tryParse(match.group(0)!);
-  }
-
-  int _listLength(Object? value) => value is List ? value.length : 0;
-
-  String? _cleanHomeSummaryText(String value, {int maxLength = 36}) {
-    final cleaned = value
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .replaceAll(RegExp(r'[^\w\s&+/.-]'), '')
-        .trim();
-    if (cleaned.isEmpty) return null;
-    if (cleaned.length <= maxLength) return cleaned;
-    final clipped = cleaned.substring(0, maxLength).trimRight();
-    final lastSpace = clipped.lastIndexOf(' ');
-    return lastSpace > 10 ? clipped.substring(0, lastSpace) : clipped;
-  }
-
-  String _stripDurationPrefix(String value) {
-    return value
-        .replaceFirst(
-          RegExp(r'^\s*\d+\s*-?\s*min(?:ute)?s?\s+', caseSensitive: false),
-          '',
-        )
-        .trim();
-  }
-
-  String _lowercaseFirst(String value) {
-    if (value.isEmpty) return value;
-    return value[0].toLowerCase() + value.substring(1);
-  }
-
-  void _rotateSuggestion() {
-    final current = _suggestionState.value;
-    _suggestionState.value = (index: current.index, opacity: 0.0);
-    Future.delayed(const Duration(milliseconds: 350), () {
-      if (!mounted) return;
-      _suggestionState.value = (
-        index: (current.index + 1) % _aiSuggestions.length,
-        opacity: 1.0,
-      );
-    });
+    // Invalidate suggestion cache — hour/weekday may have changed
+    _invalidateSuggestionCache();
   }
 
   void _startThinkingAnimation() {
@@ -629,33 +1450,46 @@ class _Screen4State extends State<Screen4>
   }
 
   // ── Voice methods ──────────────────────────────────────────────────────────
-  Future<void> _toggleListening() async {
-    if (_isListening) {
-      await AhviSpeechService.instance.stop();
-      if (mounted) setState(() => _isListening = false);
-      return;
-    }
-
-    if (mounted) setState(() => _isListening = true);
-
-    await AhviSpeechService.instance.start(
-      onText: (text) {
-        if (!mounted) return;
-
-        setState(() {
-          _chatController.text = text;
-          _chatController.selection = TextSelection.fromPosition(
-            TextPosition(offset: _chatController.text.length),
-          );
-        });
+  Future<void> _initSpeech() async {
+    _speechAvailable = await _speech.initialize(
+      onStatus: (status) {
+        if (status == 'done' || status == 'notListening') {
+          if (mounted) setState(() => _isListening = false);
+        }
       },
-      onDone: () {
+      onError: (_) {
         if (mounted) setState(() => _isListening = false);
       },
     );
+    if (mounted) setState(() {});
+  }
 
-    if (mounted && !AhviSpeechService.instance.isListening) {
+  Future<void> _toggleListening() async {
+    if (!_speechAvailable) return;
+    if (_isListening) {
+      await _speech.stop();
       setState(() => _isListening = false);
+    } else {
+      setState(() => _isListening = true);
+      await _speech.listen(
+        onResult: (result) {
+          setState(() {
+            _chatController.text = result.recognizedWords;
+            _chatController.selection = TextSelection.fromPosition(
+              TextPosition(offset: _chatController.text.length),
+            );
+          });
+          if (result.finalResult && result.recognizedWords.trim().isNotEmpty) {
+            _speech.stop();
+            setState(() => _isListening = false);
+          }
+        },
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 4),
+        localeId: 'en_IN',
+        cancelOnError: true,
+        partialResults: true,
+      );
     }
   }
 
@@ -681,14 +1515,11 @@ class _Screen4State extends State<Screen4>
     });
   }
 
-  @override
   void dispose() {
     _chatFocusNode.removeListener(_onChatFocusChange);
     WidgetsBinding.instance.removeObserver(this);
     _keyboardHeight.dispose();
-    if (_isListening) {
-      AhviSpeechService.instance.cancel();
-    }
+    _speech.stop();
     _aurora1Ctrl.dispose();
     _aurora2Ctrl.dispose();
     _aurora3Ctrl.dispose();
@@ -708,11 +1539,10 @@ class _Screen4State extends State<Screen4>
     _overlayFadeCtrl.dispose();
     _thinkingCtrl.dispose();
     _tagsRevealCtrl.dispose();
-    _suggestionTimer?.cancel();
     _toastTimer?.cancel();
     _clockTimer?.cancel();
-    _suggestionState.dispose();
     _clockState.dispose();
+    _cardContextVersion.dispose();
     _chatController.dispose();
     _chatFocusNode.dispose();
     for (final ctrls in _prepareExactAddControllersByTitle.values) {
@@ -721,6 +1551,8 @@ class _Screen4State extends State<Screen4>
       }
     }
     _overlayScrollCtrl.dispose();
+    _routineCardsScrollCtrl.dispose();
+    _routineProgressScrollCtrl.dispose();
     super.dispose();
   }
 
@@ -737,76 +1569,61 @@ class _Screen4State extends State<Screen4>
     if (idx == 0) {
       // Home tab — already here, just ensure active
       if (_activeNavIdx != 0) {
-        _navRiseCtrls[_activeNavIdx].animateTo(
-          0.0,
-          curve: const Cubic(0.4, 0.0, 0.2, 1.0),
-        );
-        _navRiseCtrls[0].animateTo(
-          1.0,
-          curve: const Cubic(0.34, 1.56, 0.64, 1.0),
-        );
+        _navRiseCtrls[_activeNavIdx].animateTo(0.0, curve: const Cubic(0.4, 0.0, 0.2, 1.0));
+        _navRiseCtrls[0].animateTo(1.0, curve: const Cubic(0.34, 1.56, 0.64, 1.0));
         setState(() => _activeNavIdx = 0);
       } else {
         // 🔧 FIX: Already on home tab — rise animation ensure చేయి
-        _navRiseCtrls[0].animateTo(
-          1.0,
-          curve: const Cubic(0.34, 1.56, 0.64, 1.0),
-        );
+        _navRiseCtrls[0].animateTo(1.0, curve: const Cubic(0.34, 1.56, 0.64, 1.0));
       }
       if (widget.onShellNavTap != null) widget.onShellNavTap!(0);
       return;
     }
 
+    // Highlight the tapped tab immediately before navigating
+    void _activateTab(int i) {
+      _navRiseCtrls[_activeNavIdx].animateTo(0.0, curve: const Cubic(0.4, 0.0, 0.2, 1.0));
+      _navRiseCtrls[i].animateTo(1.0, curve: const Cubic(0.34, 1.56, 0.64, 1.0));
+      setState(() => _activeNavIdx = i);
+    }
+
     if (idx == 1) {
-      // 🔧 FIX: Shell కి delegate చేసే ముందు local tab highlight చేయి
-      _navRiseCtrls[_activeNavIdx].animateTo(
-        0.0,
-        curve: const Cubic(0.4, 0.0, 0.2, 1.0),
-      );
-      _navRiseCtrls[1].animateTo(
-        1.0,
-        curve: const Cubic(0.34, 1.56, 0.64, 1.0),
-      );
-      setState(() => _activeNavIdx = 1);
-      if (widget.onShellNavTap != null) {
-        widget.onShellNavTap!(1);
-        return;
-      }
-      _openNavScreen(const WardrobeScreen());
+      _activateTab(1);
+      showAhviStylistChatSheet(context, moduleContext: 'style');
       return;
     }
     if (idx == 2) {
       // 🔧 FIX: Shell కి delegate చేసే ముందు local tab highlight చేయి
-      _navRiseCtrls[_activeNavIdx].animateTo(
-        0.0,
-        curve: const Cubic(0.4, 0.0, 0.2, 1.0),
-      );
-      _navRiseCtrls[2].animateTo(
-        1.0,
-        curve: const Cubic(0.34, 1.56, 0.64, 1.0),
-      );
+      _navRiseCtrls[_activeNavIdx].animateTo(0.0, curve: const Cubic(0.4, 0.0, 0.2, 1.0));
+      _navRiseCtrls[2].animateTo(1.0, curve: const Cubic(0.34, 1.56, 0.64, 1.0));
       setState(() => _activeNavIdx = 2);
       if (widget.onShellNavTap != null) {
         widget.onShellNavTap!(2);
         return;
       }
-      _openNavScreen(const BoardsScreen());
+      _openNavScreen(const WardrobeScreen());
       return;
     }
     if (idx == 3) {
+      // 🔧 FIX: Shell కి delegate చేసే ముందు local tab highlight చేయి
+      _navRiseCtrls[_activeNavIdx].animateTo(0.0, curve: const Cubic(0.4, 0.0, 0.2, 1.0));
+      _navRiseCtrls[3].animateTo(1.0, curve: const Cubic(0.34, 1.56, 0.64, 1.0));
+      setState(() => _activeNavIdx = 3);
+      if (widget.onShellNavTap != null) {
+        widget.onShellNavTap!(3);
+        return;
+      }
+      _openNavScreen(const BoardsScreen());
+      return;
+    }
+    if (idx == 4) {
       _showComingSoon();
       return;
     }
     if (idx == _activeNavIdx) return;
 
-    _navRiseCtrls[_activeNavIdx].animateTo(
-      0.0,
-      curve: const Cubic(0.4, 0.0, 0.2, 1.0),
-    );
-    _navRiseCtrls[idx].animateTo(
-      1.0,
-      curve: const Cubic(0.34, 1.56, 0.64, 1.0),
-    );
+    _navRiseCtrls[_activeNavIdx].animateTo(0.0, curve: const Cubic(0.4, 0.0, 0.2, 1.0));
+    _navRiseCtrls[idx].animateTo(1.0, curve: const Cubic(0.34, 1.56, 0.64, 1.0));
     setState(() => _activeNavIdx = idx);
   }
 
@@ -816,8 +1633,8 @@ class _Screen4State extends State<Screen4>
     showAhviLensSheet(
       ctx,
       t: _t,
-      onVisualSearch: null, // sheet provides working visual-search default
-      onFindSimilar: null, // sheet provides working find-similar default
+      onVisualSearch: () => _showComingSoon(),
+      onFindSimilar: () => _showComingSoon(),
       onAddToWardrobe: () => showAddToWardrobeModal(navigator.context),
     );
   }
@@ -828,64 +1645,88 @@ class _Screen4State extends State<Screen4>
 
   void _openNavScreen(Widget page) {
     HapticFeedback.lightImpact();
-    Navigator.of(context)
-        .push(
-          PageRouteBuilder<void>(
-            transitionDuration: const Duration(milliseconds: 350),
-            reverseTransitionDuration: const Duration(milliseconds: 350),
-            pageBuilder: (context, animation, secondary) => page,
-            transitionsBuilder: (context, animation, secondary, child) {
-              final curved = CurvedAnimation(
-                parent: animation,
-                curve: const Cubic(0.22, 1.0, 0.36, 1.0),
-              );
-              return FadeTransition(
-                opacity: curved,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0.04, 0),
-                    end: Offset.zero,
-                  ).animate(curved),
-                  child: child,
-                ),
-              );
-            },
-          ),
-        )
-        .then((_) {
-          // Back వచ్చినప్పుడు Home tab active గా reset చేయి
-          if (!mounted) return;
-          final prevIdx = _activeNavIdx;
-          if (prevIdx != 0) {
-            _navRiseCtrls[prevIdx].animateTo(
-              0.0,
-              curve: const Cubic(0.4, 0.0, 0.2, 1.0),
-            );
-          }
-          _navRiseCtrls[0].animateTo(
-            1.0,
-            curve: const Cubic(0.34, 1.56, 0.64, 1.0),
+    Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        transitionDuration: const Duration(milliseconds: 350),
+        reverseTransitionDuration: const Duration(milliseconds: 350),
+        pageBuilder: (context, animation, secondary) => page,
+        transitionsBuilder: (context, animation, secondary, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: const Cubic(0.22, 1.0, 0.36, 1.0),
           );
-          setState(() => _activeNavIdx = 0);
-          // 🔧 FIX: Shell కి కూడా Home index తెలియజేయి — nav bar తిరిగి కనపడుతుంది
-          if (widget.onShellNavTap != null) widget.onShellNavTap!(0);
-        });
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.04, 0),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
+          );
+        },
+      ),
+    ).then((_) {
+      // Back వచ్చినప్పుడు Home tab active గా reset చేయి
+      if (!mounted) return;
+      final prevIdx = _activeNavIdx;
+      if (prevIdx != 0) {
+        _navRiseCtrls[prevIdx].animateTo(
+          0.0,
+          curve: const Cubic(0.4, 0.0, 0.2, 1.0),
+        );
+      }
+      _navRiseCtrls[0].animateTo(
+        1.0,
+        curve: const Cubic(0.34, 1.56, 0.64, 1.0),
+      );
+      setState(() => _activeNavIdx = 0);
+      // 🔧 FIX: Shell కి కూడా Home index తెలియజేయి — nav bar తిరిగి కనపడుతుంది
+      if (widget.onShellNavTap != null) widget.onShellNavTap!(0);
+    });
   }
 
   void _openModuleChat(String moduleKey) {
-    // Overlay తెరవకుండా directly ChatScreen కి navigate చేయి
-    final module = (moduleKey == 'plan') ? 'prepare' : moduleKey;
-    _openNavScreen(ChatScreen(moduleContext: module));
+    _recordIntent(moduleKey); // 🆕 track for dynamic recommendations
+    // Each card కి తన specific module తో chat open అవ్వాలి
+    final String module;
+    final String? initialPrompt;
+
+    switch (moduleKey) {
+      case 'style':
+        module = 'style';
+        initialPrompt = null; // Style module — default style chat
+        break;
+      case 'organize':
+        module = 'organize';
+        initialPrompt = null; // Organise module — wardrobe/outfit organisation chat
+        break;
+      case 'plan':
+        module = 'prepare';
+        initialPrompt = null; // Plan/Prepare module — event & trip planning chat
+        break;
+      default:
+        module = moduleKey;
+        initialPrompt = null;
+    }
+
+    showAhviStylistChatSheet(
+      context,
+      moduleContext: module,
+      initialPrompt: initialPrompt,
+    );
   }
 
   void _openChatWithPrompt(String prompt) {
     final text = prompt.trim();
     final module = (_activeIntent ?? 'style').trim();
-    if (text.isEmpty) {
-      _openNavScreen(ChatScreen(moduleContext: module));
-      return;
-    }
-    _openNavScreen(ChatScreen(moduleContext: module, initialPrompt: text));
+    // ChatScreen కాదు — AhVi Stylist Chat sheet open చేయాలి
+    showAhviStylistChatSheet(
+      context,
+      moduleContext: module,
+      initialPrompt: text.isEmpty ? null : text,
+    );
   }
 
   void _openPickSheet(String name, String tag) {
@@ -894,7 +1735,7 @@ class _Screen4State extends State<Screen4>
       useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: _bgPrimary.withValues(alpha: 0.30),
+      barrierColor: _bgPrimary.withOpacity(0.30),
       builder: (sheetContext) => _buildPickSheet(
         name: name,
         tag: tag,
@@ -915,13 +1756,13 @@ class _Screen4State extends State<Screen4>
   void _closeSeeAll() {
     _seeAllCtrl
         .animateTo(
-          0.0,
-          duration: const Duration(milliseconds: 300),
-          curve: const Cubic(0.4, 0.0, 1.0, 1.0),
-        )
+      0.0,
+      duration: const Duration(milliseconds: 300),
+      curve: const Cubic(0.4, 0.0, 1.0, 1.0),
+    )
         .then((_) {
-          if (mounted) setState(() => _seeAllOpen = false);
-        });
+      if (mounted) setState(() => _seeAllOpen = false);
+    });
   }
 
   void _toggleLike(int cardIdx) {
@@ -933,6 +1774,7 @@ class _Screen4State extends State<Screen4>
 
   void _triggerIntent(String intent) {
     if (_overlayState != _OverlayState.idle) return;
+    _recordIntent(intent); // 🆕 track for dynamic recommendations
     _activeIntent = intent;
     final cfg = _intentConfig[intent]!;
     _setPlaceholder(intent);
@@ -963,24 +1805,13 @@ class _Screen4State extends State<Screen4>
   }
 
   void _submitQuery(String query) {
-    // Overlay తెరవకుండా directly ChatScreen కి navigate చేయి
+    // AhVi Stylist Chat sheet తెరుచుకుంటుంది
     _openChatWithPrompt(query);
   }
 
   // 🚀 FIXED FUNCTION: REAL API CALL WITH HISTORY & MEMORY
   Future<void> _handleQuery(String question, String intent) async {
     if (_overlayState == _OverlayState.thinking) return;
-
-    const _styleIntents = {'style', 'wardrobe', 'daily_wear'};
-    if (_styleIntents.contains(intent.toLowerCase().trim())) {
-      // Style/wardrobe queries must render as visual boards, which only the
-      // ChatScreen board path (/api/module-chat) produces. The inline overlay
-      // below answers via /api/text (text styling advice, not boards), so a
-      // "style card" suggestion landed as a checklist. Route into ChatScreen.
-      _activeIntent = intent;
-      _openChatWithPrompt(question);
-      return;
-    }
 
     final cfg = _intentConfig[intent] ?? _intentConfig['chat']!;
 
@@ -989,7 +1820,6 @@ class _Screen4State extends State<Screen4>
       _overlayState = _OverlayState.thinking;
       _overlaySuggestions = [];
       _responseTags = cfg.responseTags;
-      _responseTagValues.clear();
       _tagsRevealed = false;
       // We DO NOT clear _responses here so the old messages stay on screen!
     });
@@ -1012,9 +1842,7 @@ class _Screen4State extends State<Screen4>
           'user_$_userName',
           historyPayload,
           _runningMemory,
-          moduleContext: intent,
         );
-        final parsed = AhviResponse.fromMap(apiResult);
 
         // Store user's question into history
         _chatHistory.add({"role": "user", "content": question});
@@ -1023,9 +1851,13 @@ class _Screen4State extends State<Screen4>
           _runningMemory = apiResult['updated_memory'];
         }
 
-        String aiText = parsed.messageText.isNotEmpty
-            ? parsed.messageText
-            : (apiResult['error']?.toString() ?? "No content");
+        String aiText = "Could not parse response.";
+
+        if (apiResult.containsKey('message') && apiResult['message'] != null) {
+          aiText = apiResult['message']['content']?.toString() ?? "No content";
+        } else if (apiResult.containsKey('error')) {
+          aiText = apiResult['error']?.toString() ?? "Unknown error occurred";
+        }
 
         // Store AHVI's response into history
         _chatHistory.add({"role": "assistant", "content": aiText});
@@ -1047,19 +1879,19 @@ class _Screen4State extends State<Screen4>
 
         if (aiText.length > 1500) {
           aiText =
-              '${aiText.substring(0, 1500)}... \n\n[Text truncated to prevent UI crash]';
+          '${aiText.substring(0, 1500)}... \n\n[Text truncated to prevent UI crash]';
         }
 
-        if (parsed.chips.isNotEmpty) {
-          _responseTags = parsed.chips.map((chip) => chip.label).toList();
-          _responseTagValues
-            ..clear()
-            ..addEntries(
-              parsed.chips.map((chip) => MapEntry(chip.label, chip.value)),
-            );
+        if (apiResult.containsKey('chips') &&
+            apiResult['chips'] != null &&
+            apiResult['chips'] is List) {
+          final List<dynamic> rawChips = apiResult['chips'];
+          if (rawChips.isNotEmpty) {
+            _responseTags = rawChips.map((e) => e.toString()).toList();
+          }
         }
 
-        resp = _responseDataFromAhvi(question, aiText, parsed);
+        resp = _ResponseData(type: 'text', question: question, intro: aiText);
       } catch (e) {
         String errorMsg = e.toString();
         if (errorMsg.length > 150) {
@@ -1122,7 +1954,6 @@ class _Screen4State extends State<Screen4>
       _activeIntent = null;
       _homeCollapsed = false;
       _overlaySuggestions = [];
-      _responseTagValues.clear();
       _responses.clear();
       _tagsRevealed = false;
       _chatPlaceholderKey = 'ask_me'; // ✅
@@ -1131,7 +1962,10 @@ class _Screen4State extends State<Screen4>
 
   void _setPlaceholder(String intent) {
     // 🆕 Key store చేస్తున్నాం — getter లో translate అవుతుంది
-    setState(() => _chatPlaceholderKey = 'placeholder_$intent');
+    setState(
+          () => _chatPlaceholderKey =
+      'placeholder_$intent',
+    );
   }
 
   void _handlePrepareChipSend(String query) {
@@ -1157,67 +1991,8 @@ class _Screen4State extends State<Screen4>
     return _ResponseData(type: 'prepare_exact', question: question, intro: '');
   }
 
-  String _tagText(String tag) {
-    final looksLikeLocalizationKey =
-        RegExp(r'^[a-z0-9_]+$').hasMatch(tag) && tag.contains('_');
-    return looksLikeLocalizationKey ? AppLocalizations.t(context, tag) : tag;
-  }
-
-  String _tagValue(String tag) => _responseTagValues[tag] ?? _tagText(tag);
-
-  _ResponseData _responseDataFromAhvi(
-    String question,
-    String aiText,
-    AhviResponse parsed,
-  ) {
-    final planSections = _planSectionsFromAhvi(parsed);
-    if (planSections.isNotEmpty) {
-      return _ResponseData(
-        type: 'plan',
-        question: question,
-        intro: aiText,
-        planSections: planSections,
-      );
-    }
-    if (parsed.isPrep && parsed.checklistItems.isNotEmpty) {
-      return _ResponseData(
-        type: 'plan',
-        question: question,
-        intro: aiText,
-        planSections: [
-          _PlanSection(
-            'Prep checklist',
-            (_) => _accentTertiary,
-            parsed.checklistItems,
-          ),
-        ],
-      );
-    }
-    return _ResponseData(type: 'text', question: question, intro: aiText);
-  }
-
-  List<_PlanSection> _planSectionsFromAhvi(AhviResponse parsed) {
-    final sections = parsed.isPrep && parsed.prepSections.isNotEmpty
-        ? parsed.prepSections
-        : parsed.planSections;
-    final colors = [
-      (AppThemeTokens t) => _accent,
-      (AppThemeTokens t) => _accentSecondary,
-      (AppThemeTokens t) => _accentTertiary,
-    ];
-    return List<_PlanSection>.generate(sections.length, (index) {
-      final section = sections[index];
-      return _PlanSection(
-        section.title,
-        colors[index % colors.length],
-        section.items,
-      );
-    });
-  }
-
   bool get _hasTransientUi =>
       _seeAllOpen || _overlayState != _OverlayState.idle;
-  bool get _showStandaloneHomeNav => false;
 
   void _handleBackNavigation() {
     if (_seeAllOpen) {
@@ -1228,23 +2003,14 @@ class _Screen4State extends State<Screen4>
       _dismissOverlay();
       return;
     }
-    Navigator.of(context).maybePop();
   }
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: !_hasTransientUi,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) {
-          _handleBackNavigation();
-        }
-      },
-      child: Scaffold(
-        backgroundColor: _bgPrimary,
-        resizeToAvoidBottomInset: false,
-        body: _buildPhoneScreen(),
-      ),
+    return AhviTransientBackScope(
+      hasTransientUi: _hasTransientUi,
+      onDismissTransientUi: _handleBackNavigation,
+      child: Scaffold(backgroundColor: _bgPrimary, resizeToAvoidBottomInset: false, body: _buildPhoneScreen()),
     );
   }
 
@@ -1285,54 +2051,191 @@ class _Screen4State extends State<Screen4>
                 builder: (context, constraints) {
                   final screenH = constraints.maxHeight;
 
-                  // Placeholder height — _buildFixedLogoBar తో exact match:
-                  // SafeArea.top (statusBarH) + topPad + logoFontSize + botPad
-                  // Chat _ChatLogoHeader కూడా same values use చేస్తోంది
-                  final double topPad = screenH < 700 ? 6.0 : 10.0;
-                  final double botPad = screenH < 700 ? 4.0 : 6.0;
-                  final double logoFontSizeH = screenH < 700 ? 26.0 : 30.0;
+                  // Placeholder height — must exactly match AhviHeader's real
+                  // rendered height, not a separately-guessed formula.
+                  // AhviHeader = SafeArea.top (statusBarH) + a FIXED 33px
+                  // content SizedBox. Its internal topPad/botPad/logoSize
+                  // vars are computed but never applied to its layout, so
+                  // they must NOT be added here either — doing so previously
+                  // over-reserved 9-19px of dead space under the header,
+                  // pushing the greeting block down and shrinking heroH.
+                  const double headerContentH = 33.0;
                   final double statusBarH = MediaQuery.paddingOf(context).top;
-                  final double topBarPlaceholderH =
-                      statusBarH + topPad + logoFontSizeH + botPad;
+                  final double topBarPlaceholderH = statusBarH + headerContentH;
 
-                  // Hero gets 62%, secondary gets 38% of available space
-                  final heroFlex = 62;
-                  final secFlex = 38;
+                  // 🆕 RESPONSIVE DESIGN - Adapt to all screen sizes
+                  // Small phones: 280-360dp (minimal padding, compact spacing)
+                  // Standard: 360-480dp (normal padding)
+                  // Large: 480-640dp (increased spacing, larger cards)
+                  // Tablets: 640+dp (centered, max width)
+                  final screenW = constraints.maxWidth;
+                  // 🆕 Single shared source of truth — see _responsiveGutter
+                  // above. The fixed logo bar (_buildFixedLogoBar) reads the
+                  // exact same function, so the header and body content can
+                  // never drift out of alignment again.
+                  final gutter = _responsiveGutter(screenW);
+                  final double horizontalPad = gutter.horizontalPad;
+                  final double maxContentWidth = gutter.maxContentWidth;
+                  final double cardSpacing;
+                  final double topSpacing;
+
+                  // Fixed page-spacing values (consistent across all screen sizes):
+                  //   Chips → Hero: 10px ✏️ Reduced from 12px, Hero → Routine / Routine → Prep: 8px ✏️ Reduced from 10px
+                  // 🔧 FIX: Responsive spacing for small screens
+                  cardSpacing = screenW < 340 ? 6.0 : 8.0;
+                  topSpacing = screenW < 340 ? 8.0 : 10.0;
+
+                  // ── Bottom reserve: chat bar + nav bar + safe bottom ──────────
+                  // Now ACTUALLY applied (previously computed but unused) as the
+                  // Prep & Plan card's bottom clearance below, so the card's
+                  // visible area always stops above the floating prompt bar —
+                  // on every screen size, with zero RenderFlex overflow risk,
+                  // since it's applied inside an Expanded (which can never
+                  // request more space than its parent has to give).
+                  final safeBottom = MediaQuery.paddingOf(context).bottom;
+                  // Prompt bar sits at bottom: navBarTotalH (safeBottom+88).
+                  // We only need to clear: navBarTotalH + promptBarH + gap.
+                  // Do NOT add safeBottom again — it's already baked into navBarTotalH.
+                  // ✏️ Bumped +8 (62→70) to reserve space for the taller prompt
+                  // bar — actual bar height lives in AhviChatPromptBar
+                  // (widgets/ahvi_chat_prompt_bar.dart), not in this file.
+                  const promptBarH = 70.0;
+                  // ✏️ Nav bar sits at safeB+6, is now 78px tall (pillH 64 +
+                  // maxBulge 14 — bumped from 58px so icons feel less
+                  // cramped), so its top edge sits at safeB+84. A consistent
+                  // 4px gap above it puts navBarTotalH at safeB+88.
+                  // ✅ FIX 1: navBarTotalH reduced by 1px (88→87).
+                  // ✅ FIX 3: tightened by another 1px (87→86) — Nav Bar ↔
+                  // Prompt Bar gap is now 1px tighter than before.
+                  final double navBarTotalH = 86.0;
+                  final double screenHFull = MediaQuery.of(context).size.height;
+                  final double promptExtraLift =
+                  screenHFull >= 760 ? 8.0 : screenHFull >= 680 ? 6.0 : 0.0;
+                  // ✅ FIX 2: breathingGap reduced from 6→4 (saves 2px between
+                  // Prep & Plan card and Prompt Bar).
+                  // ✅ FIX 4: tightened by another 3px (4→1 → 0) — Prep & Plan ↔
+                  // Prompt Bar gap is now 4px tighter than before (no gap).
+                  const breathingGap = 0.0;
+                  // Combined, FIX 3 + FIX 4 recover 4px of vertical space
+                  // (1px + 3px) versus the previous layout. That whole 4px is
+                  // routed entirely into the Routine Cards section below
+                  // (see recoveredSpaceForRoutine) instead of being re-split
+                  // across Hero + Routine by flex.
+                  const recoveredSpaceForRoutine = 4.0;
+
+                  // 🔧 FIX: Responsive bottom reserve for small screens
+                  final bottomReserved = screenW < 340
+                      ? (safeBottom + 72.0)  // Reduced for tiny phones
+                      : screenW < 380
+                      ? (safeBottom + navBarTotalH + promptBarH + promptExtraLift + breathingGap - 3.0)
+                      : (safeBottom + navBarTotalH + promptBarH + promptExtraLift + breathingGap - 1.0);
 
                   return SizedBox(
                     height: constraints.maxHeight,
                     child: Padding(
-                      padding: const EdgeInsets.only(left: 20.0, right: 20.0),
+                      padding: EdgeInsets.only(left: horizontalPad, right: horizontalPad),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
+                        // Must be max so Expanded can fill remaining height.
+                        mainAxisSize: MainAxisSize.max,
                         children: [
-                          // Space reserved for fixed logo overlay (not animated)
+                          // ── FIXED: logo bar placeholder ────────────────────
                           SizedBox(height: topBarPlaceholderH),
-                          _buildGreetingBlock(),
-                          // Hero card — grows with screen
-                          Expanded(
-                            flex: heroFlex,
-                            child: Padding(
-                              padding: const EdgeInsets.only(bottom: 8.0),
-                              child: _buildHeroCard(),
-                            ),
+
+                          // ── FIXED: Date · Greeting · Mobility/Temp/Meeting chips ──
+                          // These three elements NEVER scroll.
+                          ValueListenableBuilder<int>(
+                            valueListenable: _cardContextVersion,
+                            builder: (context, _, __) => _buildGreetingBlock(),
                           ),
-                          // Plan & Prep cards — also grow with screen
+                          SizedBox(height: topSpacing),
+
+                          // ── CARDS LAYOUT — distribute remaining height ────────
+                          // Expanded takes all SafeArea height minus topBar + greeting.
+                          // The inner LayoutBuilder distributes that to the 3 cards.
+                          // bottomReserved padding keeps the last card above the prompt bar.
                           Expanded(
-                            flex: secFlex,
                             child: Padding(
-                              padding: const EdgeInsets.only(bottom: 8.0),
-                              child: _buildSecondaryRow(),
+                              padding: EdgeInsets.only(bottom: bottomReserved),
+                              child: LayoutBuilder(
+                                builder: (context, cardConstraints) {
+                                  final availableH = cardConstraints.maxHeight;
+                                  // ── PREP & PLAN: fixed height (it hosts a designed,
+                                  // pre-cropped weekly image, so it shouldn't stretch
+                                  // or shrink like the other two). Still screen-size
+                                  // aware via the existing proportional+clamp formula,
+                                  // just bumped +17px (15–20px per spec) on top of it.
+                                  // ── PREP & PLAN: Reduced by ~17px vs previous formula ──
+                                  // The saved height flows to Routine cards (flex 38 vs 35)
+                                  // which eliminates the 1px bottom overflow on all screens.
+                                  final prepH = (availableH * 0.22).clamp(95.0, 120.0);
+
+                                  // ── HERO + ROUTINE: guaranteed-minimum allocation ───────
+                                  // Strategy: routine cards always get at least routineMinH
+                                  // (stepper 26 + cards 90 + internal gaps ≈ 118px).
+                                  // Hero gets whatever's left, with its own floor of 160px
+                                  // so it never collapses to unreadable on short phones.
+                                  // On taller screens (>400px flexible) the natural 62/38
+                                  // split applies unchanged — minimum floors only kick in
+                                  // on compact devices where the math would shrink cards.
+                                  const routineMinH = 118.0;
+                                  const heroMinH    = 160.0;
+                                  final flexibleH = availableH - prepH - (cardSpacing * 2);
+                                  final naturalHeroH = math.max(
+                                    0.0,
+                                    (flexibleH - recoveredSpaceForRoutine) * 0.62,
+                                  );
+                                  final naturalRoutineH = math.max(
+                                    0.0,
+                                    flexibleH - naturalHeroH - recoveredSpaceForRoutine,
+                                  );
+                                  // If the natural split gives routine less than its minimum,
+                                  // pin routine at its min and give hero the rest (floored).
+                                  final heroH = naturalRoutineH < routineMinH
+                                      ? math.max(heroMinH, flexibleH - routineMinH - recoveredSpaceForRoutine)
+                                      : naturalHeroH;
+
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.max,
+                                    children: [
+                                      // ── HERO / STYLE CARD ──────────────────────────────
+                                      SizedBox(
+                                        height: heroH,
+                                        width: double.infinity,
+                                        child: ValueListenableBuilder<int>(
+                                          valueListenable: _cardContextVersion,
+                                          builder: (context, _, __) => _buildHeroCard(),
+                                        ),
+                                      ),
+                                      SizedBox(height: cardSpacing),
+
+                                      // ── ROUTINE CARDS ───────────────────────────────────
+                                      // Expanded absorbs all remaining space, which now
+                                      // includes the full 4px recovered above.
+                                      Expanded(
+                                        child: ValueListenableBuilder<int>(
+                                          valueListenable: _cardContextVersion,
+                                          builder: (context, _, __) =>
+                                              _buildRoutineCardsSection(),
+                                        ),
+                                      ),
+                                      SizedBox(height: cardSpacing),
+
+                                      // ── PREP & PLAN CARD ────────────────────────────────
+                                      SizedBox(
+                                        height: prepH,
+                                        child: ValueListenableBuilder<int>(
+                                          valueListenable: _cardContextVersion,
+                                          builder: (context, _, __) =>
+                                              _buildPrepPlanCard(screenH: screenH),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
                             ),
-                          ),
-                          // Space reserved for floating prompt bar + shell nav.
-                          SizedBox(
-                            height:
-                                (widget.onShellNavTap != null ||
-                                    (_showStandaloneHomeNav &&
-                                        widget.onShellNavTap == null))
-                                ? 168.0
-                                : 88.0,
                           ),
                         ],
                       ),
@@ -1346,9 +2249,15 @@ class _Screen4State extends State<Screen4>
           // ── Fixed AHVI Logo — Chat screen లాగే Positioned గా ఉంది ──
           // top: 0, SafeArea(bottom: false) తో — Chat _ChatLogoHeader తో
           // exact match అవుతుంది: status bar + topPad + logoFontSize + botPad
-          Positioned(top: 0, left: 0, right: 0, child: _buildFixedLogoBar()),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _buildFixedLogoBar(),
+          ),
 
           if (_overlayState != _OverlayState.idle) _buildAiOverlay(),
+
 
           if (_activeIntent == 'prepare' &&
               (_overlayState == _OverlayState.suggestions ||
@@ -1356,12 +2265,7 @@ class _Screen4State extends State<Screen4>
             Builder(
               builder: (context) {
                 final keyboardH = MediaQuery.of(context).viewInsets.bottom;
-                final chipsBottom = keyboardH > 0
-                    ? keyboardH + 72
-                    : (MediaQuery.of(context).size.height * 0.23).clamp(
-                        160.0,
-                        210.0,
-                      );
+                final chipsBottom = keyboardH > 0 ? keyboardH + 60 : (MediaQuery.of(context).size.height * 0.23).clamp(160.0, 210.0);
                 return Positioned(
                   left: 0,
                   right: 0,
@@ -1382,13 +2286,25 @@ class _Screen4State extends State<Screen4>
               // didChangeMetrics triggers a rebuild via setState anyway.
               final kbH = MediaQuery.of(ctx).viewInsets.bottom;
               final safeB = MediaQuery.paddingOf(ctx).bottom;
-              final hasBottomNav =
-                  widget.onShellNavTap != null ||
-                  (_showStandaloneHomeNav && widget.onShellNavTap == null);
-              final navClearance = hasBottomNav ? 96.0 : 0.0;
+              final screenHPrompt = MediaQuery.of(ctx).size.height;
+              // ✏️ Nav bar sits at safeB+6, is now 78px tall (pillH 64 +
+              // maxBulge 14, up from 58px) — top edge at safeB+84. A
+              // consistent 4px gap above it puts navBarTotalH at safeB+88.
+              // ✅ FIX 1: matches bottomReserved — prompt bar 1px closer to nav bar.
+              // ✅ FIX 3: matches bottomReserved — tightened another 1px (87→86).
+              final navBarTotalH = safeB + 86.0;
+              // ✏️ Responsive keyboard-open gap: 8px on shorter screens, 10px
+              // on taller ones (was a fixed 8px).
+              final double promptKeyboardGap = screenHPrompt < 700 ? 8.0 : 10.0;
+              // ✏️ Extra lift so the prompt bar sits 6–8px higher than its
+              // resting spot when the screen has room to spare — the 4px
+              // gap above the nav bar is always preserved as a floor, this
+              // only ever adds MORE breathing room on taller devices.
+              final double promptExtraLift =
+              screenHPrompt >= 760 ? 8.0 : screenHPrompt >= 680 ? 6.0 : 0.0;
               final promptBottom = kbH > 0
-                  ? kbH + 8.0
-                  : safeB + navClearance + 12.0;
+                  ? kbH + promptKeyboardGap
+                  : navBarTotalH + promptExtraLift;
               return Positioned(
                 left: 20,
                 right: 20,
@@ -1397,9 +2313,9 @@ class _Screen4State extends State<Screen4>
                 // call showOnScreen / scroll-to-visible when the TextField gets
                 // focus — that was causing the whole page to jump to the top.
                 child: MediaQuery(
-                  data: MediaQuery.of(
-                    ctx,
-                  ).copyWith(viewInsets: EdgeInsets.zero),
+                  data: MediaQuery.of(ctx).copyWith(
+                    viewInsets: EdgeInsets.zero,
+                  ),
                   child: _buildChatWrap(),
                 ),
               );
@@ -1408,20 +2324,15 @@ class _Screen4State extends State<Screen4>
 
           // Only show nav bar when NOT inside a Shell (Shell has its own nav bar)
           // 🔧 FIX: Keyboard open అయినా nav bar same position లో ఉండాలి — hide చేయకూడదు
-          if (_showStandaloneHomeNav && widget.onShellNavTap == null)
-            Builder(
-              builder: (ctx) {
-                final safeB = MediaQuery.paddingOf(ctx).bottom;
-                return Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: safeB + 8,
-                  child: _buildBottomNav(),
-                );
-              },
-            ),
+          if (widget.onShellNavTap == null)
+            Builder(builder: (ctx) {
+              final safeB = MediaQuery.paddingOf(ctx).bottom;
+              return Positioned(left: 16, right: 16, bottom: safeB + 6, child: _buildBottomNav());
+            }),
 
           if (_seeAllOpen) _buildSeeAllPanel(),
+
+          if (_notifPanelOpen) _buildNotificationPanel(),
 
           _buildComingSoonToast(),
         ],
@@ -1453,22 +2364,22 @@ class _Screen4State extends State<Screen4>
                 Positioned(
                   top: -100 + (t1 * 90),
                   left: -80 + (t1 * 60),
-                  child: _auroraOrb(340, 340, c1.withValues(alpha: 0.30)),
+                  child: _auroraOrb(340, 340, c1.withOpacity(0.30)),
                 ),
                 Positioned(
                   bottom: -60 + (t2 * 60),
                   right: -60 + (t2 * 30),
-                  child: _auroraOrb(300, 300, c2.withValues(alpha: 0.34)),
+                  child: _auroraOrb(300, 300, c2.withOpacity(0.34)),
                 ),
                 Positioned(
                   top: 300 + (t3 * -60),
                   left: -40 + (t3 * 100),
-                  child: _auroraOrb(220, 220, c3.withValues(alpha: 0.22)),
+                  child: _auroraOrb(220, 220, c3.withOpacity(0.22)),
                 ),
                 Positioned(
                   top: 140 + (t1 * 80),
                   right: -30,
-                  child: _auroraOrb(180, 180, c1.withValues(alpha: 0.18)),
+                  child: _auroraOrb(180, 180, c1.withOpacity(0.18)),
                 ),
               ],
             );
@@ -1485,16 +2396,43 @@ class _Screen4State extends State<Screen4>
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: RadialGradient(
-          colors: [color, color.withValues(alpha: 0)],
+          colors: [color, color.withOpacity(0)],
           stops: const [0.0, 0.7],
         ),
       ),
     );
   }
 
+  // ── RESPONSIVE UTILITIES ──────────────────────────────────────────────
+  /// Responsive text sizing utility that scales based on screen width
+  /// Prevents text from becoming too small or too large across devices
+  double _responsiveTextSize({
+    required double baseSize,
+    required double screenWidth,
+    double? minSize,
+    double? maxSize,
+  }) {
+    final scaled = baseSize * (screenWidth / 360.0);
+    return scaled.clamp(
+      minSize ?? (baseSize * 0.8),
+      maxSize ?? (baseSize * 1.2),
+    );
+  }
+
+  /// Get minimum horizontal padding based on screen width
+  EdgeInsets _responsivePadding(double screenWidth) {
+    if (screenWidth < 340) {
+      return const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0);
+    } else if (screenWidth < 400) {
+      return const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0);
+    } else {
+      return const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0);
+    }
+  }
+
   Widget _buildTopBar() {
     final screenH = MediaQuery.of(context).size.height;
-    final double topPad = screenH < 700 ? 6.0 : 10.0;
+    final double topPad = screenH < 700 ? 12.0 : 16.0;
     final double botPad = screenH < 700 ? 4.0 : 6.0;
     final double logoFontSize = screenH < 700 ? 26.0 : 30.0;
     return Padding(
@@ -1517,109 +2455,239 @@ class _Screen4State extends State<Screen4>
   // ── Fixed logo bar — stays put regardless of home collapse animation ──
   Widget _buildFixedLogoBar() {
     // Delegated to AhviHeader — same spacing on all screens, keyboard-safe
-    return AhviHeader(frosted: false, right: _buildProfileAvatar());
+    final screenW = MediaQuery.of(context).size.width;
+    // 🔧 FIX: previously AhviHeader used its own hardcoded 20px inset here,
+    // while the body content below used the responsive `horizontalPad` from
+    // _responsiveGutter (8/10/16/20, or centered on tablets). That mismatch
+    // is exactly why the logo looked misaligned relative to the greeting
+    // text and cards. Reading the same shared helper guarantees the logo's
+    // left edge always matches the content's left edge.
+    final horizontalPad = _responsiveGutter(screenW).horizontalPad;
+    return AhviHeader(
+      frosted: false,
+      horizontalPadding: horizontalPad,
+      right: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildNotificationButton(),
+          SizedBox(width: screenW < 360 ? 8 : 10),  // 🔧 Reduce gap on tiny phones
+          _buildProfileAvatar(),
+        ],
+      ),
+    );
   }
 
-  Widget _buildProfileAvatar() {
-    // ✅ FIX: ProfileController ని watch చేసి avatarPath directly వాడు
-    // profile లో photo మారినప్పుడు ఇక్కడ automatically rebuild అవుతుంది
-    final avatarPath = context
-        .watch<profile.ProfileController>()
-        .state
-        .avatarPath;
+  // ── Notification bell button ───────────────────────────────────────────────
+  Widget _buildNotificationButton() {
+    // 🔧 FIXED: Always 48x48px on every device — matches profile avatar size
+    const double iconButtonSize = 33.0;
+    const double iconSize = 20.0;
 
     return GestureDetector(
       onTap: () {
         HapticFeedback.lightImpact();
-        Navigator.of(context)
-            .push(
-              PageRouteBuilder<void>(
-                transitionDuration: const Duration(milliseconds: 350),
-                reverseTransitionDuration: const Duration(milliseconds: 350),
-                pageBuilder: (context, animation, secondary) =>
-                    const profile.ProfileScreen(),
-                transitionsBuilder: (context, animation, secondary, child) {
-                  final curved = CurvedAnimation(
-                    parent: animation,
-                    curve: const Cubic(0.22, 1.0, 0.36, 1.0),
-                  );
-                  return FadeTransition(
-                    opacity: curved,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(0.04, 0),
-                        end: Offset.zero,
-                      ).animate(curved),
-                      child: child,
-                    ),
-                  );
-                },
-              ),
-            )
-            .then((_) {
-              // userName refresh కోసం మాత్రమే
-              if (mounted) _fetchUserProfile();
-            });
+        setState(() {
+          _notifPanelOpen = true;
+          _unreadNotifCount = 0; // mark as read when opened
+        });
       },
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: _panel,
-          border: Border.all(
-            color: _accent.withValues(alpha: 0.25),
-            width: 1.5,
+      child: Align(
+        alignment: Alignment.center,
+        child: SizedBox(
+          width: iconButtonSize,  // 🔧 FIXED: 48px on all screen sizes
+          height: iconButtonSize,  // 🔧 FIXED: 48px on all screen sizes
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: iconButtonSize,
+                height: iconButtonSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _surface,
+                  border: Border.all(
+                    color: _border.withOpacity(0.6),
+                    width: 1.2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _accent.withOpacity(0.08),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.notifications_outlined,
+                  size: iconSize,  // 🔧 FIXED: 24px on all screen sizes
+                  color: _textHeading,
+                ),
+              ),
+              // Unread badge
+              if (_unreadNotifCount > 0)
+                Positioned(
+                  top: -2,
+                  right: -2,
+                  child: Container(
+                    width: 16,  // 🔧 FIXED: proportional to 40px button
+                    height: 16,  // 🔧 FIXED: proportional to 40px button
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [_accent, _accentTertiary],
+                      ),
+                      border: Border.all(
+                        color: _bgPrimary,
+                        width: 1.5,  // 🔧 FIXED: thinner border for smaller badge
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        _unreadNotifCount > 9 ? '9+' : '$_unreadNotifCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,  // 🔧 FIXED: proportional to 16px badge
+                          fontWeight: FontWeight.w800,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          boxShadow: [
-            BoxShadow(
-              color: _shadowMedium,
-              blurRadius: 14,
-              offset: const Offset(0, 4),
-            ),
-          ],
         ),
-        clipBehavior: Clip.antiAlias,
-        child: avatarPath != null && avatarPath.isNotEmpty
-            ? Align(
-                alignment: Alignment.center,
-                child: Image.file(
-                  File(avatarPath),
-                  width: 40,
-                  height: 40,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Icon(
+      ),
+    );
+  }
+
+  Widget _buildProfileAvatar() {
+    // 🔧 FIXED: Always 48x48px on every device — matches notification bell size
+    const double avatarSize = 33.0;
+
+    // ✅ FIX: ProfileController ని watch చేసి avatarPath directly వాడు
+    // profile లో photo మారినప్పుడు ఇక్కడ automatically rebuild అవుతుంది
+    final profileState = context.watch<profile.ProfileController>().state;
+    final avatarPath = profileState.avatarPath;
+    // ✅ FIX: was hardcoded 'P' — now derives the fallback initial from the
+    // real signed-in user's name (profile name, else the greeting name we
+    // already fetched, else a generic default) so it's never someone else's
+    // initial.
+    final String _fallbackName = profileState.name.isNotEmpty &&
+        profileState.name != 'New User'
+        ? profileState.name
+        : (_userName.isNotEmpty ? _userName : AppLocalizations.t(context, 'default_user_name'));
+    final String _avatarInitial = _fallbackName[0].toUpperCase();
+
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        Navigator.of(context).push(
+          PageRouteBuilder<void>(
+            transitionDuration: const Duration(milliseconds: 350),
+            reverseTransitionDuration: const Duration(milliseconds: 350),
+            pageBuilder: (context, animation, secondary) =>
+            const profile.ProfileScreen(),
+            transitionsBuilder: (context, animation, secondary, child) {
+              final curved = CurvedAnimation(
+                parent: animation,
+                curve: const Cubic(0.22, 1.0, 0.36, 1.0),
+              );
+              return FadeTransition(
+                opacity: curved,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.04, 0),
+                    end: Offset.zero,
+                  ).animate(curved),
+                  child: child,
+                ),
+              );
+            },
+          ),
+        ).then((_) {
+          // userName refresh కోసం మాత్రమే
+          if (mounted) _fetchUserProfile();
+        });
+      },
+      // ✅ FIX: Align gives its child loose constraints (rather than the tight
+      // ones a parent Row/Header might otherwise impose), so this avatar is
+      // always laid out at its own natural size — guaranteeing a
+      // perfect circle instead of the stretched oval seen before.
+      child: Align(
+        alignment: Alignment.center,
+        child: SizedBox(
+          width: avatarSize,  // 🔧 FIXED: 48px on all screen sizes
+          height: avatarSize,  // 🔧 FIXED: 48px on all screen sizes
+          child: Container(
+            width: avatarSize,  // 🔧 FIXED: matches SizedBox size
+            height: avatarSize,  // 🔧 FIXED: matches SizedBox size
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withOpacity(0.88), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: _accent.withOpacity(0.22),
+                  blurRadius: 6,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(2),
+            child: ClipOval(
+              child: avatarPath != null && avatarPath.isNotEmpty
+                  ? Image.file(
+                File(avatarPath),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  color: _accent,
+                  child: const Icon(
                     Icons.person_rounded,
-                    size: 22,
-                    color: _accent.withValues(alpha: 0.7),
+                    size: 20,  // 🔧 FIXED: proportional to 40px avatar
+                    color: Colors.white,
                   ),
                 ),
               )
-            : _avatarBytes != null
-            ? Align(
-                alignment: Alignment.center,
-                child: Image.memory(
-                  _avatarBytes!,
-                  width: 40,
-                  height: 40,
-                  fit: BoxFit.cover,
+                  : Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [_accent, _accentSecondary],
+                  ),
                 ),
-              )
-            : Icon(
-                Icons.person_rounded,
-                size: 22,
-                color: _accent.withValues(alpha: 0.7),
+                child: Center(
+                  child: Text(
+                    _avatarInitial,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,  // 🔧 FIXED: proportional to 40px avatar
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ),
               ),
+            ),
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildGreetingBlock() {
     final screenH = MediaQuery.of(context).size.height;
-    final double greetFontSize = screenH < 700 ? 20.0 : 24.0;
-    final double botPad = screenH < 700 ? 4.0 : 6.0;
+    final screenW = MediaQuery.of(context).size.width;
+    final double heightBasedSize = screenH < 700 ? 20.0 : 24.0;
+    // 🔧 IMPROVED: More aggressive scaling on very small screens
+    // Prevents text overflow on narrow phones (< 340px)
+    final double greetFontSize = screenW < 340
+        ? (heightBasedSize * (screenW / 360.0)).clamp(16.0, 22.0)
+        : (heightBasedSize * (screenW / 360.0)).clamp(18.0, 24.0);
     return Padding(
-      padding: EdgeInsets.only(bottom: botPad),
+      padding: EdgeInsets.zero, // Chips → Hero gap now fully controlled by `topSpacing` below
       child: ValueListenableBuilder<_ClockState>(
         valueListenable: _clockState,
         builder: (context, clock, _) {
@@ -1627,17 +2695,18 @@ class _Screen4State extends State<Screen4>
           final greetingText = AppLocalizations.t(context, clock.greeting);
 
           // ProfileController నుండి name చదువు — onboarding లో enter చేసిన name వస్తుంది
-          final profileName =
-              context.watch<profile.ProfileController>().state.name ?? '';
+          final profileName = context.watch<profile.ProfileController>().state.name ?? '';
           final displayName = profileName.isNotEmpty
-              ? _titleCaseFirstName(profileName.split(' ').first)
-              : _titleCaseFirstName(_userName);
+              ? profileName.split(' ').first
+              : _userName;
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                clock.date.isEmpty ? 'Fri, 6 Mar' : clock.date,
+                clock.date.isEmpty
+                    ? AppLocalizations.t(context, 'date_example')
+                    : clock.date,
                 style: TextStyle(
                   color: _textMuted,
                   fontSize: 12,
@@ -1645,117 +2714,38 @@ class _Screen4State extends State<Screen4>
                   letterSpacing: 0.1,
                 ),
               ),
-              const SizedBox(height: 3.0),
+              const SizedBox(height: 0.0), // ✏️ Reduced from 4.0 — tightens date→greeting gap
               RichText(
                 text: TextSpan(
                   style: TextStyle(
                     fontSize: greetFontSize,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: FontWeight.w500,
                     color: _textHeading,
-                    letterSpacing: -0.56,
-                    height: 1.1,
+                    letterSpacing: -0.5,
+                    height: 1.15,
                   ),
                   children: [
                     if (displayName.isNotEmpty) ...[
-                      TextSpan(text: '$greetingText, '), // 🆕 translated
+                      TextSpan(text: '$greetingText, '),
                       WidgetSpan(
+                        alignment: PlaceholderAlignment.middle,
                         child: _GradientText(
                           '$displayName.',
                           fontSize: greetFontSize,
-                          fontWeight: FontWeight.w400,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ] else
-                      TextSpan(
-                        text: '$greetingText.',
-                      ), // login కాలేదు — name లేదు
+                      TextSpan(text: '$greetingText.'),
                   ],
                 ),
+                textAlign: TextAlign.left,
+                softWrap: true,  // 🔧 NEW: Allows wrapping if needed
+                maxLines: 2,     // 🔧 NEW: Allow max 2 lines for long names
+                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 6.0),
-              ValueListenableBuilder<_SuggestionState>(
-                valueListenable: _suggestionState,
-                builder: (context, suggestion, _) {
-                  return _AnimatedPressable(
-                    liftY: -1.5,
-                    scalePressed: 0.98,
-                    onTap: () =>
-                        _openChatWithPrompt(_aiSuggestions[suggestion.index]),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: _surface.withValues(alpha: 0.80),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: _border),
-                        boxShadow: [
-                          BoxShadow(color: _shadowMedium, blurRadius: 10),
-                        ],
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 11,
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 26,
-                            height: 26,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: LinearGradient(
-                                colors: [
-                                  _accent.withValues(alpha: 0.15),
-                                  _accentTertiary.withValues(alpha: 0.15),
-                                ],
-                              ),
-                              border: Border.all(
-                                color: _accent.withValues(alpha: 0.25),
-                                width: 1,
-                              ),
-                            ),
-                            child: Center(
-                              child: ShaderMask(
-                                shaderCallback: (b) =>
-                                    _accentGradient.createShader(b),
-                                child: Icon(
-                                  Icons.auto_awesome,
-                                  color: _textHeading,
-                                  size: 12,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: AnimatedOpacity(
-                              opacity: suggestion.opacity,
-                              duration: const Duration(milliseconds: 350),
-                              child: Text(
-                                // 🆕 suggestion key translate చేస్తున్నాం
-                                AppLocalizations.t(
-                                  context,
-                                  _aiSuggestionKeys[suggestion.index],
-                                ),
-                                style: TextStyle(
-                                  color: _textSub,
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w400,
-                                  height: 1.4,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Icon(
-                            Icons.chevron_right_rounded,
-                            color: _accent.withValues(alpha: 0.65),
-                            size: 18,
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
+              const SizedBox(height: 6.0), // ✏️ Reduced from 12.0 → 6.0 (greeting→chips gap)
+              _buildContextInfoChips(),
             ],
           );
         },
@@ -1763,37 +2753,164 @@ class _Screen4State extends State<Screen4>
     );
   }
 
+  /// Builds the 3 context chips: Mobility day | 27° | No meetings
+  Widget _buildContextInfoChips() {
+    final screenW = MediaQuery.of(context).size.width;
+    // 🆕 Continuous responsive scale factor (1.0 = 360dp baseline), matching
+    // the same proportional approach used by the style/hero card, Prep & Plan
+    // card, and routine cards — instead of one fixed pixel size for every
+    // phone screen.
+    final chipScale = (screenW / 360.0).clamp(0.85, 1.30);
+    final chipIconSize = 14.0 * chipScale;
+    final chipFontSize = 12.0 * chipScale;
+    final chipPadH = 11.0 * chipScale;
+    final chipPadV = 4.0 * chipScale;
+    final chipIconGap = 5.0 * chipScale;
+    // 🔧 IMPROVED: Reduce gap on small screens to fit more items
+    final chipGap = screenW < 340
+        ? 6.0 * chipScale
+        : 8.0 * chipScale;
+
+    // Derive labels from live signals
+    final w = _weatherSignal;
+    final tempLabel = w.tempCelsius != null ? '${w.tempCelsius!.round()}°' : '--°';
+    final weatherDesc = w.description.isNotEmpty ? w.description : 'clear';
+
+    // Workout type chip label
+    final fit = _fitnessSignal;
+    String mobilityLabel = AppLocalizations.t(context, 'chip_mobility_default');
+    if (fit.nextWorkoutLabel.isNotEmpty) {
+      mobilityLabel = fit.nextWorkoutLabel;
+    }
+
+    // Calendar chip label
+    final ctx = _recommendationCtx;
+    final meeting = ctx.nextMeeting;
+    String calLabel = AppLocalizations.t(context, 'chip_no_meetings');
+    if (meeting != null && meeting.isToday) {
+      final hoursLeft = meeting.hoursUntil;
+      calLabel = hoursLeft > 0 ? '${meeting.title} in ${hoursLeft}h' : meeting.title;
+    } else if (_calendarEvents.isNotEmpty) {
+      calLabel = _calendarEvents.first.title;
+    }
+
+    Widget chip({
+      required IconData icon,
+      required String label,
+      required Color iconColor,
+      required VoidCallback onTap,
+    }) {
+      // Cap label length so chips never break layout on very small screens
+      final maxLabelChars = screenW < 360 ? 12 : 18;
+      final displayLabel = label.length > maxLabelChars
+          ? '${label.substring(0, maxLabelChars)}…'
+          : label;
+      return GestureDetector(
+        onTap: onTap,
+        child: Container(
+          constraints: BoxConstraints(
+            // 🔧 IMPROVED: More aggressive clamping for very small screens
+            maxWidth: screenW < 340
+                ? (screenW * 0.45).clamp(75.0, 140.0)
+                : (screenW * 0.38).clamp(90.0, 160.0),
+          ),
+          decoration: BoxDecoration(
+            color: _surface.withOpacity(0.90),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _border),
+            boxShadow: [
+              BoxShadow(color: _shadowLight, blurRadius: 6),
+            ],
+          ),
+          padding: EdgeInsets.symmetric(horizontal: chipPadH, vertical: chipPadV),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: chipIconSize, color: iconColor),
+              SizedBox(width: chipIconGap),
+              Flexible(
+                child: Text(
+                  displayLabel,
+                  style: TextStyle(
+                    color: _textHeading,
+                    fontSize: chipFontSize,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: -0.1,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              // ✅ Dropdown arrow removed - no more dropdowns
+            ],
+          ),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        children: [
+          // ✅ MOBILITY CHIP - Synced with Workout screen
+          chip(
+            icon: Icons.directions_run_rounded,
+            label: mobilityLabel,
+            iconColor: const Color(0xFF5BBF8A),
+            onTap: () {
+              // Navigate to Workout screen
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const DailyWearScreen()),
+              );
+            },
+          ),
+          SizedBox(width: chipGap),
+
+          // ✅ WEATHER CHIP - Synced with Meteo API (Display only, no modal)
+          chip(
+            icon: Icons.wb_sunny_outlined,
+            label: tempLabel,
+            iconColor: const Color(0xFFE8895A),
+            onTap: () {
+              // Weather chip is now informational only - no modal
+            },
+          ),
+          SizedBox(width: chipGap),
+
+          // ✅ MEETINGS CHIP - Synced with Calendar screen
+          chip(
+            icon: Icons.calendar_today_outlined,
+            label: calLabel,
+            iconColor: _accent,
+            onTap: () {
+              // Navigate to Calendar screen
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const BoardsScreen()),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPromptChipsRow() {
+    final screenW = MediaQuery.of(context).size.width;
+    final chipFontSize = screenW < 360 ? 11.0 : 12.0;
+    final chipHPad = screenW < 360 ? 10.0 : 14.0;
     // 🆕 Chips localized
     final chips = [
-      (
-        '',
-        AppLocalizations.t(context, 'chip_outfit_idea'),
-        AppLocalizations.t(context, 'chip_prompt_outfit'),
-      ),
-      (
-        '◎',
-        AppLocalizations.t(context, 'chip_daily_plan'),
-        AppLocalizations.t(context, 'chip_prompt_daily_plan'),
-      ),
-      (
-        '⊹',
-        AppLocalizations.t(context, 'chip_workout'),
-        AppLocalizations.t(context, 'chip_prompt_workout'),
-      ),
-      (
-        '◈',
-        AppLocalizations.t(context, 'chip_meal_plan'),
-        AppLocalizations.t(context, 'chip_prompt_meal_plan'),
-      ),
-      (
-        '◷',
-        AppLocalizations.t(context, 'chip_schedule'),
-        AppLocalizations.t(context, 'chip_prompt_schedule'),
-      ),
+      ('✦', AppLocalizations.t(context, 'chip_outfit_idea'), AppLocalizations.t(context, 'chip_prompt_outfit')),
+      ('◎', AppLocalizations.t(context, 'chip_daily_plan'), AppLocalizations.t(context, 'chip_prompt_daily_plan')),
+      ('⊹', AppLocalizations.t(context, 'chip_workout'), AppLocalizations.t(context, 'chip_prompt_workout')),
+      ('◈', AppLocalizations.t(context, 'chip_meal_plan'), AppLocalizations.t(context, 'chip_prompt_meal_plan')),
+      ('◷', AppLocalizations.t(context, 'chip_schedule'), AppLocalizations.t(context, 'chip_prompt_schedule')),
     ];
     return SizedBox(
-      height: 40,
+      height: 36,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -1812,12 +2929,12 @@ class _Screen4State extends State<Screen4>
                 boxShadow: [
                   BoxShadow(color: _shadowMedium, blurRadius: 8),
                   BoxShadow(
-                    color: _accent.withValues(alpha: 0.06),
+                    color: _accent.withOpacity(0.06),
                     blurRadius: 8,
                   ),
                 ],
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              padding: EdgeInsets.symmetric(horizontal: chipHPad, vertical: 7),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -1833,7 +2950,7 @@ class _Screen4State extends State<Screen4>
                     chips[i].$2,
                     style: TextStyle(
                       color: _textSub,
-                      fontSize: 12,
+                      fontSize: chipFontSize,
                       fontWeight: FontWeight.w500,
                       letterSpacing: -0.01,
                     ),
@@ -1872,539 +2989,1335 @@ class _Screen4State extends State<Screen4>
     );
   }
 
+  /// Returns a context-aware headline + subtitle for the hero card,
+  /// driven by upcoming occasions, weather, and time of day.
+  /// 🆕 Now uses localization for hero titles
+  ({String headline, String emoji}) _heroHeadlineContent(
+      _RecommendationContext ctx,
+      ) {
+    // 🆕 Get localized hero title for morning greeting
+    final localizedHeroTitle = AppLocalizations.t(context, 'home_hero_title');
+    final w = ctx.weather;
+
+    // 📅 Occasion takes top priority — overrides everything else.
+    if (ctx.hasSoonOccasion) {
+      final e = ctx.nextOccasion!;
+      return (headline: '${e.title} In ${e.hoursUntil}h — ${AppLocalizations.t(context, 'hero_occasion_suffix')}', emoji: '🎉');
+    }
+    if (ctx.hasSoonMeeting) {
+      final e = ctx.nextMeeting!;
+      return (headline: '${e.title} In ${e.hoursUntil}h — ${AppLocalizations.t(context, 'hero_meeting_suffix')}', emoji: '💼');
+    }
+
+    // 🌦️ Weather-driven
+    if (w.isRainy) {
+      return (headline: AppLocalizations.t(context, 'hero_rainy'), emoji: '🌧️');
+    }
+    if (w.isCold && w.tempLabel.isNotEmpty) {
+      return (headline: '${w.tempLabel} ${AppLocalizations.t(context, 'hero_cold_suffix')}', emoji: '❄️');
+    }
+    if (w.isHot && w.tempLabel.isNotEmpty) {
+      return (headline: '${w.tempLabel} ${AppLocalizations.t(context, 'hero_hot_suffix')}', emoji: '☀️');
+    }
+
+    // 🕒 Time-of-day fallback
+    if (ctx.isMorning) {
+      // 🆕 Use localized hero title which includes emoji: "Your Effortlessly Put-Together Day ✨"
+      return (headline: localizedHeroTitle, emoji: '');
+    }
+    if (ctx.isAfternoon) {
+      return (headline: AppLocalizations.t(context, 'hero_afternoon'), emoji: '🔥');
+    }
+    if (ctx.isEvening) {
+      return (headline: AppLocalizations.t(context, 'hero_evening'), emoji: '🌆');
+    }
+    return (headline: AppLocalizations.t(context, 'hero_night'), emoji: '🌙');
+  }
+
+  // Style card outfit index for Next button
+  int _styleCardOutfitIndex = 0;
+
+  // 🆕 IMPROVED HERO CARD - 50% Image | 50% Text Split (No Fade Overlay)
   Widget _buildHeroCard() {
-    final summary = context.watch<HomeCardSummaryProvider>();
-    final rows = <_HeroRowData>[
-      _HeroRowData(
-        icon: Icons.checkroom_outlined,
-        color: _accent,
-        label: 'Wear',
-        value: summary.wear,
-        page: const DailyWearScreen(),
-      ),
-      _HeroRowData(
-        icon: Icons.directions_run_rounded,
-        color: _accentSecondary,
-        label: 'Move',
-        value: summary.move,
-        page: const DietAndFitnessScreen(),
-      ),
-      _HeroRowData(
-        icon: Icons.restaurant_outlined,
-        color: _accentTertiary,
-        label: 'Eat',
-        value: summary.eat,
-        page: const diet_page.MainScreen(),
-      ),
-      _HeroRowData(
-        icon: Icons.spa_outlined,
-        color: _textMuted,
-        label: 'Care',
-        value: summary.care,
-        page: const SkincareScreen(),
-      ),
-    ];
+    final cardBg = _surface;
+    final ctx = _recommendationCtx;
+    final w = ctx.weather;
+
+    // 🔧 FIX: The style image was going stale / ignoring the user's actual
+    // profile because gender was only ever read ONCE, in initState via
+    // _fetchUserProfile(), using Provider.of(..., listen: false) — a
+    // one-time snapshot. If the profile hadn't finished loading yet at that
+    // exact moment (a common cold-start race), or if the user later changes
+    // their style/gender preference in their profile, `_userGender` never
+    // updated — it just kept showing whatever it resolved to on that first
+    // frame (or the hardcoded 'women' default).
+    //
+    // Fix: watch ProfileController here (same pattern _buildProfileAvatar
+    // already uses for the avatar photo) so this card rebuilds and
+    // re-resolves gender live, every time the profile actually changes —
+    // not just once at app start. _userGender is kept only as a fallback
+    // for the brief window before the provider has emitted its first value.
+    final liveProfileState = context.watch<profile.ProfileController>().state;
+    final resolvedGender = _resolveGenderFromProfile(liveProfileState);
+
+    // ✅ Only 2 images total — no generic/neutral fallback asset. If gender
+    // still can't be resolved, this naturally falls back to one of the 2
+    // gendered photos instead of a 3rd generic image.
+    final genderedAssetPath = resolvedGender == 'men'
+        ? 'assets/images/style_card_men.jpeg'
+        : 'assets/images/style_card_women.jpeg';
 
     return RepaintBoundary(
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
-          color: _surface,
-          border: Border.all(color: _border.withValues(alpha: 0.45), width: 1),
-          boxShadow: [
-            BoxShadow(
-              color: _shadowStrong,
-              blurRadius: 32,
-              spreadRadius: -4,
-              offset: const Offset(0, 10),
+      child: AnimatedBuilder(
+        animation: _breatheCtrl,
+        builder: (context, _) {
+          final breatheOpacity = 0.08 + 0.06 * _breatheCtrl.value;
+          final screenW = MediaQuery.of(context).size.width;
+          final screenH = MediaQuery.of(context).size.height;
+
+          // ── RESPONSIVE SIZING ──────────────────────────────────────────
+          // cardHeight is driven by the parent SizedBox; use double.infinity
+          // so the card fills whatever height the parent provides.
+          // Internal sizes derived from screenW (not screenH) for consistency.
+          final cardHeight = double.infinity;
+
+          // Responsive padding based on screen width
+          // ✏️ Left/right padding reduced by 4px per spec (was 12/16/20).
+          final horPadding = screenW < 360 ? 8.0 : screenW < 640 ? 12.0 : 16.0;
+          final vertPadding = screenW < 360 ? 12.0 : screenW < 640 ? 14.0 : 16.0;
+          // 🆕 Text font sizes are now derived inside a LayoutBuilder around the
+          // text panel itself (see the flex:55 Expanded below) so they scale
+          // off the card's own available width/height instead of just the
+          // global screen width — keeps the heading, labels, descriptions and
+          // CTA proportional to the card size on every device.
+
+          return Container(
+            width: double.infinity,
+            height: cardHeight,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              color: cardBg,
+              border: Border.all(
+                color: _border.withOpacity(0.45),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: _shadowStrong,
+                  blurRadius: 32,
+                  spreadRadius: -4,
+                  offset: const Offset(0, 10),
+                ),
+                BoxShadow(
+                  color: _accent.withOpacity(breatheOpacity),
+                  blurRadius: 20,
+                ),
+              ],
             ),
-            BoxShadow(
-              color: _shadowLight,
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+            clipBehavior: Clip.antiAlias,
+            child: Row(
+              children: [
+                // ── 45% LEFT SIDE: OUTFIT IMAGE (BALANCED) ──────────────────────────────
+                // 🆕 UPDATED to 45% for better balance with expanded text
+                Expanded(
+                  flex: 45,
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(28),
+                      bottomLeft: Radius.circular(28),
+                    ),
+                    // 🔧 FIX: style_card_men/women.jpeg are tall portrait photos
+                    // (971×~1620, aspect ≈0.60) but this panel is roughly square
+                    // to wide on most phones. BoxFit.cover previously scaled the
+                    // image up to fill the panel's width, pushing the height well
+                    // past the panel — and with alignment: topCenter, ALL of that
+                    // overflow was cropped off the bottom, which is exactly where
+                    // the shoes sit in both photos. Same two-layer approach as the
+                    // plan_card panel below: a blurred BoxFit.cover copy fills the
+                    // panel edge-to-edge with no gaps (purely decorative, so
+                    // cropping it is invisible), and the sharp photo sits on top
+                    // at BoxFit.contain, which never crops — the full outfit,
+                    // head to shoe, is always visible on every screen size.
+                    //
+                    // 🆕 FIX: Extract dominant color from the image and use that
+                    // to fill empty space, creating seamless blend with the outfit.
+                    child: _buildImageWithDominantColorBackground(genderedAssetPath),
+                  ),
+                ),
+
+                // ── 55% RIGHT SIDE: TEXT CONTENT (PREMIUM) ──────────────────────────────
+                // 🆕 INCREASED to 55% for prominent text display
+                Expanded(
+                  flex: 55,
+                  child: Padding(
+                    // 🆕 OPTIMIZED: Balanced padding for spacious feel
+                    padding: EdgeInsets.only(
+                      left: horPadding * 0.75,
+                      right: horPadding * 0.75,
+                      top: vertPadding,
+                      bottom: vertPadding,
+                    ),
+                    // 🆕 LayoutBuilder gives us the *actual* text panel width so
+                    // every font/spacing value below scales off the card's own
+                    // available space (not just a global screen-width bucket).
+                    // FittedBox(scaleDown) further downstream still guarantees
+                    // zero overflow even if a very long localized string comes in.
+                    child: LayoutBuilder(
+                      builder: (context, textConstraints) {
+                        final panelW = textConstraints.maxWidth;
+                        // 165dp is the panel width on a baseline 360dp phone
+                        // (55% flex minus padding) — used as the 1.0 reference.
+                        final sizeScale = (panelW / 165.0).clamp(0.72, 1.35);
+                        final titleFontSize = (16.0 * sizeScale).clamp(11.0, 20.0);
+                        final bulletLabelSize = (12.0 * sizeScale).clamp(9.5, 15.0);
+                        final bulletDescSize = (10.0 * sizeScale).clamp(8.0, 13.0);
+                        final bulletSpacing = (7.0 * sizeScale).clamp(5.0, 10.0);
+                        final ctaFontSize = (12.0 * sizeScale).clamp(10.0, 14.0);
+                        final ctaIconSize = (11.0 * sizeScale).clamp(9.0, 13.0);
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // 🔧 FIX: title + bullets used to be a fixed-size Column that
+                            // could be taller than the space actually left inside this
+                            // fixed-height card once the "Style Me" button below also
+                            // claimed its share — that produced a bottom overflow. Wrapping
+                            // it in Expanded + FittedBox(scaleDown) lets it take exactly the
+                            // remaining space above the button, shrinking uniformly only if
+                            // it doesn't fit, and never overflowing.
+                            Expanded(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.topLeft,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      '${AppLocalizations.t(context, 'hero_card_title_main')}\n${AppLocalizations.t(context, 'hero_card_title_subtitle')}',
+                                      style: TextStyle(
+                                        color: _textHeading,
+                                        fontSize: titleFontSize,
+                                        fontWeight: FontWeight.w700,
+                                        height: 1.3,
+                                        letterSpacing: -0.3,
+                                      ),
+                                    ),
+                                    SizedBox(height: bulletSpacing + 2),
+                                    // 🆕 Dynamic bullet points from context with responsive sizing
+                                    _buildStyleCardBullet(
+                                      icon: Icons.eco_outlined,
+                                      color: const Color(0xFF6B9AD4),
+                                      label: _workoutLabel,
+                                      desc: AppLocalizations.t(context, 'hero_card_bullet_wear'),
+                                      labelFontSize: bulletLabelSize,
+                                      descFontSize: bulletDescSize,
+                                    ),
+                                    SizedBox(height: bulletSpacing),
+                                    _buildStyleCardBullet(
+                                      icon: Icons.cloud_outlined,
+                                      color: const Color(0xFF7BBFDA),
+                                      // 🆕 FIX: Only show temperature, don't append translation key
+                                      // Weather description is shown in the desc field below
+                                      label: w.tempCelsius != null && w.tempCelsius! > 0
+                                          ? '${w.tempCelsius!.toStringAsFixed(0)}°'
+                                          : '28°',
+                                      desc: AppLocalizations.t(context, 'hero_card_bullet_weather'),
+                                      labelFontSize: bulletLabelSize,
+                                      descFontSize: bulletDescSize,
+                                    ),
+                                    SizedBox(height: bulletSpacing),
+                                    _buildStyleCardBullet(
+                                      icon: Icons.favorite_border_rounded,
+                                      color: const Color(0xFFD4A0C8),
+                                      label: 'You tend to love ${_wardrobeSignal.favoriteStyle}',
+                                      desc: AppLocalizations.t(context, 'hero_card_bullet_style'),
+                                      labelFontSize: bulletLabelSize,
+                                      descFontSize: bulletDescSize,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8), // 🆕 More space before button
+                            _AnimatedPressable(
+                              liftY: -3.0,
+                              scalePressed: 0.93,
+                              onTap: () => _openChatWithPrompt('Suggest a complete outfit for me today.'),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                decoration: BoxDecoration(
+                                  // 🆕 ENHANCED: Stronger gradient for better visibility
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [_accent, _accentSecondary],
+                                  ),
+                                  borderRadius: BorderRadius.circular(100),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: _accent.withOpacity(0.45),
+                                      blurRadius: 18,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                    BoxShadow(
+                                      color: _accent.withOpacity(0.15),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      AppLocalizations.t(context, 'cta_style_me'),
+                                      style: TextStyle(
+                                        color: _onAccent,
+                                        fontSize: ctaFontSize,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.3,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    // 🆕 Animated arrow for better UX
+                                    Icon(Icons.arrow_forward_rounded, color: _onAccent, size: ctaIconSize),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 🆕 Helper widget to display image with dominant color background
+  /// Extracts the dominant color from the image and uses it to fill empty space
+  /// around the portrait image, creating a seamless blend
+  Widget _buildImageWithDominantColorBackground(String imagePath) {
+    // 🆕 Use fixed background color for style card image area
+    final backgroundColor = const Color(0xFFE6ECFC);
+
+    return Container(
+      // 🎨 Fixed background color fills entire image area
+      // This creates seamless background when image uses BoxFit.contain
+      color: backgroundColor,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Sharp image with BoxFit.contain — full outfit always visible
+          // (never cropped). ShaderMask fades top/bottom edges so the
+          // transition to the background color is smooth and seamless.
+          Center(
+            child: ShaderMask(
+              blendMode: BlendMode.dstIn,
+              shaderCallback: (rect) => const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  Colors.black,
+                  Colors.black,
+                  Colors.transparent,
+                ],
+                stops: [0.0, 0.12, 0.88, 1.0],
+              ).createShader(rect),
+              child: Image.asset(
+                imagePath,
+                fit: BoxFit.contain, // ← Never crops — full outfit always visible
+                alignment: Alignment.center,
+                filterQuality: FilterQuality.high,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 🆕 Helper widget for style card bullets
+  Widget _buildStyleCardBullet({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required String desc,
+    double labelFontSize = 11.0,
+    double descFontSize = 9.5,
+  }) {
+    // 🆕 RESPONSIVE ICON SIZE
+    final screenW = MediaQuery.of(context).size.width;
+    final iconBubbleSize = screenW < 360 ? 20.0 : 24.0;
+    final iconSize = screenW < 360 ? 10.0 : 12.0;
+    final spacing = screenW < 360 ? 8.0 : 10.0;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: iconBubbleSize,
+          height: iconBubbleSize,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.15),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: iconSize, color: color),
+        ),
+        SizedBox(width: spacing),
+        // 🔧 FIX: Removed Expanded — this Row receives unbounded width from
+        // FittedBox (FittedBox always passes unconstrained constraints to its
+        // child). Expanded inside a Row with unbounded width throws:
+        //   "RenderFlex children have non-zero flex but incoming width is unbounded"
+        // Inside FittedBox, text should take its natural (intrinsic) width;
+        // FittedBox itself then scales the whole Column down to fit the card.
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: _textHeading,
+                fontSize: labelFontSize,
+                fontWeight: FontWeight.w600,
+                height: 1.2,
+              ),
+            ),
+            Text(
+              desc,
+              style: TextStyle(
+                color: _textMuted,
+                fontSize: descFontSize,
+                fontWeight: FontWeight.w400,
+                height: 1.2,
+              ),
             ),
           ],
         ),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          children: [
-            Positioned(
-              right: 0,
-              top: 0,
-              bottom: 0,
-              width: 160,
+      ],
+    );
+  }
+
+
+  // ── Routine cards section: Wear / Move / Eat / Care / Medicine ───────────
+
+  /// Mirrors [from]'s current scroll offset onto [to], guarded by a flag so
+  /// the two listeners don't ping-pong each other infinitely.
+  void _syncRoutineScroll(ScrollController from, ScrollController to) {
+    if (_isSyncingRoutineScroll) return;
+    if (!from.hasClients || !to.hasClients) return;
+    final target = from.offset.clamp(0.0, to.position.maxScrollExtent);
+    if ((to.offset - target).abs() < 0.5) return;
+    _isSyncingRoutineScroll = true;
+    to.jumpTo(target);
+    _isSyncingRoutineScroll = false;
+  }
+
+  Widget _buildRoutineCardsSection() {
+    final summary = context.watch<HomeCardSummaryProvider>();
+    // 🆕 Watching these causes the Care & Medicine cards to repaint
+    // automatically whenever SkincareScreen or MediTrackScreen push updates.
+    // All five cards repaint from the single merged HomeCardSummaryProvider.
+    final screenW = MediaQuery.of(context).size.width;
+
+    // ── ROUTINE CARD SIZING — stable across all screen sizes ─────────────────
+    // Use a very gentle scale factor so cards never shrink dramatically on
+    // smaller phones. The clamp floor is the "standard" phone target size,
+    // meaning cards look correct even on a 320dp device; they only grow
+    // slightly on larger phones (480dp+).
+    final routineScale = (screenW / 390.0).clamp(0.92, 1.25);
+    // Card width: each card fills a sensible fixed width — not too narrow,
+    // not too wide. 5 cards fit at ~86dp each with 4px gap on a 360dp screen.
+    // We intentionally avoid going below 88dp so the label+icon+status always
+    // have room to render without clipping.
+    final cardWidth = (88.0 * routineScale).clamp(88.0, 120.0);
+    // 🆕 Shared gap used by BOTH the cards row and the progress tracker row,
+    // so each progress segment's width lines up with its card underneath.
+    final cardGap = screenW < 360 ? 3.0 : 4.0;
+    final iconBubbleSize = (36.0 * routineScale).clamp(34.0, 46.0);
+    final iconSize = (17.0 * routineScale).clamp(16.0, 22.0);
+    final labelFontSize = (12.5 * routineScale).clamp(12.0, 16.0);
+    final descFontSize = (10.5 * routineScale).clamp(10.0, 13.0);
+    final statusFontSize = (9.5 * routineScale).clamp(9.0, 12.0);
+    final cardPadding = (9.0 * routineScale).clamp(8.0, 12.0);
+
+    // 🆕 DYNAMIC DATA FROM PROVIDERS & SERVICES
+    // Each routine syncs with real app data
+    final routines = <({
+    IconData icon,
+    Color color,
+    String label,
+    String desc,
+    String status,
+    bool done,
+    Widget page,
+    })>[
+      (
+      // 🔧 FIX: Icons.checkroom_outlined was rendering as the same running-
+      // figure glyph as the "Move" card below (icon font/tree-shaking
+      // mismatch). Icons.dry_cleaning_outlined is the same hanger icon
+      // already used (and confirmed working) for the Wardrobe nav tab.
+      icon: Icons.dry_cleaning_outlined,
+      color: const Color(0xFF6B8FD4),
+      label: AppLocalizations.t(context, 'routine_wear'),
+      // 🔄 DYNAMIC: From DailyWearScreen/Wardrobe
+      desc: _getDailyWearDescription(),
+      status: _getDailyWearStatus(),
+      done: _isDailyWearDone(),
+      page: DailyWearScreen(),
+      ),
+      (
+      icon: Icons.directions_run_rounded,
+      color: const Color(0xFF5BBF8A),
+      label: AppLocalizations.t(context, 'routine_move'),
+      // 🔄 DYNAMIC: From WorkoutStudioScreen/Fitness
+      desc: _getWorkoutDescription(),
+      status: _getWorkoutStatus(),
+      done: _isWorkoutDone(),
+      page: WorkoutStudioScreen(fromHome: true),
+      ),
+      (
+      icon: Icons.restaurant_outlined,
+      color: const Color(0xFFE8895A),
+      label: AppLocalizations.t(context, 'routine_eat'),
+      // 🔄 DYNAMIC: From MainScreen/Diet
+      desc: _getMealDescription(),
+      status: _getMealStatus(),
+      done: _isMealDone(),
+      page: MainScreen(fromHome: true),
+      ),
+      (
+      icon: Icons.spa_outlined,
+      color: const Color(0xFFB07FD4),
+      label: AppLocalizations.t(context, 'routine_care'),
+      // 🔄 DYNAMIC: From SkincareScreen
+      desc: _getSkincareDescription(),
+      status: _getSkincareStatus(),
+      done: _isSkincareDone(),
+      page: SkincareScreen(),
+      ),
+      (
+      icon: Icons.medication_outlined,
+      color: const Color(0xFFE88A8A),
+      label: AppLocalizations.t(context, 'routine_medicine'),
+      // 🔄 DYNAMIC: From MediTrackScreen
+      desc: _getMedicineDescription(),
+      status: _getMedicineStatus(),
+      done: _isMedicineDone(),
+      page: MediTrackScreen(fromHome: true),
+      ),
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _border.withOpacity(0.50), width: 1),
+        boxShadow: [BoxShadow(color: _shadowLight, blurRadius: 12, offset: const Offset(0, 4))],
+      ),
+      // Fill the parent Expanded widget completely so cards stretch to use
+      // the guaranteed routineMinH space allocated in the layout above.
+      width: double.infinity,
+      height: double.infinity,
+      padding: const EdgeInsets.fromLTRB(0, 3, 0, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.max,
+        children: [
+          // Progress dots row
+          // 🆕 FIX: connector lines were showing as tiny disconnected dashes
+          // instead of continuous lines. Root cause: the previous version
+          // alternated bubble-slots (width: cardWidth) with connector-slots
+          // (width: cardGap, only ~3-4px) as SEPARATE Row children — so the
+          // visible line only covered the 3-4px gap between cards, while the
+          // much larger empty space around each centered bubble (inside its
+          // own cardWidth slot) had no line at all, reading as "○ - ○ - ○".
+          //
+          // Fix: switched to a Stack where each connector is positioned
+          // explicitly to run from one bubble's exact center to the next
+          // bubble's exact center (a span of cardWidth + cardGap, always
+          // constant) — regardless of how much of that span is "card" vs
+          // "gap". This also still scrolls horizontally like the routine
+          // cards row below it, using the same per-card width/gap and the
+          // same horizontal padding so every bubble lines up above its card.
+          // The two rows' scroll controllers stay in sync (see
+          // _syncRoutineScroll) so dragging either one scrolls both.
+          Builder(
+            builder: (context) {
+              // Constant footprint of one card + its trailing gap — matches
+              // the cards row's Padding(right: cardGap) around each card.
+              final slot = cardWidth + cardGap;
+              final totalWidth = routines.length * slot;
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                controller: _routineProgressScrollCtrl,
+                padding: EdgeInsets.symmetric(horizontal: screenW < 360 ? 4 : 6, vertical: 0),
+                physics: const BouncingScrollPhysics(),
+                child: SizedBox(
+                  width: totalWidth,
+                  height: 22,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      // Connector lines drawn first so bubbles paint on top.
+                      for (int i = 0; i < routines.length - 1; i++)
+                        Positioned(
+                          left: i * slot + cardWidth / 2,
+                          top: 10.25, // vertically centers a 1.5px line in a 22px-tall row
+                          width: slot,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOut,
+                            height: 1.5,
+                            // 🆕 Dynamic: fills with accent once THIS routine
+                            // is done, so the line visually tracks real
+                            // completion progress instead of staying static.
+                            color: routines[i].done ? _accent : _border,
+                          ),
+                        ),
+                      // Bubbles, each centered above its card below.
+                      for (int i = 0; i < routines.length; i++)
+                        Positioned(
+                          left: i * slot + cardWidth / 2 - 11,
+                          top: 0,
+                          child: Container(
+                            width: 22,
+                            height: 22,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              // 🔧 FIX: was Colors.transparent, which let the
+                              // connector line show through the hollow center
+                              // of un-done bubbles (looked like the line was
+                              // cutting into the circle). Filling with the
+                              // card surface color makes the bubble opaque so
+                              // the line visually stops at its border instead.
+                              color: routines[i].done ? _accent : _surface,
+                              border: Border.all(
+                                color: routines[i].done ? _accent : _border,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: routines[i].done
+                                ? Icon(Icons.check_rounded, size: 12, color: _onAccent)
+                                : null,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+
+
+          // ✏️ Gap between progress and routine items: 2px (near-touching, not touching)
+          const SizedBox(height: 2),
+
+          // ✅ FIXED: SingleChildScrollView + Row instead of ListView + FittedBox
+          // 🆕 FIX: previously the outer SizedBox(height: routineH) only grew
+          // invisible whitespace around these cards — the cards themselves
+          // were sized purely by their own (fixed) intrinsic content height,
+          // so changing routineH had zero visible effect. Wrapping in a
+          // LayoutBuilder gives us the *actual* available height here, which
+          // we now apply directly to each card's SizedBox — so the visible
+          // card boxes genuinely resize with routineH.
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, cardsConstraints) {
+                // The parent Expanded now guarantees routineMinH=118px of space.
+                // Cards fill whatever they receive; the 90px floor is a
+                // last-resort guard in case constraints are unexpectedly tight.
+                final cardItemHeight = cardsConstraints.maxHeight.clamp(90.0, double.infinity);
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  controller: _routineCardsScrollCtrl,
+                  padding: EdgeInsets.symmetric(horizontal: screenW < 360 ? 4 : 6, vertical: 0),
+                  physics: const BouncingScrollPhysics(),
+                  clipBehavior: Clip.antiAlias,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: List.generate(
+                      routines.length,
+                          (i) {
+                        final r = routines[i];
+                        return Padding(
+                          padding: EdgeInsets.only(right: cardGap),
+                          child: GestureDetector(
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => r.page),
+                            ),
+                            child: SizedBox(
+                              width: cardWidth,
+                              height: cardItemHeight,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: _bgSecondary.withOpacity(0.7),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: r.done
+                                        ? _accent.withOpacity(0.25)
+                                        : _border.withOpacity(0.5),
+                                    width: 1,
+                                  ),
+                                ),
+                                // ✏️ Top inset trimmed by 5px so the card sits closer
+                                // to the tracker line above; other sides unchanged.
+                                padding: EdgeInsets.fromLTRB(
+                                  cardPadding,
+                                  cardPadding - 6,
+                                  cardPadding,
+                                  cardPadding,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.max,
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    // Icon bubble
+                                    Container(
+                                      width: iconBubbleSize,
+                                      height: iconBubbleSize,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: r.color.withOpacity(0.15),
+                                      ),
+                                      child: Icon(r.icon, size: iconSize, color: r.color),
+                                    ),
+                                    SizedBox(height: cardPadding * 0.5),
+                                    // Label
+                                    Text(
+                                      r.label,
+                                      style: TextStyle(
+                                        color: _textHeading,
+                                        fontSize: labelFontSize,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    SizedBox(height: cardPadding * 0.3),
+                                    // Description - responsive text filling available space
+                                    Expanded(
+                                      child: Text(
+                                        r.desc,
+                                        style: TextStyle(
+                                          color: _textMuted,
+                                          fontSize: descFontSize,
+                                          fontWeight: FontWeight.w400,
+                                          height: 1.3,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        softWrap: true,
+                                      ),
+                                    ),
+                                    SizedBox(height: cardPadding * 0.3),
+                                    // Status
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          r.done ? Icons.check_circle_rounded : Icons.access_time_rounded,
+                                          size: descFontSize - 0.5,
+                                          color: r.done ? _accent : _textMuted,
+                                        ),
+                                        SizedBox(width: screenW < 360 ? 1 : 2),
+                                        Flexible(
+                                          child: Text(
+                                            r.status,
+                                            style: TextStyle(
+                                              color: r.done ? _accent : _textMuted,
+                                              fontSize: statusFontSize,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
+        ],
+      ),
+    );
+  }
+
+  // ── Prep & Plan card ──────────────────────────────────────────────────────
+
+  // 🆕 IMPROVED PREP & PLAN CARD - 30% Text | 70% Image (No Fade Effects)
+  Widget _buildPrepPlanCard({double? screenH}) {
+    final content = _prepCardContent();
+    final accentColor = context.themeTokens.accent.primary;
+    final accentTertiary = context.themeTokens.accent.tertiary;
+
+    // 🆕 Gender-aware backdrop photo — same live-resolution pattern as the
+    // Style/Hero card (_buildHeroCard): watch ProfileController so this card
+    // rebuilds and re-resolves gender any time the profile actually changes,
+    // not just once at app start. Only 2 images total, no generic/neutral
+    // fallback — whichever gender _resolveGenderFromProfile lands on is
+    // used, defaulting to 'women' via _userGender until the profile loads.
+    final liveProfileState = context.watch<profile.ProfileController>().state;
+    final resolvedGender = _resolveGenderFromProfile(liveProfileState);
+    final genderedPrepPlanAsset = resolvedGender == 'men'
+        ? 'assets/images/plan_card_men.jpg'
+        : 'assets/images/plan_card_women.jpg';
+
+    // 🆕 FIX: The card is no longer wrapped in a card-wide _CardPressable/
+    // onTap. Previously the entire card navigated to chat on tap, which
+    // conflicted with (and made redundant/confusing) the dedicated "Plan
+    // Week" CTA button below, which has its own onTap. Now only that button
+    // opens the chat sheet — tapping elsewhere on the card does nothing.
+    return Container(
+      width: double.infinity,
+      // Fill parent height — the parent is an Expanded widget so this
+      // stretches the card to consume whatever space is left above the
+      // prompt bar, eliminating the dead gap visible in the screenshot.
+      height: double.infinity,
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: accentColor.withOpacity(0.18),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(color: _shadowLight, blurRadius: 16, offset: const Offset(0, 4)),
+          BoxShadow(color: accentColor.withOpacity(0.06), blurRadius: 12),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        // .stretch forces both the text column and the image to fill the
+        // card's full height on every screen size.
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── 35% LEFT: TEXT CONTENT ────────────────────────────────────
+          Expanded(
+            flex: 35,
+            child: LayoutBuilder(
+              builder: (context, cc) {
+                final colW = cc.maxWidth;
+                final hPad = colW < 90 ? 8.0 : 10.0;
+                return Padding(
+                  padding: EdgeInsets.only(left: hPad, right: 4, top: 7, bottom: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              AppLocalizations.t(context, 'prep_card_title'),
+                              style: TextStyle(
+                                color: _textHeading,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 1),
+                          Text(
+                            AppLocalizations.t(context, 'prep_card_subtitle'),
+                            style: TextStyle(
+                              color: _textMuted,
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w400,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            AppLocalizations.t(context, 'prep_card_desc'),
+                            style: TextStyle(
+                              // 🆕 Blended a bit toward _textHeading (from plain
+                              // _textMuted) + bumped size/weight so the subtitle
+                              // is clearly legible instead of fading into the
+                              // background, while staying visually secondary
+                              // to the "Prep & Plan" title above it.
+                              color: Color.lerp(_textMuted, _textHeading, 0.35),
+                              fontSize: 9.0, // 🔧 Reduced from 9.5 to fit better
+                              fontWeight: FontWeight.w500,
+                              height: 1.15, // 🔧 Reduced line height from 1.2
+                            ),
+                            // 🔧 FIX: Back to maxLines: 2 to prevent overflow
+                            // This shows key info without bottom overflow
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            softWrap: true,
+                          ),
+                        ],
+                      ),
+                      _AnimatedPressable(
+                        liftY: -2.0,
+                        scalePressed: 0.95,
+                        onTap: () => showAhviStylistChatSheet(
+                          context,
+                          moduleContext: 'prepare',
+                          initialPrompt: content.prompt,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [accentColor, accentTertiary],
+                            ),
+                            borderRadius: BorderRadius.circular(100),
+                            boxShadow: [
+                              BoxShadow(
+                                color: accentColor.withOpacity(0.38),
+                                blurRadius: 14,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  AppLocalizations.t(context, 'prep_card_cta'),
+                                  style: TextStyle(
+                                    color: _onAccent,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.1,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 1),
+                              Icon(Icons.arrow_forward_rounded, color: _onAccent, size: 8),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // 🆕 Explicit, balanced gap between the text column and the
+          // weekly preview image (replaces the old implicit gap that was
+          // just the leftover of two separate paddings on either side).
+          const SizedBox(width: 8),
+
+          // ── 65% RIGHT: OUTFIT/MEAL GRID PREVIEW OVER BACKDROP PHOTO ──────
+          Expanded(
+            flex: 65,
+            child: ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topRight: Radius.circular(24),
+                bottomRight: Radius.circular(24),
+              ),
+              // ═══════════════════════════════════════════════════════════════
+              // 🔧 FIX: FULLY-VISIBLE IMAGE ON EVERY ASPECT RATIO
+              // ═══════════════════════════════════════════════════════════════
+              //
+              // PROBLEM (previous approach):
+              // ─────────────────────────────────────────────────────────────
+              // This panel's own aspect ratio swings from ~1.8:1 on small
+              // phones to ~4.3:1 on tablets, but the old code rendered a
+              // single fixed-ratio (2.35:1) source image with
+              // BoxFit.cover. BoxFit.cover always fills the box completely
+              // by cropping whichever dimension overflows — so devices
+              // near 2.35:1 looked fine, but anything far from that ratio
+              // (small phones, tablets) cropped a real, visible chunk off
+              // the sides or top/bottom. That's why the weekly plan photo
+              // showed complete on some devices and clipped on others.
+              //
+              // FIX:
+              // ─────────────────────────────────────────────────────────────
+              // Two-layer Stack:
+              //   1. A blurred copy of the image with BoxFit.cover fills
+              //      the whole panel edge-to-edge on every aspect ratio —
+              //      there is never a gap, on any device. It's blurred
+              //      and decorative only, so cropping it is invisible.
+              //   2. The real, sharp image sits on top with
+              //      BoxFit.contain, which — unlike cover — NEVER crops:
+              //      it scales the whole image down to fit within the
+              //      panel and centers it. The complete weekly plan is
+              //      always visible, on every screen size, full stop.
+              // The blurred backdrop just means the contain-fitted image
+              // never looks like it's floating on bare background when
+              // its own aspect ratio doesn't match the panel's.
               child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Positioned.fill(
-                    child: const Center(
-                      child: Icon(
-                        Icons.checkroom_rounded,
-                        size: 64,
-                        color: Color(0x33000000),
-                      ),
-                    ),
+                  // 🆕 BACKGROUND FILL: Card's surface color fills the entire
+                  // image area on every device. This ensures NO empty/white
+                  // space is visible when the image (using BoxFit.contain)
+                  // doesn't cover the full panel area due to aspect ratio
+                  // mismatch.
+                  //
+                  // ✅ BENEFITS:
+                  // • Seamless look — empty space matches card background
+                  // • Works on all aspect ratios (phones, tablets, etc.)
+                  // • No visible gaps or different colored areas
+                  // • Image appears to float naturally on the card surface
+                  //
+                  // 🛠️ PREVIOUS APPROACH (removed):
+                  // Used a blurred, cover-fit copy of the image as backdrop.
+                  // But TileMode.decal faded to transparent at edges,
+                  // creating a ~25px darker band at top/bottom that showed
+                  // as a visible seam. Removing that layer and using flat
+                  // color fixes the seam at its source.
+                  // 🆕 BACKGROUND FILL: Use consistent light blue color to fill
+                  // empty space (left, right, top, bottom) when image uses
+                  // BoxFit.contain on different aspect ratios.
+                  Container(
+                    color: const Color(0xFFE6ECFC),  // 🎨 Light blue to fill empty space
+                    // OPTIONAL: Uncomment for subtle visual depth
+                    // decoration: BoxDecoration(
+                    //   gradient: LinearGradient(
+                    //     begin: Alignment.topRight,
+                    //     end: Alignment.bottomLeft,
+                    //     colors: [
+                    //       const Color(0xFFE6ECFC),
+                    //       const Color(0xFFE6ECFC).withOpacity(0.97),
+                    //     ],
+                    //   ),
+                    // ),
                   ),
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: 68,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                          colors: [_surface, _surface.withValues(alpha: 0.0)],
-                          stops: const [0.50, 1.0],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    height: 38,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            _surface.withValues(alpha: 0.0),
-                            _surface.withValues(alpha: 0.78),
-                          ],
-                        ),
+                  // Crisp image, fit:contain so the full week is always
+                  // visible (never cropped). Its top/bottom edges are
+                  // faded to transparent via ShaderMask so that even if a
+                  // future image asset's edge color isn't a perfect match
+                  // for `_surface`, the transition dissolves gradually
+                  // instead of ending on a hard, visible line.
+                  Center(
+                    child: ShaderMask(
+                      blendMode: BlendMode.dstIn,
+                      shaderCallback: (rect) => const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black,
+                          Colors.black,
+                          Colors.transparent,
+                        ],
+                        stops: [0.0, 0.08, 0.92, 1.0],
+                      ).createShader(rect),
+                      child: Image.asset(
+                        genderedPrepPlanAsset,
+                        fit: BoxFit.contain, // ← Never crops — full image always visible
+                        alignment: Alignment.center,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final compact = constraints.maxHeight < 260;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Your day',
-                        style: TextStyle(
-                          color: _textHeading,
-                          fontSize: compact ? 20 : 24,
-                          fontWeight: FontWeight.w800,
-                          height: 1.05,
-                          letterSpacing: -0.5,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Put-together effortlessly',
-                        style: TextStyle(
-                          color: _textSub.withValues(alpha: 0.85),
-                          fontSize: compact ? 12 : 13,
-                          fontWeight: FontWeight.w500,
-                          height: 1.25,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      SizedBox(height: compact ? 7 : 10),
-                      ...List.generate(rows.length, (i) {
-                        final row = rows[i];
-                        return Padding(
-                          padding: EdgeInsets.only(
-                            bottom: i == rows.length - 1 ? 0 : 2,
-                          ),
-                          child: _RoutineItem(
-                            icon: row.icon,
-                            color: row.color,
-                            label: row.label,
-                            value: row.value,
-                            textHeading: _textHeading,
-                            textMuted: _textSub,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => row.page),
-                            ),
-                          ),
-                        );
-                      }),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildSecondaryRow() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: _buildSecCard(
-            icon: Icons.grid_view_rounded,
-            title: 'Plan',
-            subtitle: 'Your life, organised',
-            ctaText: 'Start Planning',
-            intent: 'organize',
-            assetImage: 'assets/images/plan_card.jpg',
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildSecCard(
-            icon: Icons.calendar_month_outlined,
-            title: 'Prep',
-            subtitle: 'Plan, pack & get ready',
-            ctaText: 'Start Prepping',
-            intent: 'plan',
-            assetImage: 'assets/images/prep_card.jpg',
-          ),
-        ),
-      ],
+  /// 🆕 SIMPLIFIED WEEK PREVIEW - Just icons, no fade effects
+  // ── Dynamic card content ───────────────────────────────────────────────────
+  // Style card and Prep & Plan card title/subtitle/cta driven by context.
+
+  /// Returns {title, subtitle, cta, icon, prompt} for the Style card.
+  _CardContent _styleCardContent() {
+    final ctx = _recommendationCtx;
+    final w = ctx.weather;
+    final fit = ctx.fitness;
+    final ward = ctx.wardrobe;
+
+    // Priority order: upcoming event > weather > fitness > wardrobe > time-of-day
+
+    // 📅 Upcoming occasion/meeting
+    if (ctx.hasSoonOccasion) {
+      final e = ctx.nextOccasion!;
+      return _CardContent(
+        title: AppLocalizations.t(context, 'style_occasion_title'),
+        subtitle: '${e.title} in ${e.hoursUntil}h — ${AppLocalizations.t(context, 'style_occasion_subtitle')}',
+        cta: AppLocalizations.t(context, 'style_occasion_cta'),
+        icon: Icons.celebration_outlined,
+        prompt: 'I have "${e.title}" in ${e.hoursUntil} hours. Create the perfect occasion outfit.',
+      );
+    }
+    if (ctx.hasSoonMeeting) {
+      final e = ctx.nextMeeting!;
+      return _CardContent(
+        title: AppLocalizations.t(context, 'style_meeting_title'),
+        subtitle: '"${e.title}" in ${e.hoursUntil}h — ${AppLocalizations.t(context, 'style_meeting_subtitle')}',
+        cta: AppLocalizations.t(context, 'style_meeting_cta'),
+        icon: Icons.work_outline_rounded,
+        prompt: 'I have a meeting "${e.title}" in ${e.hoursUntil} hours. Suggest a sharp professional outfit.',
+      );
+    }
+
+    // 🌦️ Weather-driven
+    if (w.isRainy) {
+      return _CardContent(
+        title: AppLocalizations.t(context, 'style_rainy_title'),
+        subtitle: AppLocalizations.t(context, 'style_rainy_subtitle'),
+        cta: AppLocalizations.t(context, 'style_rainy_cta'),
+        icon: Icons.umbrella_outlined,
+        prompt: 'It\'s raining today. Suggest a stylish waterproof outfit.',
+      );
+    }
+    if (w.isCold && w.tempLabel.isNotEmpty) {
+      return _CardContent(
+        title: AppLocalizations.t(context, 'style_cold_title'),
+        subtitle: '${w.tempLabel} ${AppLocalizations.t(context, 'style_cold_subtitle')}',
+        cta: AppLocalizations.t(context, 'style_cold_cta'),
+        icon: Icons.ac_unit_outlined,
+        prompt: 'It\'s ${w.tempLabel} today. Suggest a warm layered outfit.',
+      );
+    }
+    if (w.isHot && w.tempLabel.isNotEmpty) {
+      return _CardContent(
+        title: AppLocalizations.t(context, 'style_hot_title'),
+        subtitle: '${w.tempLabel} ${AppLocalizations.t(context, 'style_hot_subtitle')}',
+        cta: AppLocalizations.t(context, 'style_hot_cta'),
+        icon: Icons.wb_sunny_outlined,
+        prompt: 'It\'s ${w.tempLabel} today. Suggest a cool breathable outfit.',
+      );
+    }
+
+    // 🏃 Fitness-driven
+    if (fit.nextWorkoutLabel.isNotEmpty && ctx.isMorning) {
+      return _CardContent(
+        title: '${fit.nextWorkoutLabel} ${AppLocalizations.t(context, 'style_gym_title_suffix')}',
+        subtitle: AppLocalizations.t(context, 'style_gym_subtitle'),
+        cta: AppLocalizations.t(context, 'style_gym_cta'),
+        icon: Icons.fitness_center_outlined,
+        prompt: 'Today is my ${fit.nextWorkoutLabel} day. Suggest a stylish gym outfit.',
+      );
+    }
+    if (fit.hasActiveStreak && ctx.isMorning) {
+      return _CardContent(
+        title: '${fit.workoutStreakDays}-${AppLocalizations.t(context, 'style_streak_title_suffix')}',
+        subtitle: AppLocalizations.t(context, 'style_streak_subtitle'),
+        cta: AppLocalizations.t(context, 'style_streak_cta'),
+        icon: Icons.local_fire_department_outlined,
+        prompt: 'I\'m on a ${fit.workoutStreakDays}-day fitness streak. Suggest a motivating outfit for today.',
+      );
+    }
+
+    // 👗 Wardrobe-driven
+    if (ward.hasUnwornItems && ward.unwornItems >= 3) {
+      return _CardContent(
+        title: AppLocalizations.t(context, 'style_wardrobe_title'),
+        subtitle: '${ward.unwornItems} ${AppLocalizations.t(context, 'style_wardrobe_subtitle')}',
+        cta: AppLocalizations.t(context, 'style_wardrobe_cta'),
+        icon: Icons.dry_cleaning_outlined,
+        prompt: 'I have ${ward.unwornItems} clothing items I\'ve never worn. Build fresh outfits using them.',
+      );
+    }
+    if (ward.favoriteStyle.isNotEmpty) {
+      return _CardContent(
+        title: '${ward.favoriteStyle.capitalize()} ${AppLocalizations.t(context, 'style_fav_title_suffix')}',
+        subtitle: AppLocalizations.t(context, 'style_fav_subtitle'),
+        cta: AppLocalizations.t(context, 'style_fav_cta'),
+        icon: Icons.favorite_outline_rounded,
+        prompt: 'Show me new ${ward.favoriteStyle} fashion picks that match my style preferences.',
+      );
+    }
+
+    // 📅 Time-of-day fallbacks
+    if (ctx.isMondayMorning) {
+      return _CardContent(
+        title: AppLocalizations.t(context, 'style_week_title'),
+        subtitle: AppLocalizations.t(context, 'style_week_subtitle'),
+        cta: AppLocalizations.t(context, 'style_week_cta'),
+        icon: Icons.date_range_outlined,
+        prompt: 'Plan 5 complete outfits for my work week ahead.',
+      );
+    }
+    if (ctx.isFridayEvening) {
+      return _CardContent(
+        title: AppLocalizations.t(context, 'style_friday_title'),
+        subtitle: AppLocalizations.t(context, 'style_friday_subtitle'),
+        cta: AppLocalizations.t(context, 'style_friday_cta'),
+        icon: Icons.nightlife_outlined,
+        prompt: 'Help me pick a stylish evening outfit for Friday night.',
+      );
+    }
+    if (ctx.isWeekend) {
+      return _CardContent(
+        title: AppLocalizations.t(context, 'style_weekend_title'),
+        subtitle: AppLocalizations.t(context, 'style_weekend_subtitle'),
+        cta: AppLocalizations.t(context, 'style_weekend_cta'),
+        icon: Icons.weekend_outlined,
+        prompt: 'Suggest a relaxed yet stylish casual outfit for the weekend.',
+      );
+    }
+    if (ctx.isEvening) {
+      return _CardContent(
+        title: AppLocalizations.t(context, 'style_evening_title'),
+        subtitle: AppLocalizations.t(context, 'style_evening_subtitle'),
+        cta: AppLocalizations.t(context, 'style_evening_cta'),
+        icon: Icons.spa_outlined,
+        prompt: 'Build me an evening outfit and skincare routine.',
+      );
+    }
+    if (ctx.isMorning) {
+      return _CardContent(
+        title: AppLocalizations.t(context, 'style_card_title'),
+        subtitle: _userName.isNotEmpty
+            ? '${AppLocalizations.t(context, 'greeting_morning')}, $_userName! ${AppLocalizations.t(context, 'style_morning_plan')}'
+            : AppLocalizations.t(context, 'style_morning_subtitle_default'),
+        cta: AppLocalizations.t(context, 'style_morning_cta'),
+        icon: Icons.auto_awesome_rounded,
+        prompt: 'Plan a complete outfit for me today.',
+      );
+    }
+
+    // Default
+    return _CardContent(
+      title: AppLocalizations.t(context, 'style_default_title'),
+      subtitle: AppLocalizations.t(context, 'style_default_subtitle'),
+      cta: AppLocalizations.t(context, 'style_default_cta'),
+      icon: Icons.auto_awesome_rounded,
+      prompt: 'Surprise me with a complete outfit based on my style preferences.',
     );
   }
 
-  Widget _buildSecCard({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required String ctaText,
-    required String intent,
-    String? imageUrl,
-    String? assetImage,
-  }) {
-    final ctaLabel = ctaText;
+  /// Returns {title, subtitle, cta, icon, prompt} for the Prep & Plan card.
+  _CardContent _prepCardContent() {
+    final ctx = _recommendationCtx;
+    final fit = ctx.fitness;
 
-    return RepaintBoundary(
-      child: AnimatedBuilder(
-        animation: Listenable.merge([_shimmerCtrl, _breatheCtrl]),
-        builder: (context, _) {
-          // 🔧 Fresh read inside builder — palette switch అయినప్పుడు stale అవ్వవు
-          final accentColor = context.themeTokens.accent.primary;
-          final accentTertiary = context.themeTokens.accent.tertiary;
-          final breatheOpacity = 0.10 + 0.10 * _breatheCtrl.value;
-          final shimmerAlpha =
-              0.5 + 0.5 * math.sin(_shimmerCtrl.value * math.pi * 2);
+    // Priority: upcoming event > Sunday > Monday > fitness meal > wardrobe > time
 
-          return _CardPressable(
-            onTap: () => _openModuleChat(intent),
-            builder: (isHovered) {
-              return Container(
-                height: double.infinity,
-                decoration: BoxDecoration(
-                  color: _surface,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: accentColor.withValues(alpha: 0.20),
-                    width: 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _shadowMedium,
-                      blurRadius: isHovered ? 52 : 28,
-                      offset: const Offset(0, 8),
-                    ),
-                    BoxShadow(
-                      color: accentColor.withValues(
-                        alpha: isHovered ? 0.15 : 0.08,
-                      ),
-                      blurRadius: 20,
-                    ),
-                  ],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Stack(
-                  children: [
-                    // Radial glow background
-                    Positioned.fill(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: RadialGradient(
-                            center: const Alignment(0.8, -0.5),
-                            radius: 1.4,
-                            colors: [
-                              accentColor.withValues(alpha: 0.18),
-                              _transparent,
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Hero-card style: image on right, left-edge fade
-                    if (assetImage != null || imageUrl != null)
-                      Positioned(
-                        right: 0,
-                        top: 0,
-                        bottom: 0,
-                        width: 110,
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: assetImage != null
-                                  ? Image.asset(
-                                      assetImage,
-                                      fit: BoxFit.cover,
-                                      alignment: Alignment.topCenter,
-                                      filterQuality: FilterQuality.low,
-                                      errorBuilder: (_ctx, _err, _st) =>
-                                          const SizedBox.shrink(),
-                                    )
-                                  : Image.network(
-                                      imageUrl!,
-                                      fit: BoxFit.cover,
-                                      alignment: Alignment.topCenter,
-                                      cacheWidth:
-                                          (130 *
-                                                  MediaQuery.of(
-                                                    context,
-                                                  ).devicePixelRatio)
-                                              .round(),
-                                      filterQuality: FilterQuality.low,
-                                      errorBuilder: (_ctx, _err, _st) =>
-                                          const SizedBox.shrink(),
-                                    ),
-                            ),
-                            // Left fade — blends into card surface
-                            Positioned(
-                              left: 0,
-                              top: 0,
-                              bottom: 0,
-                              width: 48,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.centerLeft,
-                                    end: Alignment.centerRight,
-                                    colors: [_surface, _transparent],
-                                    stops: const [0.72, 1.0],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    // Animated breathing border overlay
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: accentColor.withValues(
-                                alpha: breatheOpacity,
-                              ),
-                              width: 1,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Shimmer top line
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        height: 1,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              _transparent,
-                              accentColor.withValues(
-                                alpha: 0.55 * shimmerAlpha,
-                              ),
-                              accentColor.withValues(alpha: 0.35),
-                              _transparent,
-                            ],
-                            stops: const [0.0, 0.30, 0.65, 1.0],
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Card content
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 11),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        mainAxisSize: MainAxisSize.max,
-                        children: [
-                          // Limit text content width to not overlap the image (image width=110, fade=48)
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 130),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    AnimatedContainer(
-                                      duration: const Duration(
-                                        milliseconds: 200,
-                                      ),
-                                      width: 36,
-                                      height: 36,
-                                      decoration: BoxDecoration(
-                                        color: accentColor.withValues(
-                                          alpha: isHovered ? 0.16 : 0.08,
-                                        ),
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(
-                                          color: accentColor.withValues(
-                                            alpha: 0.18,
-                                          ),
-                                          width: 1,
-                                        ),
-                                      ),
-                                      child: Icon(
-                                        icon,
-                                        color: isHovered
-                                            ? accentColor
-                                            : _textMuted,
-                                        size: 18,
-                                      ),
-                                    ),
-                                    AnimatedContainer(
-                                      duration: const Duration(
-                                        milliseconds: 200,
-                                      ),
-                                      width: 22,
-                                      height: 22,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: accentColor.withValues(
-                                          alpha: isHovered ? 0.18 : 0.06,
-                                        ),
-                                        border: Border.all(
-                                          color: accentColor.withValues(
-                                            alpha: isHovered ? 0.30 : 0.15,
-                                          ),
-                                          width: 1,
-                                        ),
-                                      ),
-                                      child: Transform.translate(
-                                        offset: Offset(
-                                          isHovered ? 2.0 : 0.0,
-                                          0,
-                                        ),
-                                        child: Icon(
-                                          Icons.chevron_right_rounded,
-                                          color: isHovered
-                                              ? accentColor
-                                              : _textMuted,
-                                          size: 13,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  title,
-                                  style: TextStyle(
-                                    color: _textHeading,
-                                    fontSize: 14.0,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: -0.15,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  subtitle,
-                                  style: TextStyle(
-                                    color: _textMuted,
-                                    fontSize: 11.0,
-                                    fontWeight: FontWeight.w300,
-                                    height: 1.3,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
-                          ),
-                          // Gradient CTA button — Daily Wear style (primary → tertiary)
-                          _AnimatedPressable(
-                            liftY: -2.0,
-                            scalePressed: 0.95,
-                            onTap: () => _openModuleChat(intent),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    accentColor,
-                                    context.themeTokens.accent.tertiary,
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(100),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: accentColor.withValues(alpha: 0.40),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 6),
-                                  ),
-                                  BoxShadow(
-                                    color: context.themeTokens.accent.tertiary
-                                        .withValues(alpha: 0.25),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    ctaLabel,
-                                    style: TextStyle(
-                                      color: _onAccent,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: 0.30,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Icon(
-                                    Icons.arrow_forward_rounded,
-                                    color: _onAccent,
-                                    size: 10,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-      ),
+    // 📅 Upcoming occasion — prep checklist
+    if (ctx.hasSoonOccasion) {
+      final e = ctx.nextOccasion!;
+      return _CardContent(
+        title: AppLocalizations.t(context, 'prep_event_title'),
+        subtitle: '"${e.title}" in ${e.hoursUntil}h — ${AppLocalizations.t(context, 'prep_event_subtitle')}',
+        cta: AppLocalizations.t(context, 'prep_event_cta'),
+        icon: Icons.checklist_rounded,
+        prompt: 'Create a complete prep checklist for my upcoming event: "${e.title}".',
+      );
+    }
+
+    // 📅 Travel today
+    if (ctx.upcomingEvents.any((e) => e.type == _EventType.travel && e.isToday)) {
+      final e = ctx.upcomingEvents.firstWhere((e) => e.type == _EventType.travel && e.isToday);
+      return _CardContent(
+        title: AppLocalizations.t(context, 'prep_travel_title'),
+        subtitle: AppLocalizations.t(context, 'prep_travel_subtitle'),
+        cta: AppLocalizations.t(context, 'prep_travel_cta'),
+        icon: Icons.flight_outlined,
+        prompt: 'Create a travel packing checklist and outfit plan for my trip today: "${e.title}".',
+      );
+    }
+
+    // 📅 Sunday — weekly prep
+    if (ctx.isSunday) {
+      return _CardContent(
+        title: AppLocalizations.t(context, 'prep_sunday_title'),
+        subtitle: AppLocalizations.t(context, 'prep_sunday_subtitle'),
+        cta: AppLocalizations.t(context, 'prep_sunday_cta'),
+        icon: Icons.event_available_outlined,
+        prompt: 'Help me do a complete Sunday prep: weekly meal plan, outfit planning, and goal setting.',
+      );
+    }
+
+    // 📅 Monday — weekly kickoff
+    if (ctx.isMondayMorning) {
+      return _CardContent(
+        title: AppLocalizations.t(context, 'prep_monday_title'),
+        subtitle: AppLocalizations.t(context, 'prep_monday_subtitle'),
+        cta: AppLocalizations.t(context, 'prep_monday_cta'),
+        icon: Icons.rocket_launch_outlined,
+        prompt: 'Help me plan my week: schedule, meals, and daily outfits.',
+      );
+    }
+
+    // 🏃 Meal plan needed
+    if (fit.mealPlanNeeded && (ctx.isAfternoon || ctx.isEvening)) {
+      return _CardContent(
+        title: AppLocalizations.t(context, 'prep_meal_title'),
+        subtitle: AppLocalizations.t(context, 'prep_meal_subtitle'),
+        cta: AppLocalizations.t(context, 'prep_meal_cta'),
+        icon: Icons.restaurant_outlined,
+        prompt: 'I haven\'t met my calorie goal today. Suggest healthy meals I can prepare now.',
+      );
+    }
+
+    // 🏃 Workout plan
+    if (fit.nextWorkoutLabel.isNotEmpty) {
+      return _CardContent(
+        title: fit.nextWorkoutLabel.isNotEmpty
+            ? '${fit.nextWorkoutLabel} ${AppLocalizations.t(context, 'prep_workout_title_suffix')}'
+            : AppLocalizations.t(context, 'prep_workout_title_default'),
+        subtitle: AppLocalizations.t(context, 'prep_workout_subtitle'),
+        cta: AppLocalizations.t(context, 'prep_workout_cta'),
+        icon: Icons.fitness_center_outlined,
+        prompt: 'Plan my ${fit.nextWorkoutLabel} workout: exercises, sets, nutrition, and gear.',
+      );
+    }
+
+    // Time-of-day fallbacks
+    if (ctx.isEvening) {
+      return _CardContent(
+        title: AppLocalizations.t(context, 'prep_tomorrow_title'),
+        subtitle: AppLocalizations.t(context, 'prep_tomorrow_subtitle'),
+        cta: AppLocalizations.t(context, 'prep_tomorrow_cta'),
+        icon: Icons.nights_stay_outlined,
+        prompt: 'Help me prepare for tomorrow: outfit, schedule, and to-dos.',
+      );
+    }
+    if (ctx.isMorning) {
+      return _CardContent(
+        title: AppLocalizations.t(context, 'prep_day_title'),
+        subtitle: AppLocalizations.t(context, 'prep_day_subtitle'),
+        cta: AppLocalizations.t(context, 'prep_day_cta'),
+        icon: Icons.today_outlined,
+        prompt: 'Help me plan today: meals, outfit, and schedule.',
+      );
+    }
+
+    // Default
+    return _CardContent(
+      title: AppLocalizations.t(context, 'prep_default_title'),
+      subtitle: AppLocalizations.t(context, 'prep_default_subtitle'),
+      cta: AppLocalizations.t(context, 'prep_default_cta'),
+      icon: Icons.grid_view_rounded,
+      prompt: 'Help me plan and organise my wardrobe, meals, and schedule.',
     );
   }
 
@@ -2432,10 +4345,10 @@ class _Screen4State extends State<Screen4>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
                 decoration: BoxDecoration(
-                  color: _accent.withValues(alpha: 0.08),
+                  color: _accent.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(100),
                   border: Border.all(
-                    color: _accent.withValues(alpha: 0.18),
+                    color: _accent.withOpacity(0.18),
                     width: 1,
                   ),
                 ),
@@ -2471,24 +4384,24 @@ class _Screen4State extends State<Screen4>
     // 🆕 Picks localized
     final picks = [
       (
-        AppLocalizations.t(context, 'pick_minimal_chic'),
-        AppLocalizations.t(context, 'pick_minimal_chic_tag'),
-        'https://images.unsplash.com/photo-1594938298603-c8148c4b9c2b?w=220&h=260&fit=crop&crop=top&auto=format',
+      AppLocalizations.t(context, 'pick_minimal_chic'),
+      AppLocalizations.t(context, 'pick_minimal_chic_tag'),
+      'https://images.unsplash.com/photo-1594938298603-c8148c4b9c2b?w=220&h=260&fit=crop&crop=top&auto=format',
       ),
       (
-        AppLocalizations.t(context, 'pick_street_edit'),
-        AppLocalizations.t(context, 'pick_street_edit_tag'),
-        'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=220&h=260&fit=crop&crop=top&auto=format',
+      AppLocalizations.t(context, 'pick_street_edit'),
+      AppLocalizations.t(context, 'pick_street_edit_tag'),
+      'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=220&h=260&fit=crop&crop=top&auto=format',
       ),
       (
-        AppLocalizations.t(context, 'pick_office_look'),
-        AppLocalizations.t(context, 'pick_office_look_tag'),
-        'https://images.unsplash.com/photo-1591369822096-ffd140ec948f?w=220&h=260&fit=crop&crop=top&auto=format',
+      AppLocalizations.t(context, 'pick_office_look'),
+      AppLocalizations.t(context, 'pick_office_look_tag'),
+      'https://images.unsplash.com/photo-1591369822096-ffd140ec948f?w=220&h=260&fit=crop&crop=top&auto=format',
       ),
       (
-        AppLocalizations.t(context, 'pick_evening'),
-        AppLocalizations.t(context, 'pick_evening_tag'),
-        'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=220&h=260&fit=crop&crop=top&auto=format',
+      AppLocalizations.t(context, 'pick_evening'),
+      AppLocalizations.t(context, 'pick_evening_tag'),
+      'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=220&h=260&fit=crop&crop=top&auto=format',
       ),
     ];
     final screenW = MediaQuery.of(context).size.width;
@@ -2565,11 +4478,11 @@ class _Screen4State extends State<Screen4>
                       fit: BoxFit.cover,
                       alignment: Alignment.topCenter,
                       cacheWidth:
-                          (112 * MediaQuery.of(context).devicePixelRatio)
-                              .round(),
+                      (112 * MediaQuery.of(context).devicePixelRatio)
+                          .round(),
                       filterQuality: FilterQuality.low,
                       errorBuilder: (_ctx, _err, _st) => Container(
-                        color: _accent.withValues(alpha: 0.1),
+                        color: _accent.withOpacity(0.1),
                         child: Icon(Icons.image, color: _textMuted),
                       ),
                     ),
@@ -2636,19 +4549,19 @@ class _Screen4State extends State<Screen4>
               height: 22,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: liked ? _accent.withValues(alpha: 0.20) : _shadowStrong,
+                color: liked ? _accent.withOpacity(0.20) : _shadowStrong,
                 border: liked
                     ? Border.all(
-                        color: _accent.withValues(alpha: 0.50),
-                        width: 1,
-                      )
+                  color: _accent.withOpacity(0.50),
+                  width: 1,
+                )
                     : null,
               ),
               child: Icon(
                 liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                 color: liked
                     ? _accentSecondary
-                    : _textHeading.withValues(alpha: 0.7),
+                    : _textHeading.withOpacity(0.7),
                 size: 12,
               ),
             ),
@@ -2681,10 +4594,9 @@ class _Screen4State extends State<Screen4>
         _openChatWithPrompt(text);
       },
       themeTokens: _t,
-      onVisualSearch: null, // sheet provides working visual-search default
-      onFindSimilar: null, // sheet provides working find-similar default
-      onAddToWardrobe:
-          null, // uses showAddToWardrobeModal default in lens sheet
+      onVisualSearch: () => _showComingSoon(),
+      onFindSimilar: () => _showComingSoon(),
+      onAddToWardrobe: null, // uses showAddToWardrobeModal default in lens sheet
     );
   }
 
@@ -2692,13 +4604,13 @@ class _Screen4State extends State<Screen4>
   Widget _buildPlusMenu() {
     final safeBottom = MediaQuery.of(context).padding.bottom;
     // Position it just above the chat bar
-    final menuBottom = safeBottom + 86.0 + 72.0 + 8.0;
+    final menuBottom = safeBottom + 86.0 + 60.0 + 8.0;  // 60px prompt bar height
 
-    const menuItems = [
-      (Icons.camera_alt_outlined, 'Camera', 'Take a photo'),
-      (Icons.photo_library_outlined, 'Photo Library', 'Choose from gallery'),
-      (Icons.insert_drive_file_outlined, 'Files', 'Upload a document'),
-      (Icons.browse_gallery_outlined, 'Browse', 'Search the web'),
+    final menuItems = [
+      (Icons.camera_alt_outlined,       AppLocalizations.t(context, 'plus_menu_camera'),   AppLocalizations.t(context, 'plus_menu_camera_sub')),
+      (Icons.photo_library_outlined,    AppLocalizations.t(context, 'plus_menu_gallery'),  AppLocalizations.t(context, 'plus_menu_gallery_sub')),
+      (Icons.insert_drive_file_outlined, AppLocalizations.t(context, 'plus_menu_files'),    AppLocalizations.t(context, 'plus_menu_files_sub')),
+      (Icons.browse_gallery_outlined,   AppLocalizations.t(context, 'plus_menu_browse'),   AppLocalizations.t(context, 'plus_menu_browse_sub')),
     ];
 
     return Positioned.fill(
@@ -2726,17 +4638,17 @@ class _Screen4State extends State<Screen4>
                             color: _surface,
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: _accent.withValues(alpha: 0.18),
+                              color: _accent.withOpacity(0.18),
                               width: 1,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: _bgPrimary.withValues(alpha: 0.40),
+                                color: _bgPrimary.withOpacity(0.40),
                                 blurRadius: 32,
                                 offset: const Offset(0, 8),
                               ),
                               BoxShadow(
-                                color: _accent.withValues(alpha: 0.08),
+                                color: _accent.withOpacity(0.08),
                                 blurRadius: 16,
                               ),
                             ],
@@ -2781,22 +4693,17 @@ class _Screen4State extends State<Screen4>
   }
 
   Widget _buildBottomNav() {
-    // 🆕 Nav labels localized
-    final navLabelKeys = [
-      'nav_home',
-      'nav_wardrobe',
-      'nav_planner',
-      'nav_explore',
-    ];
+    // 🆕 Nav labels localized from constant keys defined at top of file
+    final navLabelKeys = _homeNavKeys;
     final items = _homeNavItems;
     final screenH = MediaQuery.of(context).size.height;
     final screenW = MediaQuery.of(context).size.width;
     final isTablet = screenW >= 600;
-    const double pillH = 62.0;
-    const double maxBulge = 18.0;
-    const double totalH = pillH + maxBulge + 6.0;
-    const double iconContainerSize = 42.0;
-    const double iconSize = 20.0;
+    const double pillH = 64.0;        // ✏️ Increased from 50.0 — taller nav bar, icons less cramped
+    const double maxBulge = 14.0;     // ✏️ Increased from 8.0
+    const double totalH = pillH + maxBulge + 0.0;  // totalH = 78px (was 58px)
+    const double iconContainerSize = 32.0;  // ✏️ Reduced from 36.0
+    const double iconSize = 16.0;     // ✏️ Reduced from 18.0
 
     // On tablet, constrain nav to a max width and center it
     final navMaxW = isTablet ? 480.0 : double.infinity;
@@ -2861,24 +4768,20 @@ class _Screen4State extends State<Screen4>
                                     height: iconContainerSize,
                                     decoration: active
                                         ? BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            gradient: _accentGradient2,
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: _accent.withValues(
-                                                  alpha: 0.45,
-                                                ),
-                                                blurRadius: 16,
-                                                offset: const Offset(0, 4),
-                                              ),
-                                              BoxShadow(
-                                                color: _accent.withValues(
-                                                  alpha: 0.25,
-                                                ),
-                                                blurRadius: 28,
-                                              ),
-                                            ],
-                                          )
+                                      shape: BoxShape.circle,
+                                      gradient: _accentGradient2,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: _accent.withOpacity(0.45),
+                                          blurRadius: 16,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                        BoxShadow(
+                                          color: _accent.withOpacity(0.25),
+                                          blurRadius: 28,
+                                        ),
+                                      ],
+                                    )
                                         : null,
                                     child: Icon(
                                       items[i].icon,
@@ -2893,19 +4796,14 @@ class _Screen4State extends State<Screen4>
                                     duration: const Duration(milliseconds: 220),
                                     style: TextStyle(
                                       color: active ? _textHeading : _textMuted,
-                                      fontSize: 10,
+                                      fontSize: 8,
                                       fontWeight: active
                                           ? FontWeight.w600
                                           : FontWeight.w500,
                                       letterSpacing: -0.01,
                                     ),
                                     // 🆕 label localized
-                                    child: Text(
-                                      AppLocalizations.t(
-                                        context,
-                                        navLabelKeys[i],
-                                      ),
-                                    ),
+                                    child: Text(AppLocalizations.t(context, navLabelKeys[i])),
                                   ),
                                 ),
                               ],
@@ -2939,7 +4837,7 @@ class _Screen4State extends State<Screen4>
               Positioned.fill(
                 child: GestureDetector(
                   onTap: _dismissOverlay,
-                  child: Container(color: _bgPrimary.withValues(alpha: 0.92)),
+                  child: Container(color: _bgPrimary.withOpacity(0.92)),
                 ),
               ),
               Positioned(
@@ -3023,7 +4921,7 @@ class _Screen4State extends State<Screen4>
             ),
             const SizedBox(height: 8),
             ..._overlaySuggestions.map(
-              (q) => _AnimatedPressable(
+                  (q) => _AnimatedPressable(
                 scalePressed: 0.97,
                 // 🆕 q ఇప్పుడు key — translate చేసి API కి పంపుతున్నాం
                 onTap: () => _handleQuery(
@@ -3037,7 +4935,7 @@ class _Screen4State extends State<Screen4>
                     vertical: 13,
                   ),
                   decoration: BoxDecoration(
-                    color: _surface.withValues(alpha: 0.85),
+                    color: _surface.withOpacity(0.85),
                     borderRadius: BorderRadius.circular(15),
                     border: Border.all(color: _border),
                     boxShadow: [BoxShadow(color: _shadowMedium, blurRadius: 8)],
@@ -3049,7 +4947,7 @@ class _Screen4State extends State<Screen4>
                         height: 6,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: _accent.withValues(alpha: 0.55),
+                          color: _accent.withOpacity(0.55),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -3083,11 +4981,11 @@ class _Screen4State extends State<Screen4>
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
                     colors: [
-                      _accent.withValues(alpha: 0.18),
-                      _accentSecondary.withValues(alpha: 0.28),
+                      _accent.withOpacity(0.18),
+                      _accentSecondary.withOpacity(0.28),
                     ],
                   ),
-                  border: Border.all(color: _accent.withValues(alpha: 0.30)),
+                  border: Border.all(color: _accent.withOpacity(0.30)),
                 ),
                 child: Center(
                   child: ShaderMask(
@@ -3137,14 +5035,14 @@ class _Screen4State extends State<Screen4>
                       vertical: 11,
                     ),
                     decoration: BoxDecoration(
-                      color: _surface.withValues(alpha: 0.90),
+                      color: _surface.withOpacity(0.90),
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(
-                        color: _accent.withValues(alpha: 0.20),
+                        color: _accent.withOpacity(0.20),
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: _accent.withValues(alpha: 0.10),
+                          color: _accent.withOpacity(0.10),
                           blurRadius: 18,
                         ),
                       ],
@@ -3187,9 +5085,7 @@ class _Screen4State extends State<Screen4>
         Align(
           alignment: Alignment.centerRight,
           child: Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.72,
-            ),
+            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
             decoration: BoxDecoration(
@@ -3200,7 +5096,7 @@ class _Screen4State extends State<Screen4>
                 bottomLeft: Radius.circular(18),
                 bottomRight: Radius.circular(4),
               ),
-              border: Border.all(color: _accent.withValues(alpha: 0.15)),
+              border: Border.all(color: _accent.withOpacity(0.15)),
             ),
             child: Text(
               resp.question,
@@ -3224,11 +5120,11 @@ class _Screen4State extends State<Screen4>
                 shape: BoxShape.circle,
                 gradient: LinearGradient(
                   colors: [
-                    _accent.withValues(alpha: 0.18),
-                    _accentSecondary.withValues(alpha: 0.28),
+                    _accent.withOpacity(0.18),
+                    _accentSecondary.withOpacity(0.28),
                   ],
                 ),
-                border: Border.all(color: _accent.withValues(alpha: 0.30)),
+                border: Border.all(color: _accent.withOpacity(0.30)),
               ),
               child: Center(
                 child: ShaderMask(
@@ -3286,38 +5182,38 @@ class _Screen4State extends State<Screen4>
                   children: _responseTags
                       .map(
                         (tag) => _AnimatedPressable(
-                          scalePressed: 0.96,
-                          liftY: -1.5,
-                          // 🆕 tag key translate చేసి submit చేస్తున్నాం
-                          onTap: () => _submitQuery(_tagValue(tag)),
-                          child: Container(
-                            constraints: BoxConstraints(
-                              maxWidth: MediaQuery.of(context).size.width - 60,
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 13,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _accent.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(100),
-                              border: Border.all(
-                                color: _accent.withValues(alpha: 0.20),
-                              ),
-                            ),
-                            child: Text(
-                              _tagText(tag),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: _accent,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
+                      scalePressed: 0.96,
+                      liftY: -1.5,
+                      // 🆕 tag key translate చేసి submit చేస్తున్నాం
+                      onTap: () => _submitQuery(AppLocalizations.t(context, tag)),
+                      child: Container(
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width - 60,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 13,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _accent.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(100),
+                          border: Border.all(
+                            color: _accent.withOpacity(0.20),
                           ),
                         ),
-                      )
+                        child: Text(
+                          AppLocalizations.t(context, tag), // 🆕 translated
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: _accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
                       .toList(),
                 ),
               ),
@@ -3333,14 +5229,8 @@ class _Screen4State extends State<Screen4>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     switch (resp.type) {
       case 'outfits':
-        final outfitCardW = (MediaQuery.of(context).size.width * 0.22).clamp(
-          76.0,
-          96.0,
-        );
-        final outfitStripH = (MediaQuery.of(context).size.height * 0.185).clamp(
-          138.0,
-          168.0,
-        );
+        final outfitCardW = (MediaQuery.of(context).size.width * 0.22).clamp(76.0, 96.0);
+        final outfitStripH = (MediaQuery.of(context).size.height * 0.185).clamp(138.0, 168.0);
         return SizedBox(
           height: outfitStripH,
           child: ListView.separated(
@@ -3367,17 +5257,14 @@ class _Screen4State extends State<Screen4>
                         fit: BoxFit.cover,
                         width: double.infinity,
                         cacheWidth:
-                            (outfitCardW *
-                                    MediaQuery.of(context).devicePixelRatio)
-                                .round(),
+                        (outfitCardW * MediaQuery.of(context).devicePixelRatio)
+                            .round(),
                         cacheHeight:
-                            (outfitStripH *
-                                    0.62 *
-                                    MediaQuery.of(context).devicePixelRatio)
-                                .round(),
+                        (outfitStripH * 0.62 * MediaQuery.of(context).devicePixelRatio)
+                            .round(),
                         filterQuality: FilterQuality.low,
                         errorBuilder: (_ctx, _err, _st) =>
-                            Container(color: _accent.withValues(alpha: 0.1)),
+                            Container(color: _accent.withOpacity(0.1)),
                       ),
                     ),
                     Padding(
@@ -3400,29 +5287,29 @@ class _Screen4State extends State<Screen4>
                             children: o.tags
                                 .map(
                                   (t) => Container(
-                                    constraints: const BoxConstraints(
-                                      maxWidth: 70,
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 5,
-                                      vertical: 1,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: _accent.withValues(alpha: 0.10),
-                                      borderRadius: BorderRadius.circular(100),
-                                    ),
-                                    child: Text(
-                                      t,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: _textMuted,
-                                        fontSize: 8.5,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
+                                constraints: const BoxConstraints(
+                                  maxWidth: 70,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _accent.withOpacity(0.10),
+                                  borderRadius: BorderRadius.circular(100),
+                                ),
+                                child: Text(
+                                  t,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: _textMuted,
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.w500,
                                   ),
-                                )
+                                ),
+                              ),
+                            )
                                 .toList(),
                           ),
                         ],
@@ -3442,14 +5329,14 @@ class _Screen4State extends State<Screen4>
                 ? _accent
                 : t.priority == 'mid'
                 ? _accentSecondary
-                : _accentTertiary.withValues(alpha: 0.5);
+                : _accentTertiary.withOpacity(0.5);
             return Opacity(
               opacity: t.done ? 0.45 : 1.0,
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
                   border: Border(
-                    bottom: BorderSide(color: _border.withValues(alpha: 0.35)),
+                    bottom: BorderSide(color: _border.withOpacity(0.35)),
                   ),
                 ),
                 child: Row(
@@ -3463,11 +5350,11 @@ class _Screen4State extends State<Screen4>
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: t.done
-                              ? _accentTertiary.withValues(alpha: 0.5)
-                              : _accent.withValues(alpha: 0.3),
+                              ? _accentTertiary.withOpacity(0.5)
+                              : _accent.withOpacity(0.3),
                         ),
                         color: t.done
-                            ? _accentTertiary.withValues(alpha: 0.15)
+                            ? _accentTertiary.withOpacity(0.15)
                             : _transparent,
                       ),
                       child: t.done
@@ -3523,35 +5410,45 @@ class _Screen4State extends State<Screen4>
         return LayoutBuilder(
           builder: (context, constraints) {
             final itemCount = resp.weekDays.length;
-            final rows = ((itemCount / 7).ceil()).clamp(1, 6);
-            const spacing = 4.0;
-            final cellWidth = (constraints.maxWidth - (6 * spacing)) / 7;
-            final cellHeight = cellWidth / 0.52;
-            final gridHeight = (rows * cellHeight) + ((rows - 1) * spacing);
+            // 🔧 IMPROVED: Use fewer columns on small screens
+            final crossAxisCount = constraints.maxWidth < 360 ? 5 : 7;
+            final cellSpacing = constraints.maxWidth < 340 ? 3.0 : 4.0;
+            final aspectRatio = constraints.maxWidth < 360 ? 0.55 : 0.52;
+
+            final rows = ((itemCount / crossAxisCount).ceil()).clamp(1, 6);
+            final cellWidth = (constraints.maxWidth - ((crossAxisCount - 1) * cellSpacing)) / crossAxisCount;
+            final cellHeight = cellWidth / aspectRatio;
+            final gridHeight = (rows * cellHeight) + ((rows - 1) * cellSpacing);
+
             return SizedBox(
               height: gridHeight,
               child: GridView.builder(
                 itemCount: itemCount,
                 physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 7,
-                  crossAxisSpacing: spacing,
-                  mainAxisSpacing: spacing,
-                  childAspectRatio: 0.52,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: cellSpacing,
+                  mainAxisSpacing: cellSpacing,
+                  childAspectRatio: aspectRatio,
                 ),
                 itemBuilder: (_, index) {
                   final d = resp.weekDays[index];
+                  // 🔧 IMPROVED: Responsive text sizing in grid
+                  final dayLabelSize = constraints.maxWidth < 360 ? 8.0 : 7.5;
+                  final dateLabelSize = constraints.maxWidth < 360 ? 7.0 : 6.5;
+                  final itemTextSize = constraints.maxWidth < 360 ? 6.0 : 5.5;
+
                   return Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
                       color: d.isToday
-                          ? _accent.withValues(alpha: 0.10)
-                          : _bgPrimary.withValues(alpha: 0.04),
+                          ? _accent.withOpacity(0.10)
+                          : _bgPrimary.withOpacity(0.04),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                         color: d.isToday
-                            ? _accent.withValues(alpha: 0.25)
-                            : _border.withValues(alpha: 0.35),
+                            ? _accent.withOpacity(0.25)
+                            : _border.withOpacity(0.35),
                       ),
                     ),
                     child: Column(
@@ -3559,7 +5456,7 @@ class _Screen4State extends State<Screen4>
                         Text(
                           d.day,
                           style: TextStyle(
-                            fontSize: 7.5,
+                            fontSize: dayLabelSize,
                             fontWeight: FontWeight.w700,
                             color: d.isToday ? _accent : _textMuted,
                           ),
@@ -3567,7 +5464,7 @@ class _Screen4State extends State<Screen4>
                         ),
                         Text(
                           d.label.split(' ').last,
-                          style: TextStyle(fontSize: 6.5, color: _textMuted),
+                          style: TextStyle(fontSize: dateLabelSize, color: _textMuted),
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 3),
@@ -3575,26 +5472,26 @@ class _Screen4State extends State<Screen4>
                             .take(2)
                             .map(
                               (it) => Container(
-                                margin: const EdgeInsets.only(bottom: 2),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 2,
-                                  vertical: 1,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _accent.withValues(alpha: 0.07),
-                                  borderRadius: BorderRadius.circular(3),
-                                ),
-                                child: Text(
-                                  it,
-                                  style: TextStyle(
-                                    fontSize: 5.5,
-                                    color: _textSub,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
+                            margin: const EdgeInsets.only(bottom: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 2,
+                              vertical: 1,
                             ),
+                            decoration: BoxDecoration(
+                              color: _accent.withOpacity(0.07),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                            child: Text(
+                              it,
+                              style: TextStyle(
+                                fontSize: itemTextSize,
+                                color: _textSub,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   );
@@ -3627,7 +5524,7 @@ class _Screen4State extends State<Screen4>
                   ),
                   const SizedBox(height: 6),
                   ...s.items.map(
-                    (it) => Padding(
+                        (it) => Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
                         it,
@@ -3658,40 +5555,40 @@ class _Screen4State extends State<Screen4>
   Widget _buildPrepareExactChecklistCard(String title) {
     final sections = [
       (
-        name: 'Documents',
-        emoji: '📄',
-        color: _accentTertiary,
-        items: [
-          'Passport / ID',
-          'Boarding pass',
-          'Travel insurance',
-          'Hotel confirmation',
-          'Visa (if required)',
-        ],
+      name: AppLocalizations.t(context, 'checklist_section_documents'),
+      emoji: '📄',
+      color: _accentTertiary,
+      items: [
+        AppLocalizations.t(context, 'checklist_item_passport'),
+        AppLocalizations.t(context, 'checklist_item_boarding_pass'),
+        AppLocalizations.t(context, 'checklist_item_travel_insurance'),
+        AppLocalizations.t(context, 'checklist_item_hotel_confirmation'),
+        AppLocalizations.t(context, 'checklist_item_visa'),
+      ],
       ),
       (
-        name: 'Tech & Power',
-        emoji: '🔌',
-        color: _accentSecondary,
-        items: [
-          'Phone + charger',
-          'Power bank',
-          'Headphones',
-          'Laptop or tablet',
-          'Universal adapter',
-        ],
+      name: AppLocalizations.t(context, 'checklist_section_tech'),
+      emoji: '🔌',
+      color: _accentSecondary,
+      items: [
+        AppLocalizations.t(context, 'checklist_item_phone_charger'),
+        AppLocalizations.t(context, 'checklist_item_power_bank'),
+        AppLocalizations.t(context, 'checklist_item_headphones'),
+        AppLocalizations.t(context, 'checklist_item_laptop'),
+        AppLocalizations.t(context, 'checklist_item_adapter'),
+      ],
       ),
       (
-        name: 'Comfort',
-        emoji: '😴',
-        color: _accent,
-        items: [
-          'Neck pillow',
-          'Eye mask',
-          'Earplugs',
-          'Light jacket',
-          'Compression socks',
-        ],
+      name: AppLocalizations.t(context, 'checklist_section_comfort'),
+      emoji: '😴',
+      color: _accent,
+      items: [
+        AppLocalizations.t(context, 'checklist_item_neck_pillow'),
+        AppLocalizations.t(context, 'checklist_item_eye_mask'),
+        AppLocalizations.t(context, 'checklist_item_earplugs'),
+        AppLocalizations.t(context, 'checklist_item_jacket'),
+        AppLocalizations.t(context, 'checklist_item_compression_socks'),
+      ],
       ),
     ];
     const sectionImages = [
@@ -3717,23 +5614,23 @@ class _Screen4State extends State<Screen4>
 
     final itemsState = _prepareExactItemsByTitle.putIfAbsent(
       title,
-      () => sections.map((s) => List<String>.from(s.items)).toList(),
+          () => sections.map((s) => List<String>.from(s.items)).toList(),
     );
     final addCtrls = _prepareExactAddControllersByTitle.putIfAbsent(
       title,
-      () => List.generate(sections.length, (_) => TextEditingController()),
+          () => List.generate(sections.length, (_) => TextEditingController()),
     );
     final checksState = _prepareExactChecksByTitle.putIfAbsent(
       title,
-      () => itemsState
+          () => itemsState
           .map(
             (items) => List<bool>.filled(items.length, false, growable: true),
-          )
+      )
           .toList(),
     );
     final outfitSaved = _prepareExactOutfitSavedByTitle.putIfAbsent(
       title,
-      () => List<bool>.filled(3, false, growable: true),
+          () => List<bool>.filled(3, false, growable: true),
     );
     final isListSaved = _prepareExactSavedByTitle[title] ?? false;
 
@@ -3756,11 +5653,11 @@ class _Screen4State extends State<Screen4>
       builder: (context, checklistSetState) {
         final totalItems = itemsState.fold<int>(
           0,
-          (sum, items) => sum + items.length,
+              (sum, items) => sum + items.length,
         );
         final totalChecked = checksState.fold<int>(
           0,
-          (sum, items) => sum + items.where((v) => v).length,
+              (sum, items) => sum + items.where((v) => v).length,
         );
         final progress = totalItems == 0 ? 0.0 : totalChecked / totalItems;
 
@@ -3791,7 +5688,7 @@ class _Screen4State extends State<Screen4>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Generated for: $title',
+                      '${AppLocalizations.t(context, 'checklist_generated_for')} $title',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
@@ -3800,7 +5697,7 @@ class _Screen4State extends State<Screen4>
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      '$totalChecked of $totalItems items',
+                      '$totalChecked ${AppLocalizations.t(context, 'checklist_of')} $totalItems ${AppLocalizations.t(context, 'checklist_items')}',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -3812,7 +5709,7 @@ class _Screen4State extends State<Screen4>
                       width: double.infinity,
                       height: 7,
                       decoration: BoxDecoration(
-                        color: _border.withValues(alpha: 0.35),
+                        color: _border.withOpacity(0.35),
                         borderRadius: BorderRadius.circular(99),
                       ),
                       child: ClipRRect(
@@ -3867,9 +5764,7 @@ class _Screen4State extends State<Screen4>
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: _accentTertiary.withValues(
-                                    alpha: 0.12,
-                                  ),
+                                  color: _accentTertiary.withOpacity(0.12),
                                   borderRadius: BorderRadius.circular(99),
                                 ),
                                 child: Text(
@@ -3895,7 +5790,7 @@ class _Screen4State extends State<Screen4>
                                 return Padding(
                                   padding: EdgeInsets.only(
                                     right:
-                                        imgIdx == sectionImages[sIdx].length - 1
+                                    imgIdx == sectionImages[sIdx].length - 1
                                         ? 0
                                         : 8,
                                   ),
@@ -3910,16 +5805,15 @@ class _Screen4State extends State<Screen4>
                                       fit: BoxFit.cover,
                                       cacheWidth: 264,
                                       cacheHeight: 192,
-                                      errorBuilder: (_ctx, _err, _st) =>
-                                          Container(
-                                            color: _panel,
-                                            alignment: Alignment.center,
-                                            child: Icon(
-                                              Icons.image_outlined,
-                                              size: 16,
-                                              color: _textMuted,
-                                            ),
-                                          ),
+                                      errorBuilder: (_ctx, _err, _st) => Container(
+                                        color: _panel,
+                                        alignment: Alignment.center,
+                                        child: Icon(
+                                          Icons.image_outlined,
+                                          size: 16,
+                                          color: _textMuted,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 );
@@ -3931,7 +5825,7 @@ class _Screen4State extends State<Screen4>
                             final done = checksState[sIdx][i];
                             return GestureDetector(
                               onTap: () => checklistSetState(
-                                () => checksState[sIdx][i] = !done,
+                                    () => checksState[sIdx][i] = !done,
                               ),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
@@ -3940,13 +5834,12 @@ class _Screen4State extends State<Screen4>
                                 decoration: BoxDecoration(
                                   border: i < itemsState[sIdx].length - 1
                                       ? Border(
-                                          bottom: BorderSide(
-                                            color: _border.withValues(
-                                              alpha: 0.85,
-                                            ),
-                                            width: 1,
-                                          ),
-                                        )
+                                    bottom: BorderSide(
+                                      color: _border.withOpacity(0.85,
+                                      ),
+                                      width: 1,
+                                    ),
+                                  )
                                       : null,
                                 ),
                                 child: Row(
@@ -3968,10 +5861,10 @@ class _Screen4State extends State<Screen4>
                                       alignment: Alignment.center,
                                       child: done
                                           ? const Icon(
-                                              Icons.check,
-                                              size: 11,
-                                              color: Colors.white,
-                                            )
+                                        Icons.check,
+                                        size: 11,
+                                        color: Colors.white,
+                                      )
                                           : null,
                                     ),
                                     const SizedBox(width: 10),
@@ -4037,7 +5930,7 @@ class _Screen4State extends State<Screen4>
                                       color: _textHeading,
                                     ),
                                     decoration: InputDecoration(
-                                      hintText: '+ Add item…',
+                                      hintText: AppLocalizations.t(context, 'checklist_add_item'),
                                       hintStyle: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w600,
@@ -4103,12 +5996,12 @@ class _Screen4State extends State<Screen4>
                   ignoring: isListSaved,
                   child: GestureDetector(
                     onTap: () {
-                      const boards = [
-                        '🎉 Party Looks',
-                        '💍 Occasion',
-                        '💼 Office Fit',
-                        '✈️ Vacation',
-                        '✨ Everything Else',
+                      final boards = [
+                        AppLocalizations.t(context, 'board_party_looks'),
+                        AppLocalizations.t(context, 'board_occasion'),
+                        AppLocalizations.t(context, 'board_office_fit'),
+                        AppLocalizations.t(context, 'board_vacation'),
+                        AppLocalizations.t(context, 'board_everything_else'),
                       ];
                       showModalBottomSheet(
                         context: context,
@@ -4136,7 +6029,7 @@ class _Screen4State extends State<Screen4>
                               ),
                               const SizedBox(height: 16),
                               Text(
-                                'Save to a Style Board',
+                                AppLocalizations.t(context, 'board_save_title'),
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w800,
@@ -4145,7 +6038,7 @@ class _Screen4State extends State<Screen4>
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Choose where this checklist lives',
+                                AppLocalizations.t(context, 'board_save_subtitle'),
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
@@ -4153,80 +6046,84 @@ class _Screen4State extends State<Screen4>
                                 ),
                               ),
                               const SizedBox(height: 16),
-                              ...boards.map(
-                                (label) => GestureDetector(
-                                  onTap: () async {
-                                    final boardId = _boardIdByLabel[label];
-                                    if (boardId == null) {
+                              ...boards.asMap().entries.map(
+                                    (entry) {
+                                  final i = entry.key;
+                                  final label = entry.value;
+                                  return GestureDetector(
+                                    onTap: () async {
+                                      final boardId = _boardIdByLabel[label];
+                                      if (boardId == null) {
+                                        Navigator.pop(context);
+                                        return;
+                                      }
                                       Navigator.pop(context);
-                                      return;
-                                    }
-                                    Navigator.pop(context);
-                                    await _savePrepareExactToBoard(
-                                      boardId: boardId,
-                                      title: title,
-                                      sections: sections,
-                                      itemsState: itemsState,
-                                      checksState: checksState,
-                                      outfitSaved: outfitSaved,
-                                    );
-                                    if (!mounted) return;
-                                    checklistSetState(
-                                      () => _prepareExactSavedByTitle[title] =
-                                          true,
-                                    );
-                                  },
-                                  child: Container(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 12,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: _panel,
-                                      borderRadius: BorderRadius.circular(14),
-                                      border: Border.all(
-                                        color: _border,
-                                        width: 1.5,
+                                      await _savePrepareExactToBoard(
+                                        boardId: boardId,
+                                        title: title,
+                                        sections: sections,
+                                        itemsState: itemsState,
+                                        checksState: checksState,
+                                        outfitSaved: outfitSaved,
+                                      );
+                                      if (!mounted) return;
+                                      checklistSetState(
+                                            () => _prepareExactSavedByTitle[title] =
+                                        true,
+                                      );
+                                    },
+                                    child: Container(
+                                      margin: const EdgeInsets.only(bottom: 8),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 12,
                                       ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            label,
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w800,
-                                              color: _textHeading,
-                                            ),
-                                          ),
+                                      decoration: BoxDecoration(
+                                        color: _panel,
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: _border,
+                                          width: 1.5,
                                         ),
-                                        if (label.contains('Vacation'))
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 3,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: _accentSecondary,
-                                              borderRadius:
-                                                  BorderRadius.circular(99),
-                                            ),
-                                            child: const Text(
-                                              'SUGGESTED',
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              label,
                                               style: TextStyle(
-                                                fontSize: 9,
-                                                fontWeight: FontWeight.w900,
-                                                color: Colors.white,
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w800,
+                                                color: _textHeading,
                                               ),
                                             ),
                                           ),
-                                      ],
+                                          if (i == 3) // Vacation board (index 3)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 3,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: _accentSecondary,
+                                                borderRadius:
+                                                BorderRadius.circular(99),
+                                              ),
+                                              child: Text(
+                                                AppLocalizations.t(context, 'board_suggested_badge'),
+                                                style: TextStyle(
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.w900,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                ),
-                              ),
+                                  );
+                                },
+                              ).toList(),
                             ],
                           ),
                         ),
@@ -4238,12 +6135,14 @@ class _Screen4State extends State<Screen4>
                       padding: const EdgeInsets.symmetric(vertical: 13),
                       decoration: BoxDecoration(
                         gradient: isListSaved
-                            ? LinearGradient(colors: [_accent, _accentTertiary])
+                            ? LinearGradient(
+                          colors: [_accent, _accentTertiary],
+                        )
                             : LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [_accent, _accentTertiary],
-                              ),
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [_accent, _accentTertiary],
+                        ),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Row(
@@ -4255,7 +6154,7 @@ class _Screen4State extends State<Screen4>
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            isListSaved ? 'List Saved!' : 'Save to Style Board',
+                            isListSaved ? AppLocalizations.t(context, 'checklist_saved') : AppLocalizations.t(context, 'checklist_save_to_board'),
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w800,
@@ -4298,12 +6197,12 @@ class _Screen4State extends State<Screen4>
                 top: Radius.circular(24),
               ),
               border: Border.all(
-                color: _accent.withValues(alpha: 0.12),
+                color: _accent.withOpacity(0.12),
                 width: 1,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: _accent.withValues(alpha: 0.15),
+                  color: _accent.withOpacity(0.15),
                   blurRadius: 40,
                   offset: const Offset(0, -8),
                 ),
@@ -4325,7 +6224,7 @@ class _Screen4State extends State<Screen4>
                     height: 4,
                     margin: const EdgeInsets.only(bottom: 16),
                     decoration: BoxDecoration(
-                      color: _accent.withValues(alpha: 0.25),
+                      color: _accent.withOpacity(0.25),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -4358,16 +6257,16 @@ class _Screen4State extends State<Screen4>
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           decoration: BoxDecoration(
-                            color: _accent.withValues(alpha: 0.08),
+                            color: _accent.withOpacity(0.08),
                             borderRadius: BorderRadius.circular(15),
                             border: Border.all(
-                              color: _accent.withValues(alpha: 0.20),
+                              color: _accent.withOpacity(0.20),
                               width: 1,
                             ),
                           ),
                           child: Center(
                             child: Text(
-                              'Save to Board',
+                              AppLocalizations.t(context, 'pick_sheet_save_to_board'),
                               style: TextStyle(
                                 color: _accent,
                                 fontSize: 13,
@@ -4390,14 +6289,14 @@ class _Screen4State extends State<Screen4>
                             borderRadius: BorderRadius.circular(15),
                             boxShadow: [
                               BoxShadow(
-                                color: _accent.withValues(alpha: 0.35),
+                                color: _accent.withOpacity(0.35),
                                 blurRadius: 18,
                               ),
                             ],
                           ),
                           child: Center(
                             child: Text(
-                              'Style This ?',
+                              AppLocalizations.t(context, 'pick_sheet_style_this'),
                               style: TextStyle(
                                 color: _onAccent,
                                 fontSize: 13,
@@ -4422,34 +6321,34 @@ class _Screen4State extends State<Screen4>
     // 🆕 seeAll picks localized
     final seeAllPicks = [
       (
-        AppLocalizations.t(context, 'pick_minimal_chic'),
-        AppLocalizations.t(context, 'pick_minimal_chic_tag'),
-        'https://images.unsplash.com/photo-1594938298603-c8148c4b9c2b?w=300&h=280&fit=crop&crop=top&auto=format',
+      AppLocalizations.t(context, 'pick_minimal_chic'),
+      AppLocalizations.t(context, 'pick_minimal_chic_tag'),
+      'https://images.unsplash.com/photo-1594938298603-c8148c4b9c2b?w=300&h=280&fit=crop&crop=top&auto=format',
       ),
       (
-        AppLocalizations.t(context, 'pick_street_edit'),
-        AppLocalizations.t(context, 'pick_street_edit_tag'),
-        'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=300&h=280&fit=crop&crop=top&auto=format',
+      AppLocalizations.t(context, 'pick_street_edit'),
+      AppLocalizations.t(context, 'pick_street_edit_tag'),
+      'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=300&h=280&fit=crop&crop=top&auto=format',
       ),
       (
-        AppLocalizations.t(context, 'pick_office_look'),
-        AppLocalizations.t(context, 'pick_office_look_tag'),
-        'https://images.unsplash.com/photo-1591369822096-ffd140ec948f?w=300&h=280&fit=crop&crop=top&auto=format',
+      AppLocalizations.t(context, 'pick_office_look'),
+      AppLocalizations.t(context, 'pick_office_look_tag'),
+      'https://images.unsplash.com/photo-1591369822096-ffd140ec948f?w=300&h=280&fit=crop&crop=top&auto=format',
       ),
       (
-        AppLocalizations.t(context, 'pick_evening'),
-        AppLocalizations.t(context, 'pick_evening_tag'),
-        'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=300&h=280&fit=crop&crop=top&auto=format',
+      AppLocalizations.t(context, 'pick_evening'),
+      AppLocalizations.t(context, 'pick_evening_tag'),
+      'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=300&h=280&fit=crop&crop=top&auto=format',
       ),
       (
-        'Athleisure',
-        'Sport · Morning',
-        'https://images.unsplash.com/photo-1538805060514-97d9cc17730c?w=300&h=280&fit=crop&crop=top&auto=format',
+      AppLocalizations.t(context, 'pick_athleisure'),
+      AppLocalizations.t(context, 'pick_athleisure_tag'),
+      'https://images.unsplash.com/photo-1538805060514-97d9cc17730c?w=300&h=280&fit=crop&crop=top&auto=format',
       ),
       (
-        'Resort Wear',
-        'Vacation · Breezy',
-        'https://images.unsplash.com/photo-1469334031218-e382a71b716b?w=300&h=280&fit=crop&crop=top&auto=format',
+      AppLocalizations.t(context, 'pick_resort_wear'),
+      AppLocalizations.t(context, 'pick_resort_wear_tag'),
+      'https://images.unsplash.com/photo-1469334031218-e382a71b716b?w=300&h=280&fit=crop&crop=top&auto=format',
       ),
     ];
     return AnimatedBuilder(
@@ -4475,7 +6374,7 @@ class _Screen4State extends State<Screen4>
                             decoration: BoxDecoration(
                               color: _panel,
                               border: Border.all(
-                                color: _accent.withValues(alpha: 0.20),
+                                color: _accent.withOpacity(0.20),
                                 width: 1,
                               ),
                               shape: BoxShape.circle,
@@ -4489,10 +6388,7 @@ class _Screen4State extends State<Screen4>
                         ),
                         const SizedBox(width: 12),
                         Text(
-                          AppLocalizations.t(
-                            context,
-                            'picks_section_title',
-                          ), // 🆕
+                          AppLocalizations.t(context, 'picks_section_title'), // 🆕
                           style: TextStyle(
                             color: _textHeading,
                             fontSize: 24,
@@ -4507,12 +6403,12 @@ class _Screen4State extends State<Screen4>
                   child: GridView.builder(
                     padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                     gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 0.75,
-                        ),
+                    const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 0.75,
+                    ),
                     itemCount: seeAllPicks.length,
                     itemBuilder: (context, i) {
                       return RepaintBoundary(
@@ -4522,7 +6418,7 @@ class _Screen4State extends State<Screen4>
                             _closeSeeAll();
                             Future.delayed(
                               const Duration(milliseconds: 380),
-                              () {
+                                  () {
                                 if (mounted) {
                                   _openPickSheet(
                                     seeAllPicks[i].$1,
@@ -4548,20 +6444,19 @@ class _Screen4State extends State<Screen4>
                                     fit: BoxFit.cover,
                                     width: double.infinity,
                                     cacheWidth:
-                                        (240 *
-                                                MediaQuery.of(
-                                                  context,
-                                                ).devicePixelRatio)
-                                            .round(),
+                                    (240 *
+                                        MediaQuery.of(
+                                          context,
+                                        ).devicePixelRatio)
+                                        .round(),
                                     filterQuality: FilterQuality.low,
-                                    errorBuilder: (_ctx, _err, _st) =>
-                                        Container(
-                                          color: _accent.withValues(alpha: 0.1),
-                                          child: Icon(
-                                            Icons.image,
-                                            color: _textMuted,
-                                          ),
-                                        ),
+                                    errorBuilder: (_ctx, _err, _st) => Container(
+                                      color: _accent.withOpacity(0.1),
+                                      child: Icon(
+                                        Icons.image,
+                                        color: _textMuted,
+                                      ),
+                                    ),
                                   ),
                                 ),
                                 Padding(
@@ -4573,7 +6468,7 @@ class _Screen4State extends State<Screen4>
                                   ),
                                   child: Column(
                                     crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         seeAllPicks[i].$1,
@@ -4610,7 +6505,305 @@ class _Screen4State extends State<Screen4>
       },
     );
   }
+  // ── Notifications Panel ──────────────────────────────────────────────────
+  Widget _buildNotificationPanel() {
+    final screenH = MediaQuery.of(context).size.height;
+    final bottomPad = MediaQuery.paddingOf(context).bottom;
 
+    // No static data — real notifications come from backend
+    // 🆕 Use the notifications list from state that updates dynamically
+    final List<_NotifData> notifications = _notificationsList;
+
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          // Blurred backdrop
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () {
+                // 🆕 Mark all notifications as read when panel closes
+                for (int i = 0; i < _notificationsList.length; i++) {
+                  final notif = _notificationsList[i];
+                  _notificationsList[i] = _NotifData(
+                    icon: notif.icon,
+                    color: notif.color,
+                    title: notif.title,
+                    body: notif.body,
+                    time: notif.time,
+                    unread: false,
+                  );
+                }
+                _updateUnreadNotifCount();
+                setState(() => _notifPanelOpen = false);
+              },
+              behavior: HitTestBehavior.opaque,
+              child: AnimatedOpacity(
+                opacity: _notifPanelOpen ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 280),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                  child: Container(
+                    color: Colors.black.withOpacity(0.35),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Bottom sheet — 70% height, slides up
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: GestureDetector(
+              onTap: () {},
+              child: AnimatedSlide(
+                offset: _notifPanelOpen ? Offset.zero : const Offset(0, 1.0),
+                duration: const Duration(milliseconds: 380),
+                curve: const Cubic(0.16, 1.0, 0.3, 1.0),
+                child: AnimatedOpacity(
+                  opacity: _notifPanelOpen ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOut,
+                  child: GestureDetector(
+                    onVerticalDragEnd: (details) {
+                      if ((details.primaryVelocity ?? 0) > 300) {
+                        setState(() => _notifPanelOpen = false);
+                      }
+                    },
+                    child: Container(
+                      height: screenH * 0.70,
+                      decoration: BoxDecoration(
+                        color: _surface,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(28),
+                        ),
+                        border: Border.all(
+                          color: _border.withOpacity(0.5),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.18),
+                            blurRadius: 40,
+                            offset: const Offset(0, -8),
+                          ),
+                          BoxShadow(
+                            color: _accent.withOpacity(0.06),
+                            blurRadius: 24,
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(28),
+                        ),
+                        child: Column(
+                          children: [
+                            // Drag handle
+                            const SizedBox(height: 10),
+                            Center(
+                              child: Container(
+                                width: 36,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: _border.withOpacity(0.5),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+
+                            // Header
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 0, 16, 12),
+                              child: Row(
+                                children: [
+                                  ShaderMask(
+                                    shaderCallback: (b) => _accentGradient.createShader(b),
+                                    child: Text(
+                                      AppLocalizations.t(context, 'notifications_title'),
+                                      style: TextStyle(
+                                        color: _textHeading,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: -0.4,
+                                      ),
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  GestureDetector(
+                                    onTap: () => setState(() => _notifPanelOpen = false),
+                                    child: Container(
+                                      width: 30,
+                                      height: 30,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: _bgSecondary,
+                                        border: Border.all(color: _border.withOpacity(0.5)),
+                                      ),
+                                      child: Icon(
+                                        Icons.close_rounded,
+                                        size: 16,
+                                        color: _textMuted,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            Divider(height: 1, thickness: 1, color: _border.withOpacity(0.4)),
+
+                            // List or empty state
+                            Expanded(
+                              child: notifications.isEmpty
+                                  ? Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    width: 64,
+                                    height: 64,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: _accent.withOpacity(0.08),
+                                    ),
+                                    child: Icon(
+                                      Icons.notifications_none_rounded,
+                                      size: 30,
+                                      color: _accent.withOpacity(0.5),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Text(
+                                    AppLocalizations.t(context, 'notifications_empty_title'),
+                                    style: TextStyle(
+                                      color: _textHeading,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: -0.2,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    AppLocalizations.t(context, 'notifications_empty_subtitle'),
+                                    style: TextStyle(
+                                      color: _textMuted,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                  ),
+                                ],
+                              )
+                                  : ListView.separated(
+                                padding: EdgeInsets.only(top: 4, bottom: bottomPad + 16),
+                                itemCount: notifications.length,
+                                separatorBuilder: (_, __) => Divider(
+                                  height: 1,
+                                  thickness: 1,
+                                  indent: 66,
+                                  endIndent: 16,
+                                  color: _border.withOpacity(0.35),
+                                ),
+                                itemBuilder: (context, i) {
+                                  final n = notifications[i];
+                                  return _AnimatedPressable(
+                                    scalePressed: 0.98,
+                                    onTap: () => setState(() => _notifPanelOpen = false),
+                                    child: Container(
+                                      color: n.unread ? _accent.withOpacity(0.04) : Colors.transparent,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Container(
+                                            width: 38,
+                                            height: 38,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: n.color.withOpacity(0.14),
+                                            ),
+                                            child: Icon(n.icon, size: 18, color: n.color),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: Text(
+                                                        n.title,
+                                                        style: TextStyle(
+                                                          color: _textHeading,
+                                                          fontSize: 13,
+                                                          fontWeight: n.unread ? FontWeight.w700 : FontWeight.w600,
+                                                          letterSpacing: -0.1,
+                                                          height: 1.2,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    Text(
+                                                      n.time,
+                                                      style: TextStyle(
+                                                        color: _textMuted,
+                                                        fontSize: 10,
+                                                        fontWeight: FontWeight.w400,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 3),
+                                                Text(
+                                                  n.body,
+                                                  style: TextStyle(
+                                                    color: _textMuted,
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w400,
+                                                    height: 1.35,
+                                                  ),
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          if (n.unread) ...[
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              width: 7,
+                                              height: 7,
+                                              margin: const EdgeInsets.only(top: 5),
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: _accent,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   Widget _buildComingSoonToast() {
     final screenH = MediaQuery.of(context).size.height;
     return Positioned(
@@ -4632,7 +6825,7 @@ class _Screen4State extends State<Screen4>
                   vertical: 9,
                 ),
                 decoration: BoxDecoration(
-                  color: _bgSecondary.withValues(alpha: 0.92),
+                  color: _bgSecondary.withOpacity(0.92),
                   borderRadius: BorderRadius.circular(999),
                   boxShadow: [BoxShadow(color: _shadowMedium, blurRadius: 28)],
                 ),
@@ -4658,9 +6851,164 @@ class _Screen4State extends State<Screen4>
       ),
     );
   }
+
+  // 🆕 DYNAMIC ROUTINE DATA FETCHING METHODS
+  // These methods sync with real data from screens and services
+
+  // ─── WEAR / DAILY WEAR ───
+  // 🔧 FIX: "Wear" tracks DailyWearScreen's own daily pick — NOT generic
+  // Wardrobe "last worn" data. Now reads from HomeCardSummaryProvider,
+  // exactly like Care (Skincare) and Medicine below. DailyWearScreen must
+  // set summary.wearHomeSubtitle / wearHomeStatus / isWearDone (and call
+  // notifyListeners()) whenever the user picks/confirms today's outfit —
+  // that file isn't in this upload, so that side still needs wiring up.
+  // Falls back to the old Wardrobe-derived guess only if those fields
+  // aren't available yet, so nothing breaks in the meantime.
+  String _getDailyWearDescription() {
+    try {
+      final subtitle = Provider.of<HomeCardSummaryProvider>(context, listen: false)
+          .wearHomeSubtitle;
+      if (subtitle.isNotEmpty) return subtitle;
+    } catch (_) {}
+    // Fallback: generic Wardrobe data (until DailyWearScreen wires the provider up)
+    final outfit = _wardrobeSignal.lastWornItemName;
+    if (outfit.isNotEmpty) {
+      return outfit.length > 20 ? outfit.substring(0, 17) + '...' : outfit;
+    }
+    return _wardrobeSignal.favoriteStyle.isNotEmpty
+        ? _wardrobeSignal.favoriteStyle
+        : AppLocalizations.t(context, 'wear_pick_outfit');
+  }
+
+  String _getDailyWearStatus() {
+    try {
+      return Provider.of<HomeCardSummaryProvider>(context, listen: false)
+          .wearHomeStatus;
+    } catch (_) {
+      return _wardrobeSignal.daysSinceLastWorn == 0
+          ? AppLocalizations.t(context, 'status_done')
+          : AppLocalizations.t(context, 'status_in_progress');
+    }
+  }
+
+  bool _isDailyWearDone() {
+    try {
+      return Provider.of<HomeCardSummaryProvider>(context, listen: false)
+          .isWearDone;
+    } catch (_) {
+      return _wardrobeSignal.daysSinceLastWorn == 0;
+    }
+  }
+
+  // ─── MOVE / WORKOUT ───
+  String _getWorkoutDescription() {
+    final workoutLabel = _workoutLabel;
+    if (workoutLabel.isNotEmpty && workoutLabel != 'workout_mobility') {
+      String displayLabel = workoutLabel.startsWith('workout_')
+          ? AppLocalizations.t(context, workoutLabel)
+          : workoutLabel;
+      return displayLabel.length > 20 ? '${displayLabel.substring(0, 17)}...' : displayLabel;
+    }
+    return AppLocalizations.t(context, 'routine_move_desc');  // "7-min stretch"
+  }
+
+  String _getWorkoutStatus() {
+    // status_streak / status_start లేవు → existing keys వాడు
+    return _fitnessSignal.hasActiveStreak
+        ? AppLocalizations.t(context, 'status_in_progress')
+        : AppLocalizations.t(context, 'status_in_progress');
+  }
+
+  bool _isWorkoutDone() {
+    // Check if workout goal met today
+    return _fitnessSignal.stepGoalMet;
+  }
+
+  // ─── EAT / MEAL PLAN ───
+  String _getMealDescription() {
+    if (_fitnessSignal.calorieGoalMet) {
+      return AppLocalizations.t(context, 'home_card_eat_default');
+    }
+    return _fitnessSignal.waterGlassesToday > 0
+        ? AppLocalizations.t(context, 'eat_meal_prep')   // hydrating → meal prep fallback
+        : AppLocalizations.t(context, 'eat_meal_prep');
+  }
+
+  String _getMealStatus() {
+    return _fitnessSignal.calorieGoalMet
+        ? AppLocalizations.t(context, 'status_done')
+        : AppLocalizations.t(context, 'status_in_progress');
+  }
+
+  bool _isMealDone() {
+    return _fitnessSignal.calorieGoalMet;
+  }
+
+  // ─── CARE / SKINCARE ───
+  String _getSkincareDescription() {
+    try {
+      return Provider.of<HomeCardSummaryProvider>(context, listen: false)
+          .skincareHomeSubtitle;
+    } catch (_) {
+      final hour = DateTime.now().hour;
+      if (hour >= 6 && hour < 12) return AppLocalizations.t(context, 'skin_morning_routine');
+      if (hour >= 19) return AppLocalizations.t(context, 'skin_night_routine');
+      return AppLocalizations.t(context, 'care_routine');
+    }
+  }
+
+  String _getSkincareStatus() {
+    try {
+      return Provider.of<HomeCardSummaryProvider>(context, listen: false)
+          .skincareHomeStatus;
+    } catch (_) {
+      final hour = DateTime.now().hour;
+      return (hour >= 6 && hour < 12) || hour >= 19
+          ? AppLocalizations.t(context, 'status_in_progress')
+          : AppLocalizations.t(context, 'status_in_progress');
+    }
+  }
+
+  bool _isSkincareDone() {
+    try {
+      return Provider.of<HomeCardSummaryProvider>(context, listen: false)
+          .isSkincareDone;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ─── MEDICINE / HEALTH ───
+  String _getMedicineDescription() {
+    try {
+      return Provider.of<HomeCardSummaryProvider>(context, listen: false)
+          .medicineHomeSubtitle;
+    } catch (_) {
+      return AppLocalizations.t(context, 'medi_take_medicines');
+    }
+  }
+
+  String _getMedicineStatus() {
+    try {
+      return Provider.of<HomeCardSummaryProvider>(context, listen: false)
+          .medicineHomeStatus;
+    } catch (_) {
+      return AppLocalizations.t(context, 'status_in_progress');
+    }
+  }
+
+  bool _isMedicineDone() {
+    try {
+      return Provider.of<HomeCardSummaryProvider>(context, listen: false)
+          .isMedicineDone;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
-// ── Plus Menu Item ────────────────────────────────────────────────────────────
+// ── Plus Menu Item Widget ─────────────────────────────────────────────────────
+
 class _PlusMenuItem extends StatefulWidget {
   final IconData icon;
   final String title;
@@ -4716,7 +7064,7 @@ class _PlusMenuItemState extends State<_PlusMenuItem> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
             color: _pressed
-                ? widget.accent.withValues(alpha: 0.08)
+                ? widget.accent.withOpacity(0.08)
                 : Colors.transparent,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
             child: Opacity(
@@ -4729,14 +7077,18 @@ class _PlusMenuItemState extends State<_PlusMenuItem> {
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(
-                        color: widget.accent.withValues(alpha: 0.10),
+                        color: widget.accent.withOpacity(0.10),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                          color: widget.accent.withValues(alpha: 0.20),
+                          color: widget.accent.withOpacity(0.20),
                           width: 1,
                         ),
                       ),
-                      child: Icon(widget.icon, color: widget.accent, size: 18),
+                      child: Icon(
+                        widget.icon,
+                        color: widget.accent,
+                        size: 18,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -4774,7 +7126,7 @@ class _PlusMenuItemState extends State<_PlusMenuItem> {
           Divider(
             height: 1,
             thickness: 1,
-            color: widget.border.withValues(alpha: 0.6),
+            color: widget.border.withOpacity(0.6),
             indent: 16,
             endIndent: 16,
           ),
@@ -4849,7 +7201,7 @@ class _NavPillPainter extends CustomPainter {
       canvas.drawPath(
         combined,
         Paint()
-          ..color = glowColor.withValues(alpha: 0.12 * bulgeT)
+          ..color = glowColor.withOpacity(0.12 * bulgeT)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
       );
     }
@@ -4868,14 +7220,33 @@ class _NavPillPainter extends CustomPainter {
   @override
   bool shouldRepaint(_NavPillPainter old) =>
       old.activeIdx != activeIdx ||
-      old.bulgeT != bulgeT ||
-      old.fillColor != fillColor ||
-      old.shadowColor != shadowColor ||
-      old.glowColor != glowColor ||
-      old.borderColor != borderColor;
+          old.bulgeT != bulgeT ||
+          old.fillColor != fillColor ||
+          old.shadowColor != shadowColor ||
+          old.glowColor != glowColor ||
+          old.borderColor != borderColor;
 }
 
 enum _OverlayState { idle, suggestions, thinking, response }
+
+// ── Notification data model ───────────────────────────────────────────────────
+class _NotifData {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String body;
+  final String time;
+  final bool unread;
+
+  const _NotifData({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.body,
+    required this.time,
+    required this.unread,
+  });
+}
 
 class _IntentConfig {
   final List<String> suggestions;
@@ -4922,12 +7293,12 @@ class _WeekDay {
   final List<String> items;
   final bool done, isToday;
   const _WeekDay(
-    this.day,
-    this.label,
-    this.items, {
-    this.done = false,
-    this.isToday = false,
-  });
+      this.day,
+      this.label,
+      this.items, {
+        this.done = false,
+        this.isToday = false,
+      });
 }
 
 class _PlanSection {
@@ -4941,13 +7312,13 @@ class _PlanSection {
 // Runtime లో AppLocalizations.t() తో translate అవుతాయి
 const _intentConfig = {
   'style': _IntentConfig(
-    suggestions: ['intent_style_s1', 'intent_style_s2', 'intent_style_s3'],
-    brandSub: 'intent_style_sub',
-    responseTags: [
-      'intent_style_tag1',
-      'intent_style_tag2',
-      'intent_style_tag3',
+    suggestions: [
+      'intent_style_s1',
+      'intent_style_s2',
+      'intent_style_s3',
     ],
+    brandSub: 'intent_style_sub',
+    responseTags: ['intent_style_tag1', 'intent_style_tag2', 'intent_style_tag3'],
   ),
   'organize': _IntentConfig(
     suggestions: [
@@ -4970,14 +7341,14 @@ const _intentConfig = {
       'intent_prepare_s3',
     ],
     brandSub: 'intent_prepare_sub',
-    responseTags: [
-      'intent_prepare_tag1',
-      'intent_prepare_tag2',
-      'intent_prepare_tag3',
-    ],
+    responseTags: ['intent_prepare_tag1', 'intent_prepare_tag2', 'intent_prepare_tag3'],
   ),
   'chat': _IntentConfig(
-    suggestions: ['intent_chat_s1', 'intent_chat_s2', 'intent_chat_s3'],
+    suggestions: [
+      'intent_chat_s1',
+      'intent_chat_s2',
+      'intent_chat_s3',
+    ],
     brandSub: 'intent_chat_sub',
     responseTags: ['intent_chat_tag1', 'intent_chat_tag2', 'intent_chat_tag3'],
   ),
@@ -4993,10 +7364,10 @@ class _GradientText extends StatelessWidget {
   final FontWeight fontWeight;
 
   const _GradientText(
-    this.text, {
-    required this.fontSize,
-    required this.fontWeight,
-  });
+      this.text, {
+        required this.fontSize,
+        required this.fontWeight,
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -5184,22 +7555,22 @@ class _PrepareQuickChipState extends State<_PrepareQuickChip> {
           decoration: BoxDecoration(
             gradient: _active
                 ? LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [widget.accent, widget.accentSecondary],
-                  )
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [widget.accent, widget.accentSecondary],
+            )
                 : null,
             color: _active
                 ? null
                 : hovered
-                ? widget.accent.withValues(alpha: 0.15)
+                ? widget.accent.withOpacity(0.15)
                 : widget.panel,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: _active
                   ? Colors.transparent
                   : hovered
-                  ? widget.accent.withValues(alpha: 0.5)
+                  ? widget.accent.withOpacity(0.5)
                   : widget.border,
               width: 1.5,
             ),
@@ -5230,7 +7601,6 @@ class _HeroRowData {
     required this.value,
     required this.page,
   });
-
   final IconData icon;
   final Color color;
   final String label;
@@ -5238,6 +7608,37 @@ class _HeroRowData {
   final Widget page;
 }
 
+// ── Badge ─────────────────────────────────────────────────────────────────────
+
+class _HeroCardBadge extends StatelessWidget {
+  const _HeroCardBadge({required this.accent});
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: accent.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        AppLocalizations.t(context, 'hero_badge_routine'),
+        style: TextStyle(
+          color: accent,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.2,
+        ),
+      ),
+    );
+  }
+}
+
+// ── Routine item row ──────────────────────────────────────────────────────────
+
+/// Fully accessible, animated tap target (min 48 × 48 px).
+/// Pressed state: slight background tint + scale-down via AnimatedContainer.
 class _RoutineItem extends StatefulWidget {
   const _RoutineItem({
     required this.icon,
@@ -5247,6 +7648,7 @@ class _RoutineItem extends StatefulWidget {
     required this.textHeading,
     required this.textMuted,
     required this.onTap,
+    this.scale = 1.0,
   });
 
   final IconData icon;
@@ -5256,6 +7658,10 @@ class _RoutineItem extends StatefulWidget {
   final Color textHeading;
   final Color textMuted;
   final VoidCallback onTap;
+  /// Responsive scale factor (1.0 = baseline 360dp phone). Derived from the
+  /// hero card's own width so rows stay readable on small screens and don't
+  /// look tiny/oversized on large ones.
+  final double scale;
 
   @override
   State<_RoutineItem> createState() => _RoutineItemState();
@@ -5267,49 +7673,65 @@ class _RoutineItemState extends State<_RoutineItem> {
 
   @override
   Widget build(BuildContext context) {
-    final active = _pressed || _hovered;
+    final isActive = _pressed || _hovered;
+    final s = widget.scale;
+    final bubbleSize = 28.0 * s;
+    final iconSize = 13.0 * s;
+    final labelSize = 12.0 * s;
+    final valueSize = 10.5 * s;
+    final chevronSize = 14.0 * s;
+
     return Semantics(
       button: true,
       label: '${widget.label}: ${widget.value}',
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() {
-          _hovered = false;
-          _pressed = false;
-        }),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (_) => setState(() => _pressed = true),
-          onTapUp: (_) {
-            setState(() => _pressed = false);
-            widget.onTap();
-          },
-          onTapCancel: () => setState(() => _pressed = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) {
+          setState(() => _pressed = false);
+          widget.onTap();
+        },
+        onTapCancel: () => setState(() => _pressed = false),
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() {
+            _hovered = false;
+            _pressed = false;
+          }),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 130),
             curve: Curves.easeOut,
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 1.5 * s),
             decoration: BoxDecoration(
-              color: active
-                  ? widget.color.withValues(alpha: 0.08)
+              color: isActive
+                  ? widget.color.withOpacity(0.08)
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: active
-                        ? widget.color.withValues(alpha: 0.22)
-                        : widget.color.withValues(alpha: 0.13),
-                    shape: BoxShape.circle,
+                // ── Icon bubble ──────────────────────────────────────────
+                Padding(
+                  padding: EdgeInsets.only(top: 1.5 * s),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: bubbleSize,
+                    height: bubbleSize,
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? widget.color.withOpacity(0.22)
+                          : widget.color.withOpacity(0.13),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Icon(widget.icon, size: iconSize, color: widget.color),
+                    ),
                   ),
-                  child: Icon(widget.icon, size: 13, color: widget.color),
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: 8 * s),
+
+                // ── Label + subtitle ─────────────────────────────────────
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -5319,33 +7741,43 @@ class _RoutineItemState extends State<_RoutineItem> {
                         widget.label,
                         style: TextStyle(
                           color: widget.textHeading,
-                          fontSize: 12,
+                          fontSize: labelSize,
                           fontWeight: FontWeight.w600,
                           height: 1.2,
+                          letterSpacing: -0.1,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       Text(
                         widget.value,
                         style: TextStyle(
                           color: widget.textMuted,
-                          fontSize: 10.5,
+                          fontSize: valueSize,
                           fontWeight: FontWeight.w400,
-                          height: 1.25,
+                          height: 1.3,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
+                        softWrap: true,
                       ),
                     ],
                   ),
                 ),
-                AnimatedSlide(
-                  offset: active ? const Offset(0.12, 0) : Offset.zero,
-                  duration: const Duration(milliseconds: 150),
-                  curve: Curves.easeOut,
-                  child: Icon(
-                    Icons.chevron_right_rounded,
-                    size: 14,
-                    color: widget.color.withValues(alpha: active ? 0.9 : 0.5),
+
+                // ── Chevron ──────────────────────────────────────────────
+                Padding(
+                  padding: EdgeInsets.only(top: 2.0 * s, left: 4.0 * s),
+                  child: AnimatedSlide(
+                    offset: isActive ? const Offset(0.15, 0) : Offset.zero,
+                    duration: const Duration(milliseconds: 150),
+                    curve: Curves.easeOut,
+                    child: Icon(
+                      Icons.chevron_right_rounded,
+                      size: chevronSize,
+                      color:
+                      widget.color.withOpacity(isActive ? 0.90 : 0.50),
+                    ),
                   ),
                 ),
               ],

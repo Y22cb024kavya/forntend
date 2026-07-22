@@ -39,6 +39,14 @@ class AhviHeader extends StatelessWidget {
   /// Slight frosted-glass bg so content scrolls cleanly underneath.
   final bool frosted;
 
+  /// Left/right inset for the header row. Defaults to 20 (the value every
+  /// screen used before this fix). Pass the SAME horizontal gutter the
+  /// screen's own body content uses (e.g. Home's responsive `horizontalPad`)
+  /// so the logo lines up with the greeting/cards below it instead of using
+  /// a fixed 20px that drifts out of sync on small phones and tablets where
+  /// the body gutter is narrower/wider (or centered).
+  final double horizontalPadding;
+
   const AhviHeader({
     super.key,
     this.showBack = false,
@@ -46,6 +54,7 @@ class AhviHeader extends StatelessWidget {
     this.right,
     this.showBorder = false,
     this.frosted = false,
+    this.horizontalPadding = 20.0,
   });
 
   @override
@@ -73,15 +82,14 @@ class AhviHeader extends StatelessWidget {
 
     return SafeArea(
       bottom: false,
+      minimum: const EdgeInsets.only(top: 0), // no extra SafeArea top padding
       child: ClipRect(
         child: BackdropFilter(
-          // frosted=true → blur; frosted=false → ImageFilter.matrix identity (no-op)
           filter: frosted
               ? ImageFilter.blur(sigmaX: 18, sigmaY: 18)
               : ImageFilter.blur(sigmaX: 0, sigmaY: 0),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              // frosted=true → very subtle tint (no hard edge), false → fully transparent
               color: frosted
                   ? t.backgroundPrimary.withValues(alpha: 0.55)
                   : Colors.transparent,
@@ -90,10 +98,11 @@ class AhviHeader extends StatelessWidget {
                   : null,
             ),
             child: SizedBox(
-              height: topPad + logoSize + botPad,
+              height: 33.0,
               child: Padding(
-                padding: EdgeInsets.fromLTRB(20, topPad, 20, botPad),
+                padding: EdgeInsets.fromLTRB(horizontalPadding, 0, horizontalPadding, 0),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     if (showBack) ...[
                       GestureDetector(
@@ -110,7 +119,15 @@ class AhviHeader extends StatelessWidget {
                     ],
                     logo,
                     const Spacer(),
-                    if (right != null) right!,
+                    // 🔧 FIX: Removed FittedBox + logoSize SizedBox that was
+                    // squeezing the right widget (notification bell + profile
+                    // avatar) from 48px down to 26-30px.
+                    // Now right widget renders at its own natural 48px size.
+                    if (right != null)
+                      UnconstrainedBox(
+                        alignment: Alignment.center,
+                        child: right!,
+                      ),
                   ],
                 ),
               ),

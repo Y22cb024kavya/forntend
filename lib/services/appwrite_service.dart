@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:appwrite/appwrite.dart';
 import 'package:appwrite/models.dart';
 import 'package:appwrite/enums.dart';
@@ -23,6 +24,11 @@ class AppwriteService extends ChangeNotifier {
   Map<String, dynamic>? _cachedUserProfileData;
 
   Map<String, dynamic>? get cachedUserProfileData => _cachedUserProfileData;
+
+  /// Synchronous getter for the cached user ID.
+  /// Returns null if the user has not been fetched yet — call
+  /// [getCurrentUser] or [cacheCurrentUser] first (both auth paths already do this).
+  String? get currentUserId => _cachedUser?.$id;
 
   // Wardrobe TTL cache — cuts redundant listDocuments calls from planner pages.
   List<Map<String, dynamic>>? _wardrobeCache;
@@ -57,6 +63,16 @@ class AppwriteService extends ChangeNotifier {
     databases = Databases(client);
     avatars = Avatars(client);
   }
+
+  // =========================================================================
+  // PROFILE SYNC OPTIMIZATION: RETRY & CIRCUIT BREAKER
+  // =========================================================================
+
+  static const int _maxProfileSyncRetries = 2;
+  static const Duration _initialRetryDelay = Duration(milliseconds: 100);
+
+  /// Circuit breaker to prevent rapid-fire retry storms after repeated failures
+  late final _profileSyncCircuitBreaker = _ProfileSyncCircuitBreaker();
 
   // =========================================================================
   // AUTHENTICATION METHODS
@@ -203,11 +219,195 @@ class AppwriteService extends ChangeNotifier {
     }
   }
 
+  // ================= EMAIL OTP LOGIN (FIXED - persists state) ==========
+  // Appwrite's "email token" flow: createEmailToken() emails a 6-digit
+  // secret and returns a Token whose userId we persist to SharedPreferences
+  // so it survives app restarts. The subsequent createSession() call needs
+  // BOTH the userId and the secret the user typed in, not just the email.
+
+  static const String _otpUserIdKey = 'ahvi_otp_user_id';
+  static const String _otpEmailKey = 'ahvi_otp_email';
+  static const String _otpTimestampKey = 'ahvi_otp_timestamp';
+  static const Duration _otpTimeout = Duration(minutes: 10);
+
+  /// Send OTP to user's email
+  ///
+  /// Appwrite's createEmailToken() sends a 6-digit code to the email.
+  /// We persist the userId so it survives app restarts.
+  Future<void> sendOTP(String email) async {
+    try {
+      // Normalize email
+      final normalizedEmail = email.toLowerCase().trim();
+
+      debugPrint('📧 Sending OTP to: $normalizedEmail');
+
+      // Create Appwrite email token (this sends the 6-digit code)
+      final token = await account.createEmailToken(
+        userId: ID.unique(),
+        email: normalizedEmail,
+      );
+
+      // ✅ Persist to SharedPreferences (survives app restart!)
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_otpUserIdKey, token.userId);
+      await prefs.setString(_otpEmailKey, normalizedEmail);
+      await prefs.setInt(
+        _otpTimestampKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+
+      debugPrint('✅ OTP sent & persisted: userId=${token.userId}');
+    } catch (e) {
+      debugPrint("❌ Send OTP error: $e");
+      rethrow;
+    }
+  }
+
+  /// Verify OTP code entered by user
+  ///
+  /// Retrieves the persisted userId and validates the OTP.
+  /// Returns true on success, false on any validation failure.
+  Future<bool> verifyOTP(String email, String otp) async {
+    try {
+      // Normalize email
+      final normalizedEmail = email.toLowerCase().trim();
+
+      debugPrint('🔐 Verifying OTP for: $normalizedEmail, code: ${otp.substring(0, 2)}***');
+
+      // ✅ Retrieve from persistent storage
+      final prefs = await SharedPreferences.getInstance();
+      final savedUserId = prefs.getString(_otpUserIdKey);
+      final savedEmail = prefs.getString(_otpEmailKey);
+      final savedTimestamp = prefs.getInt(_otpTimestampKey);
+
+      // Check if OTP request exists
+      if (savedUserId == null || savedEmail == null || savedTimestamp == null) {
+        debugPrint("❌ Verify OTP error: no pending OTP request for this email");
+        return false;
+      }
+
+      // Validate email consistency
+      if (normalizedEmail != savedEmail) {
+        debugPrint("❌ Verify OTP error: email mismatch (got: $normalizedEmail, expected: $savedEmail)");
+        await _clearOTPState();
+        return false;
+      }
+
+      // Check OTP expiry (10 minutes)
+      final otpAge = DateTime.now().difference(
+        DateTime.fromMillisecondsSinceEpoch(savedTimestamp),
+      );
+      if (otpAge > _otpTimeout) {
+        debugPrint("❌ Verify OTP error: OTP expired (${otpAge.inSeconds}s old, max ${_otpTimeout.inSeconds}s)");
+        await _clearOTPState();
+        return false;
+      }
+
+      // ✅ CRITICAL: Delete all existing sessions BEFORE creating new one
+      debugPrint('🔑 Deleting existing sessions before creating new one...');
+      try {
+        await account.deleteSessions();
+        debugPrint('✅ All sessions deleted');
+      } catch (e) {
+        debugPrint('⚠️  Could not delete all sessions, trying current: $e');
+        try {
+          await account.deleteSession(sessionId: 'current');
+          debugPrint('✅ Current session deleted');
+        } catch (e2) {
+          debugPrint('⚠️  Could not delete current session: $e2');
+          // Continue anyway, might still work
+        }
+      }
+
+      // Small delay to ensure session deletion is processed
+      await Future.delayed(Duration(milliseconds: 500));
+
+      // ✅ NOW create new session with the OTP secret
+      debugPrint('🔑 Creating new session with userId: $savedUserId');
+
+      // Wipe any previous user's in-memory state before establishing the
+      // new session — same rule as the password login path.
+      clearUserCache();
+
+      await account.createSession(userId: savedUserId, secret: otp);
+
+      debugPrint('✅ Session created successfully');
+
+      // ✅ Success! Cache user and profile data
+      await cacheCurrentUser();
+      await ensureCurrentUserProfile();
+      await refreshCurrentUserProfile();
+
+      // ✅ Clean up after successful verification
+      await _clearOTPState();
+      notifyListeners();
+
+      debugPrint('✅ OTP verification successful!');
+      return true;
+    } catch (e) {
+      debugPrint("❌ Verify OTP error: $e");
+      // Don't clear state on Appwrite verification failure
+      // (user might retry with correct code)
+      return false;
+    }
+  }
+
+  /// Clear OTP state (call after successful verification or when user cancels)
+  Future<void> _clearOTPState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_otpUserIdKey);
+      await prefs.remove(_otpEmailKey);
+      await prefs.remove(_otpTimestampKey);
+      debugPrint('🗑️  OTP state cleared');
+    } catch (e) {
+      debugPrint('⚠️  Error clearing OTP state: $e');
+    }
+  }
+
+  /// Allow user to cancel the OTP request and request a new one
+  Future<void> cancelOTPRequest() async {
+    await _clearOTPState();
+    debugPrint('❌ OTP request cancelled by user');
+  }
+
+  /// Debug helper: Check current OTP state
+  Future<void> debugPrintOTPState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString(_otpUserIdKey);
+      final email = prefs.getString(_otpEmailKey);
+      final timestamp = prefs.getInt(_otpTimestampKey);
+
+      if (userId == null) {
+        debugPrint('🔍 OTP State: [EMPTY - No pending request]');
+        return;
+      }
+
+      final age = DateTime.now().difference(
+        DateTime.fromMillisecondsSinceEpoch(timestamp!),
+      );
+      final isExpired = age > _otpTimeout;
+
+      debugPrint('''
+🔍 OTP State:
+   userId: $userId
+   email: $email
+   age: ${age.inSeconds}s
+   expired: $isExpired
+   timeout: ${_otpTimeout.inMinutes}m
+''');
+    } catch (e) {
+      debugPrint('🔍 OTP State: Error reading - $e');
+    }
+  }
+  // ================= EMAIL OTP LOGIN END (FIXED) ======================
+
   Future<User> registerEmailPassword(
-    String email,
-    String password,
-    String name,
-  ) async {
+      String email,
+      String password,
+      String name,
+      ) async {
     final cleanEmail = email.trim();
     final cleanName = name.trim();
     try {
@@ -297,6 +497,47 @@ class AppwriteService extends ChangeNotifier {
     }
   }
 
+  /// Calls the FastAPI backend to wipe the user's account, wardrobe, and
+  /// style history from the server.  Throws on any non-200 response so the
+  /// caller can show an error and abort the local teardown.
+  ///
+  /// TODO: replace Env.appwriteEndpoint with Env.backendUrl once that key
+  /// is added to config/env.dart.
+  Future<void> deleteAccountFromBackend(String userId) async {
+    // Retrieve a fresh session JWT to authorise the request.
+    // account.createJWT() returns a short-lived token without needing extras.
+    String jwt = '';
+    try {
+      final token = await account.createJWT();
+      jwt = token.jwt;
+    } catch (e) {
+      debugPrint('AHVI_DELETE_BACKEND_JWT_ERROR: $e');
+      // If JWT creation fails we still send the request; the backend can
+      // fall back to validating the Appwrite session cookie.
+    }
+
+    final uri = Uri.parse('${Env.appwriteEndpoint}/api/user/delete-account');
+    final response = await http.delete(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        if (jwt.isNotEmpty) 'Authorization': 'Bearer $jwt',
+      },
+      body: jsonEncode({'user_id': userId}),
+    );
+
+    if (response.statusCode != 200) {
+      debugPrint(
+        'AHVI_DELETE_BACKEND_FAIL status=${response.statusCode} body=${response.body}',
+      );
+      throw Exception(
+        'Backend returned ${response.statusCode} — account not deleted from server.',
+      );
+    }
+
+    debugPrint('AHVI_DELETE_BACKEND_OK userId=$userId');
+  }
+
   Future<Uint8List?> getUserAvatar(String name) async {
     try {
       return await avatars.getInitials(name: name);
@@ -309,14 +550,18 @@ class AppwriteService extends ChangeNotifier {
   // =========================================================================
 
   bool _userProfileSyncInFlight = false;
+  bool _userProfileSyncInFlight2 = false; // Secondary guard for profile sync
 
   String _safeUsernameFromUser(dynamic user) {
-    final emailPrefix = user.email.toString().split('@').first;
+    // ✅ SAFE: Handle email without @ symbol
+    final emailPrefix = user.email.toString().contains('@')
+        ? user.email.toString().split('@').first
+        : user.email.toString();
     final raw =
-        (user.name.toString().trim().isNotEmpty
-                ? user.name.toString()
-                : emailPrefix)
-            .toLowerCase();
+    (user.name.toString().trim().isNotEmpty
+        ? user.name.toString()
+        : emailPrefix)
+        .toLowerCase();
 
     final cleaned = raw
         .replaceAll(RegExp(r'[^a-z0-9_]+'), '_')
@@ -340,7 +585,9 @@ class AppwriteService extends ChangeNotifier {
       }
 
       final user = await account.get();
-      if (createIfMissing) {
+
+      // 🛡️ ANTI-FREEZE GUARD: Prevent recursive calls to ensureCurrentUserProfile
+      if (createIfMissing && !_userProfileSyncInFlight) {
         await ensureCurrentUserProfile();
       }
 
@@ -370,17 +617,17 @@ class AppwriteService extends ChangeNotifier {
 
     final done =
         profile?['onboarding1'] == true &&
-        profile?['onboarding2'] == true &&
-        profile?['onboarding3'] == true &&
-        gender.isNotEmpty;
+            profile?['onboarding2'] == true &&
+            profile?['onboarding3'] == true &&
+            gender.isNotEmpty;
 
     debugPrint(
       'AHVI_ONBOARDING_PROFILE '
-      'gender=${profile?['gender']} '
-      'onboarding1=${profile?['onboarding1']} '
-      'onboarding2=${profile?['onboarding2']} '
-      'onboarding3=${profile?['onboarding3']} '
-      'done=$done',
+          'gender=${profile?['gender']} '
+          'onboarding1=${profile?['onboarding1']} '
+          'onboarding2=${profile?['onboarding2']} '
+          'onboarding3=${profile?['onboarding3']} '
+          'done=$done',
     );
 
     return done;
@@ -410,7 +657,7 @@ class AppwriteService extends ChangeNotifier {
 
   Map<String, dynamic> _cleanProfilePayload(Map<String, dynamic> data) {
     final Map<String, dynamic> cleaned = Map<String, dynamic>.from(data);
-    
+
     if (cleaned.containsKey('skinTone')) {
       final sanitizedSkinTone = _sanitizeSkinToneForAppwrite(cleaned['skinTone']);
       if (sanitizedSkinTone != null) {
@@ -439,6 +686,8 @@ class AppwriteService extends ChangeNotifier {
       'onboarding1',
       'onboarding2',
       'onboarding3',
+      // ✅ REMOVED: updatedAt and createdAt - Appwrite manages these as system fields ($updatedAt, $createdAt)
+      // Never send these manually to the database
     };
     final out = <String, dynamic>{};
     for (final entry in data.entries) {
@@ -464,7 +713,7 @@ class AppwriteService extends ChangeNotifier {
       );
     } on AppwriteException catch (e) {
       final fallback = _coreProfilePayload(cleaned);
-      
+
       bool retryWithSkinToneZero = false;
       if (e.message != null && e.message!.contains('skinTone')) {
         fallback['skinTone'] = 0;
@@ -472,7 +721,7 @@ class AppwriteService extends ChangeNotifier {
       }
 
       if (!retryWithSkinToneZero && (fallback.isEmpty || fallback.length == cleaned.length)) rethrow;
-      
+
       debugPrint(
         'AHVI_PROFILE_UPDATE_SCHEMA_RETRY error=${e.message} keys=${fallback.keys.toList()}',
       );
@@ -505,7 +754,7 @@ class AppwriteService extends ChangeNotifier {
       );
     } on AppwriteException catch (e) {
       final fallback = _coreProfilePayload(cleaned);
-      
+
       bool retryWithSkinToneZero = false;
       if (e.message != null && e.message!.contains('skinTone')) {
         fallback['skinTone'] = 0;
@@ -513,7 +762,7 @@ class AppwriteService extends ChangeNotifier {
       }
 
       if (!retryWithSkinToneZero && (fallback.isEmpty || fallback.length == cleaned.length)) rethrow;
-      
+
       debugPrint(
         'AHVI_PROFILE_CREATE_SCHEMA_RETRY error=${e.message} keys=${fallback.keys.toList()}',
       );
@@ -531,6 +780,103 @@ class AppwriteService extends ChangeNotifier {
     }
   }
 
+  /// ✅ NEW: Retry wrapper with exponential backoff and max retry limit
+  Future<Document> _updateProfileDocumentWithFallbackRetry({
+    required String usersCollectionId,
+    required String documentId,
+    required Map<String, dynamic> payload,
+    int retryCount = 0,
+  }) async {
+    // Circuit breaker check: if too many failures, fail fast
+    if (!_profileSyncCircuitBreaker.canRetry()) {
+      debugPrint(
+        '⚠️ Profile sync circuit breaker OPEN. Too many failures. Skipping retry.',
+      );
+      throw Exception('Profile sync circuit breaker is open');
+    }
+
+    try {
+      final result = await _updateProfileDocumentWithFallback(
+        usersCollectionId: usersCollectionId,
+        documentId: documentId,
+        payload: payload,
+      );
+      _profileSyncCircuitBreaker.recordSuccess();
+      return result;
+    } catch (e) {
+      _profileSyncCircuitBreaker.recordFailure();
+
+      if (retryCount < _maxProfileSyncRetries) {
+        // Exponential backoff: 100ms, 200ms, etc.
+        final delay = _initialRetryDelay * (retryCount + 1);
+        debugPrint(
+          'AHVI_PROFILE_UPDATE_RETRY attempt=${retryCount + 1} '
+              'delay=${delay.inMilliseconds}ms error=$e',
+        );
+        await Future.delayed(delay);
+        return _updateProfileDocumentWithFallbackRetry(
+          usersCollectionId: usersCollectionId,
+          documentId: documentId,
+          payload: payload,
+          retryCount: retryCount + 1,
+        );
+      }
+
+      debugPrint(
+        '❌ Profile update failed after $_maxProfileSyncRetries retries: $e',
+      );
+      rethrow;
+    }
+  }
+
+  /// ✅ NEW: Retry wrapper for document creation
+  Future<Document> _createProfileDocumentWithFallbackRetry({
+    required String usersCollectionId,
+    required String documentId,
+    required Map<String, dynamic> payload,
+    int retryCount = 0,
+  }) async {
+    // Circuit breaker check
+    if (!_profileSyncCircuitBreaker.canRetry()) {
+      debugPrint(
+        '⚠️ Profile sync circuit breaker OPEN. Too many failures. Skipping retry.',
+      );
+      throw Exception('Profile sync circuit breaker is open');
+    }
+
+    try {
+      final result = await _createProfileDocumentWithFallback(
+        usersCollectionId: usersCollectionId,
+        documentId: documentId,
+        payload: payload,
+      );
+      _profileSyncCircuitBreaker.recordSuccess();
+      return result;
+    } catch (e) {
+      _profileSyncCircuitBreaker.recordFailure();
+
+      if (retryCount < _maxProfileSyncRetries) {
+        final delay = _initialRetryDelay * (retryCount + 1);
+        debugPrint(
+          'AHVI_PROFILE_CREATE_RETRY attempt=${retryCount + 1} '
+              'delay=${delay.inMilliseconds}ms error=$e',
+        );
+        await Future.delayed(delay);
+        return _createProfileDocumentWithFallbackRetry(
+          usersCollectionId: usersCollectionId,
+          documentId: documentId,
+          payload: payload,
+          retryCount: retryCount + 1,
+        );
+      }
+
+      debugPrint(
+        '❌ Profile create failed after $_maxProfileSyncRetries retries: $e',
+      );
+      rethrow;
+    }
+  }
+
   Future<void> updateCurrentUserProfileFields(Map<String, dynamic> data) async {
     try {
       final user = await getCurrentUser();
@@ -545,10 +891,12 @@ class AppwriteService extends ChangeNotifier {
 
       await ensureCurrentUserProfile();
 
-      final updated = await _updateProfileDocumentWithFallback(
+      // ✅ NOW USES RETRY WRAPPER INSTEAD OF DIRECT CALL
+      // ✅ REMOVED: 'updatedAt' - Appwrite manages this as $updatedAt system field
+      final updated = await _updateProfileDocumentWithFallbackRetry(
         usersCollectionId: usersCollectionId,
         documentId: user.$id,
-        payload: {...data, 'updatedAt': DateTime.now().toIso8601String()},
+        payload: data,  // Don't add updatedAt - let Appwrite handle it
       );
 
       _cachedUserProfileData = Map<String, dynamic>.from(updated.data);
@@ -563,7 +911,11 @@ class AppwriteService extends ChangeNotifier {
   }
 
   Future<Document?> ensureCurrentUserProfile() async {
-    if (_userProfileSyncInFlight) return null;
+    // ✅ IMPROVED: Dual guard system to prevent any re-entry
+    if (_userProfileSyncInFlight || _userProfileSyncInFlight2) {
+      debugPrint('⚠️ Profile sync already in flight, skipping duplicate call');
+      return null;
+    }
 
     final usersCollectionId = Env.usersCollection.trim();
     if (usersCollectionId.isEmpty) {
@@ -574,6 +926,7 @@ class AppwriteService extends ChangeNotifier {
     }
 
     _userProfileSyncInFlight = true;
+    _userProfileSyncInFlight2 = true;
 
     try {
       final user = await account.get();
@@ -581,11 +934,11 @@ class AppwriteService extends ChangeNotifier {
 
       final displayName = user.name.toString().trim().isNotEmpty
           ? user.name.toString().trim()
-          : user.email.toString().split('@').first;
-      final now = DateTime.now().toIso8601String();
+          : (user.email.toString().contains('@')
+          ? user.email.toString().split('@').first
+          : user.email.toString());
 
       final createData = <String, dynamic>{
-        'userId': user.$id,
         'name': displayName,
         'username': _safeUsernameFromUser(user),
         'email': user.email,
@@ -601,8 +954,7 @@ class AppwriteService extends ChangeNotifier {
         'shopPrefs': <String>[],
         'dob': '',
         'phone': '',
-        'createdAt': now,
-        'updatedAt': now,
+        // ✅ REMOVED: createdAt and updatedAt - Appwrite manages these as $createdAt and $updatedAt
       };
 
       try {
@@ -615,15 +967,15 @@ class AppwriteService extends ChangeNotifier {
 
         // IMPORTANT: Do not overwrite onboarding/profile answers on relogin.
         // Only refresh identity fields that come from Appwrite Auth.
-        final updated = await _updateProfileDocumentWithFallback(
+        // ✅ NOW USES RETRY WRAPPER
+        final updated = await _updateProfileDocumentWithFallbackRetry(
           usersCollectionId: usersCollectionId,
           documentId: user.$id,
           payload: {
-            'userId': user.$id,
             'name': displayName,
             'username': _safeUsernameFromUser(user),
             'email': user.email,
-            'updatedAt': now,
+            // ✅ REMOVED: 'updatedAt' - Appwrite manages this as $updatedAt
           },
         );
 
@@ -637,7 +989,8 @@ class AppwriteService extends ChangeNotifier {
       } on AppwriteException catch (e) {
         if (e.code == 404) {
           debugPrint('AHVI_PROFILE_CREATE_START userId=${user.$id}');
-          final created = await _createProfileDocumentWithFallback(
+          // ✅ NOW USES RETRY WRAPPER
+          final created = await _createProfileDocumentWithFallbackRetry(
             usersCollectionId: usersCollectionId,
             documentId: user.$id,
             payload: createData,
@@ -662,6 +1015,7 @@ class AppwriteService extends ChangeNotifier {
       rethrow;
     } finally {
       _userProfileSyncInFlight = false;
+      _userProfileSyncInFlight2 = false;
     }
   }
 
@@ -743,18 +1097,58 @@ class AppwriteService extends ChangeNotifier {
           "pattern": doc.data['pattern'],
           "occasions": doc.data['occasions'],
           "image_url":
-              doc.data['normalized_url'] ??
+          doc.data['normalized_url'] ??
               doc.data['masked_url'] ??
               doc.data['image_url'] ??
               doc.data['raw_url'],
           "masked_url": doc.data['masked_url'],
           "normalized_url": doc.data['normalized_url'],
           "raw_url": doc.data['raw_url'],
+          // ── Favourite / like flags ────────────────────────────────────────
+          // Exposed so FavouritesScreen can filter liked wardrobe items
+          // without a separate query. Both keys are checked because the
+          // field name may vary by collection schema version.
+          "isLiked": doc.data['isLiked'] ?? doc.data['isFavourite'] ?? false,
+          "isFavourite": doc.data['isFavourite'] ?? doc.data['isLiked'] ?? false,
+          "imageUrl": doc.data['imageUrl'] ??
+              doc.data['normalized_url'] ??
+              doc.data['masked_url'] ??
+              doc.data['image_url'] ??
+              doc.data['raw_url'],
         };
       }).toList();
     } catch (e) {
       debugPrint("👕 Error fetching wardrobe items: $e");
       return [];
+    }
+  }
+
+  /// ✅ NEW: Update a wardrobe item (e.g., toggle isLiked/isFavourite flag)
+  Future<Document> updateWardrobeItem(
+      String itemId,
+      Map<String, dynamic> updates,
+      ) async {
+    try {
+      final user = await getCurrentUser();
+      if (user == null) throw Exception("User not authenticated");
+
+      debugPrint("📝 Updating wardrobe item: $itemId with $updates");
+
+      final doc = await databases.updateDocument(
+        databaseId: Env.appwriteDatabaseId,
+        collectionId: Env.outfitsCollection,
+        documentId: itemId,
+        data: updates,
+      );
+
+      // Invalidate cache so next fetch gets fresh data
+      invalidateWardrobeCache();
+
+      debugPrint("✅ Wardrobe item updated: $itemId");
+      return doc;
+    } catch (e) {
+      debugPrint("❌ Error updating wardrobe item: $e");
+      rethrow;
     }
   }
 
@@ -901,9 +1295,9 @@ class AppwriteService extends ChangeNotifier {
       final rawItemIds = extra?['itemIds'] ?? extra?['item_ids'] ?? <dynamic>[];
       final itemIds = rawItemIds is Iterable
           ? rawItemIds
-                .map((e) => e.toString())
-                .where((e) => e.isNotEmpty)
-                .toList()
+          .map((e) => e.toString())
+          .where((e) => e.isNotEmpty)
+          .toList()
           : <String>[];
       final outfitItems = _savedBoardItemList(extra?['outfitItems']);
       final items = _savedBoardItemList(extra?['items']);
@@ -933,7 +1327,7 @@ class AppwriteService extends ChangeNotifier {
         'outfitDescription': outfitDescription.trim(),
         'thumbnailUrl': cleanImageUrl,
         'emoji': (emoji ?? '').trim().isEmpty ? '✨' : emoji!.trim(),
-        'createdAt': nowIso,
+        // ✅ REMOVED: 'createdAt' - Appwrite manages this as $createdAt
       };
       if (outfitItems.isNotEmpty) richData['outfitItems'] = outfitItems;
       if (items.isNotEmpty) richData['items'] = items;
@@ -979,7 +1373,7 @@ class AppwriteService extends ChangeNotifier {
               'prompt': richData['prompt'],
               'outfitDescription': richData['outfitDescription'],
               'emoji': richData['emoji'],
-              'createdAt': nowIso,
+              // ✅ REMOVED: 'createdAt' - Appwrite manages this as $createdAt
               'board_payload': jsonPayload,
             },
           );
@@ -1013,18 +1407,18 @@ class AppwriteService extends ChangeNotifier {
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
         .where((item) {
-          final url =
-              (item['imageUrl'] ??
-                      item['image_url'] ??
-                      item['masked_url'] ??
-                      item['maskedUrl'] ??
-                      item['url'] ??
-                      item['thumbnailUrl'])
-                  ?.toString()
-                  .trim() ??
+      final url =
+          (item['imageUrl'] ??
+              item['image_url'] ??
+              item['masked_url'] ??
+              item['maskedUrl'] ??
+              item['url'] ??
+              item['thumbnailUrl'])
+              ?.toString()
+              .trim() ??
               '';
-          return url.isNotEmpty;
-        })
+      return url.isNotEmpty;
+    })
         .toList();
   }
 
@@ -1103,6 +1497,100 @@ class AppwriteService extends ChangeNotifier {
     } catch (e) {
       debugPrint("Error deleting board: $e");
       throw Exception("Failed to delete board");
+    }
+  }
+
+  // =========================================================================
+  // FAVOURITES DB METHODS (for Saved Boards)
+  // =========================================================================
+
+  /// Fetch all favourite saved boards for the current user
+  Future<List<Document>> getFavouriteSavedBoards() async {
+    try {
+      final user = await getCurrentUser();
+      if (user == null) throw Exception("User not authenticated");
+
+      final result = await databases.listDocuments(
+        databaseId: Env.appwriteDatabaseId,
+        collectionId: Env.savedBoardsCollection,
+        queries: [
+          Query.equal('userId', user.$id),
+          Query.equal('isFavourite', true),
+          Query.orderDesc('\$createdAt'),
+        ],
+      );
+      return result.documents;
+    } catch (e) {
+      debugPrint("Error fetching favourite boards: $e");
+      return [];
+    }
+  }
+
+  /// Add a saved board to favourites
+  Future<void> addFavouriteSavedBoard(String documentId) async {
+    try {
+      await databases.updateDocument(
+        databaseId: Env.appwriteDatabaseId,
+        collectionId: Env.savedBoardsCollection,
+        documentId: documentId,
+        data: {
+          'isFavourite': true,
+          'favouriteAddedAt': DateTime.now().toIso8601String(),
+        },
+      );
+      debugPrint("Board added to favourites: $documentId");
+    } catch (e) {
+      debugPrint("Error adding board to favourites: $e");
+      throw Exception("Failed to add board to favourites");
+    }
+  }
+
+  /// Remove a saved board from favourites
+  Future<void> removeFavouriteSavedBoard(String documentId) async {
+    try {
+      await databases.updateDocument(
+        databaseId: Env.appwriteDatabaseId,
+        collectionId: Env.savedBoardsCollection,
+        documentId: documentId,
+        data: {
+          'isFavourite': false,
+          'favouriteAddedAt': null,
+        },
+      );
+      debugPrint("Board removed from favourites: $documentId");
+    } catch (e) {
+      debugPrint("Error removing board from favourites: $e");
+      throw Exception("Failed to remove board from favourites");
+    }
+  }
+
+  /// Check if a board is in favourites
+  Future<bool> isBoardFavourite(String documentId) async {
+    try {
+      final result = await databases.getDocument(
+        databaseId: Env.appwriteDatabaseId,
+        collectionId: Env.savedBoardsCollection,
+        documentId: documentId,
+      );
+      return (result.data['isFavourite'] ?? false) == true;
+    } catch (e) {
+      debugPrint("Error checking if board is favourite: $e");
+      return false;
+    }
+  }
+
+  /// Toggle favourite status of a board
+  Future<void> toggleBoardFavourite(String documentId) async {
+    try {
+      final isFav = await isBoardFavourite(documentId);
+      if (isFav) {
+        await removeFavouriteSavedBoard(documentId);
+      } else {
+        await addFavouriteSavedBoard(documentId);
+      }
+    } catch (e) {
+      debugPrint("Error toggling board favourite: $e");
+      throw Exception("Failed to toggle favourite");
     }
   }
 
@@ -1430,8 +1918,8 @@ class AppwriteService extends ChangeNotifier {
 
       debugPrint(
         'AHVI_MEDLOG_CREATE userId=${user.$id} '
-        'medId=${data['medId']} status=${data['status']} '
-        'collection=${Env.medLogsCollection}',
+            'medId=${data['medId']} status=${data['status']} '
+            'collection=${Env.medLogsCollection}',
       );
 
       final doc = await databases.createDocument(
@@ -1574,5 +2062,42 @@ class AppwriteService extends ChangeNotifier {
       debugPrint("Error deleting life goal: $e");
       rethrow;
     }
+  }
+}
+
+/// ✅ NEW: Circuit breaker pattern to prevent rapid-fire retry storms
+class _ProfileSyncCircuitBreaker {
+  int _failureCount = 0;
+  DateTime? _failureResetTime;
+
+  static const int _maxConsecutiveFailures = 5;
+  static const Duration _circuitBreakerReset = Duration(seconds: 30);
+
+  /// Returns true if we can attempt another retry
+  bool canRetry() {
+    if (_failureCount >= _maxConsecutiveFailures) {
+      final now = DateTime.now();
+      if (_failureResetTime != null &&
+          now.difference(_failureResetTime!) > _circuitBreakerReset) {
+        debugPrint('🔄 Profile sync circuit breaker RESET after cooldown');
+        _failureCount = 0;
+        _failureResetTime = null;
+        return true;
+      }
+      return false;
+    }
+    return true;
+  }
+
+  void recordFailure() {
+    _failureCount++;
+    _failureResetTime = DateTime.now();
+    debugPrint('❌ Profile sync failure recorded ($_failureCount/$_maxConsecutiveFailures)');
+  }
+
+  void recordSuccess() {
+    _failureCount = 0;
+    _failureResetTime = null;
+    debugPrint('✅ Profile sync success, circuit breaker reset');
   }
 }

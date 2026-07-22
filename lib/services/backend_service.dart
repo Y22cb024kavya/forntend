@@ -10,10 +10,33 @@ Map<String, dynamic> _parseJsonMap(String payload) =>
 
 String _encodeBytes(Uint8List bytes) => base64Encode(bytes);
 
+Object? _jsonSafe(Object? value) {
+  if (value == null || value is String || value is num || value is bool) {
+    return value;
+  }
+  if (value is DateTime) {
+    return value.toUtc().toIso8601String();
+  }
+  if (value is Map) {
+    return value.map((key, val) => MapEntry(key.toString(), _jsonSafe(val)));
+  }
+  if (value is Iterable) {
+    return value.map(_jsonSafe).toList();
+  }
+  return value.toString();
+}
+
 String _styleChatSnippet(Object? value, [int max = 900]) {
-  final text = value is String ? value : jsonEncode(value);
-  final flat = text.replaceAll('\n', ' | ');
-  return flat.length <= max ? flat : flat.substring(0, max);
+  try {
+    final text = value is String ? value : jsonEncode(_jsonSafe(value));
+    final flat = text.replaceAll('\n', ' | ');
+    return flat.length <= max ? flat : flat.substring(0, max);
+  } catch (_) {
+    final fallback = value.toString().replaceAll('\n', ' | ');
+    return fallback.length <= max
+        ? fallback
+        : fallback.substring(0, max);
+  }
 }
 
 class BackendRequestException implements Exception {
@@ -64,9 +87,9 @@ void logNetworkFailure({
   // ignore: avoid_print
   print(
     '👕 AHVI_NET_FAILURE endpoint=$endpoint status=$statusCode '
-    'type=$type timeout_ms=${timeout?.inMilliseconds} '
-    'err=${error.toString().replaceAll('\n', ' | ').substring(0, error.toString().length > 200 ? 200 : error.toString().length)} '
-    'body=${body.substring(0, body.length > 200 ? 200 : body.length)}',
+        'type=$type timeout_ms=${timeout?.inMilliseconds} '
+        'err=${error.toString().replaceAll('\n', ' | ').substring(0, error.toString().length > 200 ? 200 : error.toString().length)} '
+        'body=${body.substring(0, body.length > 200 ? 200 : body.length)}',
   );
 }
 
@@ -75,7 +98,42 @@ class BackendService {
   final AppwriteService _appwriteService;
 
   BackendService({AppwriteService? appwriteService})
-    : _appwriteService = appwriteService ?? AppwriteService();
+      : _appwriteService = appwriteService ?? AppwriteService();
+
+  Future<Map<String, dynamic>> shuffleStyleBoard({
+    required String boardId,
+    required Map<String, dynamic> payload,
+  }) async {
+    final endpoint =
+        '/api/style-boards/${Uri.encodeComponent(boardId)}/shuffle';
+    final body = Map<String, dynamic>.from(payload)
+      ..['user_id'] = await _currentUserId();
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl$endpoint'),
+            headers: await _authHeaders(),
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 30));
+      Map<String, dynamic> data;
+      try {
+        data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+      } catch (_) {
+        throw const BackendRequestException('Malformed style board response');
+      }
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final detail = data['detail'];
+        if (detail is Map) return {'success': false, 'error': detail};
+        throw BackendRequestException(
+          'Style board request failed (${response.statusCode})',
+        );
+      }
+      return data;
+    } on TimeoutException {
+      throw const BackendRequestException('Style board request timed out');
+    }
+  }
 
   Future<String> _currentUserId() async {
     final user = await _appwriteService.getCurrentUser();
@@ -124,15 +182,15 @@ class BackendService {
       final userId = await _currentUserId();
       final response = await http
           .post(
-            Uri.parse('$baseUrl/api/style/wear-today'),
-            headers: await _authHeaders(),
-            body: jsonEncode({
-              'user_id': userId,
-              'board_id': boardId,
-              'item_ids': ids,
-              'occasion': occasion,
-            }),
-          )
+        Uri.parse('$baseUrl/api/style/wear-today'),
+        headers: await _authHeaders(),
+        body: jsonEncode({
+          'user_id': userId,
+          'board_id': boardId,
+          'item_ids': ids,
+          'occasion': occasion,
+        }),
+      )
           .timeout(const Duration(seconds: 20));
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (_) {
@@ -140,10 +198,105 @@ class BackendService {
     }
   }
 
+  Future<Map<String, dynamic>?> getDailyBoard() async {
+    try {
+      final response = await http
+          .get(
+        Uri.parse('$baseUrl/api/stylist/daily-board'),
+        headers: await _authHeaders(),
+      )
+          .timeout(const Duration(seconds: 45));
+      if (response.statusCode == 200) {
+        return await compute(_parseJsonMap, response.body);
+      }
+      debugPrint(
+        'getDailyBoard failed: ${response.statusCode} - ${response.body}',
+      );
+      return null;
+    } catch (e) {
+      debugPrint('getDailyBoard error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> logWear(List<String> itemIds) async {
+    final ids = itemIds
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList(growable: false);
+    if (ids.isEmpty) return false;
+    try {
+      final response = await http
+          .post(
+        Uri.parse('$baseUrl/api/style/log-wear'),
+        headers: await _authHeaders(),
+        body: jsonEncode({'item_ids': ids}),
+      )
+          .timeout(const Duration(seconds: 20));
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (e) {
+      debugPrint('logWear error: $e');
+      return false;
+    }
+  }
+
+  // --- ACCOUNT & PROFILE ---
+  Future<void> deleteAccount(String userId) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/api/user/delete-account'),
+      headers: await _authHeaders(),
+      body: jsonEncode({"user_id": userId}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to delete account');
+    }
+  }
+
+  Future<void> updateProfile(
+      String userId, {
+        String? name,
+        String? gender,
+        String? skinTone,
+      }) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/api/user/update-profile'),
+      headers: await _authHeaders(),
+      body: jsonEncode({
+        "user_id": userId,
+        if (name != null) "name": name,
+        if (gender != null) "gender": gender,
+        if (skinTone != null) "skin_tone": skinTone,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to update profile');
+    }
+  }
+
+  // --- FAVORITES ---
+  Future<void> toggleGarmentFavorite(
+      String userId,
+      String itemId,
+      bool isLiked,
+      ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/wardrobe/favorite'),
+      headers: await _authHeaders(),
+      body: jsonEncode({
+        "user_id": userId,
+        "item_id": itemId,
+        "is_liked": isLiked,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to sync favorite status');
+    }
+  }
+
   Object _memoryPayload(
-    String currentMemory, [
-    Map<String, dynamic>? lastStyleContext,
-  ]) {
+      String currentMemory, [
+        Map<String, dynamic>? lastStyleContext,
+      ]) {
     final out = <String, dynamic>{};
     final trimmed = currentMemory.trim();
     if (trimmed.isNotEmpty) out['summary'] = trimmed;
@@ -175,7 +328,7 @@ class BackendService {
       extractedChips = quickActions;
     }
     String? extractedBoardData =
-        (data['board_ids'] != null && data['board_ids'].toString().isNotEmpty)
+    (data['board_ids'] != null && data['board_ids'].toString().isNotEmpty)
         ? data['board_ids'].toString()
         : null;
     String? extractedPackData;
@@ -222,39 +375,39 @@ class BackendService {
 
   // Chat and styling engine.
   Future<Map<String, dynamic>> sendChatQuery(
-    String query,
-    String userId,
-    List<Map<String, String>> chatHistory,
-    String currentMemory, {
-    bool isRetry = false,
-    List<Map<String, dynamic>>? fetchedWardrobe,
-    String moduleContext = 'chat',
-    Map<String, dynamic>? userProfile,
-    String? styleAction,
-    List<String> excludeStyleSignatures = const [],
-    int? requestedBoardCount,
-    // Style-session context handoff. When the user taps a chip /
-    // button / retry, the FE must attach these so the backend never
-    // sees a bare label ("Next best options", "Casual beach walk",
-    // "Try again") without the originating prompt.
-    String? action,
-    String? clarification,
-    String? sessionId,
-    String? previousPrompt,
-    String? resolvedPrompt,
-    String? currentLookId,
-    Map<String, dynamic>? styleContext,
-    // Persisted style-pairing session (anchor/route/persona). Echoed into
-    // current_memory so backend follow-ups keep the anchor.
-    Map<String, dynamic>? lastStyleContext,
-    bool showClosestOption = false,
-    bool allowClosestOption = false,
-    bool closest = false,
-    bool useWardrobe = false,
-    bool wardrobeFirst = false,
-    String? assetPolicy,
-    bool allowGenericAssetsInMainBoard = true,
-  }) async {
+      String query,
+      String userId,
+      List<Map<String, String>> chatHistory,
+      String currentMemory, {
+        bool isRetry = false,
+        List<Map<String, dynamic>>? fetchedWardrobe,
+        String moduleContext = 'chat',
+        Map<String, dynamic>? userProfile,
+        String? styleAction,
+        List<String> excludeStyleSignatures = const [],
+        int? requestedBoardCount,
+        // Style-session context handoff. When the user taps a chip /
+        // button / retry, the FE must attach these so the backend never
+        // sees a bare label ("Next best options", "Casual beach walk",
+        // "Try again") without the originating prompt.
+        String? action,
+        String? clarification,
+        String? sessionId,
+        String? previousPrompt,
+        String? resolvedPrompt,
+        String? currentLookId,
+        Map<String, dynamic>? styleContext,
+        // Persisted style-pairing session (anchor/route/persona). Echoed into
+        // current_memory so backend follow-ups keep the anchor.
+        Map<String, dynamic>? lastStyleContext,
+        bool showClosestOption = false,
+        bool allowClosestOption = false,
+        bool closest = false,
+        bool useWardrobe = false,
+        bool wardrobeFirst = false,
+        String? assetPolicy,
+        bool allowGenericAssetsInMainBoard = true,
+      }) async {
     final startedAt = DateTime.now();
     try {
       final authedUserId = await _currentUserId();
@@ -327,10 +480,10 @@ class BackendService {
 
       final response = await http
           .post(
-            Uri.parse('$baseUrl/api/text'),
-            headers: await _authHeaders(),
-            body: jsonEncode(requestPayload),
-          )
+        Uri.parse('$baseUrl/api/text'),
+        headers: await _authHeaders(),
+        body: jsonEncode(requestPayload),
+      )
           .timeout(const Duration(seconds: 120));
 
       final elapsedSec =
@@ -347,8 +500,8 @@ class BackendService {
         } catch (parseErr) {
           debugPrint(
             'AHVI_BACKEND_PARSE_ERR endpoint=/api/text err=$parseErr '
-            'body_len=${response.body.length} '
-            'body_head=${response.body.substring(0, response.body.length.clamp(0, 400))}',
+                'body_len=${response.body.length} '
+                'body_head=${response.body.substring(0, response.body.length.clamp(0, 400))}',
           );
           rethrow;
         }
@@ -366,16 +519,16 @@ class BackendService {
         // Visibility for the intermittent "AHVI is still styling this" toast.
         debugPrint(
           'AHVI_BACKEND_OK endpoint=/api/text '
-          'type=${data['type']} '
-          'success=${data['success']} '
-          'has_message=${data['message'] != null || data['message_text'] != null} '
-          'cards=${(data['cards'] as List?)?.length ?? 0} '
-          'style_boards=${(data['style_boards'] as List?)?.length ?? 0} '
-          'visual_directions=${(data['visual_directions'] as List?)?.length ?? ((data['data'] as Map?)?['visual_directions'] as List?)?.length ?? 0} '
-          'rendered_boards=${((data['data'] as Map?)?['rendered_boards'] as List?)?.length ?? 0} '
-          'chips=${(data['chips'] as List?)?.length ?? 0} '
-          'requires_wardrobe=${data['requires_wardrobe']} '
-          'body_len=${response.body.length}',
+              'type=${data['type']} '
+              'success=${data['success']} '
+              'has_message=${data['message'] != null || data['message_text'] != null} '
+              'cards=${(data['cards'] as List?)?.length ?? 0} '
+              'style_boards=${(data['style_boards'] as List?)?.length ?? 0} '
+              'visual_directions=${(data['visual_directions'] as List?)?.length ?? ((data['data'] as Map?)?['visual_directions'] as List?)?.length ?? 0} '
+              'rendered_boards=${((data['data'] as Map?)?['rendered_boards'] as List?)?.length ?? 0} '
+              'chips=${(data['chips'] as List?)?.length ?? 0} '
+              'requires_wardrobe=${data['requires_wardrobe']} '
+              'body_len=${response.body.length}',
         );
         debugPrint(
           'AHVI_RESPONSE_TIME endpoint=/api/text seconds=${elapsedSec.toStringAsFixed(2)}',
@@ -383,23 +536,23 @@ class BackendService {
 
         if (data['requires_wardrobe'] == true && !isRetry) {
           final items = await _appwriteService.getWardrobeItems();
-            return sendChatQuery(
-              query,
-              authedUserId,
-              chatHistory,
-              currentMemory,
-              isRetry: true,
-              fetchedWardrobe: items,
-              moduleContext: moduleContext,
-              userProfile: userProfile,
-              styleAction: styleAction,
-              excludeStyleSignatures: excludeStyleSignatures,
-              requestedBoardCount: requestedBoardCount,
-              useWardrobe: useWardrobe,
-              wardrobeFirst: wardrobeFirst,
-              assetPolicy: assetPolicy,
-              allowGenericAssetsInMainBoard: allowGenericAssetsInMainBoard,
-            );
+          return sendChatQuery(
+            query,
+            authedUserId,
+            chatHistory,
+            currentMemory,
+            isRetry: true,
+            fetchedWardrobe: items,
+            moduleContext: moduleContext,
+            userProfile: userProfile,
+            styleAction: styleAction,
+            excludeStyleSignatures: excludeStyleSignatures,
+            requestedBoardCount: requestedBoardCount,
+            useWardrobe: useWardrobe,
+            wardrobeFirst: wardrobeFirst,
+            assetPolicy: assetPolicy,
+            allowGenericAssetsInMainBoard: allowGenericAssetsInMainBoard,
+          );
         }
 
         try {
@@ -526,9 +679,9 @@ class BackendService {
       // empty. Prefer the caller-supplied profile, then the cached profile,
       // then a one-shot refresh.
       String resolvedGender =
-          (userProfile?['gender'] ?? userProfile?['style_gender'] ?? '')
-              .toString()
-              .trim();
+      (userProfile?['gender'] ?? userProfile?['style_gender'] ?? '')
+          .toString()
+          .trim();
       if (resolvedGender.isEmpty) {
         resolvedGender =
             (_appwriteService.cachedUserProfileData?['gender'] ?? '')
@@ -564,14 +717,14 @@ class BackendService {
       );
       final response = await http
           .post(
-            Uri.parse('$baseUrl/api/module-chat'),
-            headers: await _authHeaders(),
-            body: jsonEncode(modulePayload),
-          )
-          // Backend's chat_completion has a 45s budget. Give the network +
-          // serialization 30s of headroom so the frontend never wins the race
-          // and shows 'AHVI couldn't respond in time' while the backend is
-          // still happily streaming back a perfectly good answer.
+        Uri.parse('$baseUrl/api/module-chat'),
+        headers: await _authHeaders(),
+        body: jsonEncode(_jsonSafe(modulePayload)),
+      )
+      // Backend's chat_completion has a 45s budget. Give the network +
+      // serialization 30s of headroom so the frontend never wins the race
+      // and shows 'AHVI couldn't respond in time' while the backend is
+      // still happily streaming back a perfectly good answer.
           .timeout(const Duration(seconds: 75));
 
       final moduleElapsed =
@@ -586,7 +739,7 @@ class BackendService {
         final text = _messageText(data);
         debugPrint(
           'AHVI_MODULE_CHAT_OK module=$module seconds=${moduleElapsed.toStringAsFixed(2)} '
-          'text_len=${text.length} status=${response.statusCode}',
+              'text_len=${text.length} status=${response.statusCode}',
         );
         return _normalizeChatResponse({
           ...data,
@@ -599,8 +752,8 @@ class BackendService {
 
       debugPrint(
         'AHVI_BACKEND_FAIL endpoint=/api/module-chat module=$module '
-        'status=${response.statusCode} seconds=${moduleElapsed.toStringAsFixed(2)} '
-        'body=${response.body}',
+            'status=${response.statusCode} seconds=${moduleElapsed.toStringAsFixed(2)} '
+            'body=${response.body}',
       );
       debugPrint('style_chat.status_code=${response.statusCode}');
       debugPrint(
@@ -659,14 +812,14 @@ class BackendService {
       final userId = await _currentUserId();
       await http
           .post(
-            Uri.parse('$baseUrl/api/feedback/board'),
-            headers: await _authHeaders(),
-            body: jsonEncode({
-              'user_id': userId,
-              'action': action,
-              'board_payload': board,
-            }),
-          )
+        Uri.parse('$baseUrl/api/feedback/board'),
+        headers: await _authHeaders(),
+        body: jsonEncode({
+          'user_id': userId,
+          'action': action,
+          'board_payload': board,
+        }),
+      )
           .timeout(const Duration(seconds: 12));
       debugPrint('AHVI_BOARD_FEEDBACK_SENT action=$action');
     } catch (e) {
@@ -682,10 +835,10 @@ class BackendService {
       final base64String = await compute(_encodeBytes, imageBytes);
       final response = await http
           .post(
-            Uri.parse('$baseUrl/api/bills/scan'),
-            headers: await _authHeaders(),
-            body: jsonEncode({'image_base64': base64String}),
-          )
+        Uri.parse('$baseUrl/api/bills/scan'),
+        headers: await _authHeaders(),
+        body: jsonEncode({'image_base64': base64String}),
+      )
           .timeout(const Duration(seconds: 90));
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = await compute(_parseJsonMap, response.body);
@@ -708,10 +861,10 @@ class BackendService {
     try {
       final response = await http
           .post(
-            Uri.parse('$baseUrl/api/background/remove-bg'),
-            headers: await _authHeaders(),
-            body: jsonEncode({'image_base64': base64Image}),
-          )
+        Uri.parse('$baseUrl/api/background/remove-bg'),
+        headers: await _authHeaders(),
+        body: jsonEncode({'image_base64': base64Image}),
+      )
           .timeout(const Duration(seconds: 45));
       if (response.statusCode == 200) {
         final data = await compute(_parseJsonMap, response.body);
@@ -725,24 +878,24 @@ class BackendService {
   }
 
   Future<Map<String, dynamic>?> analyzeImage(
-    Uint8List imageBytes, {
-    bool autoSave = false,
-    bool saveDuplicates = false,
-  }) async {
+      Uint8List imageBytes, {
+        bool autoSave = false,
+        bool saveDuplicates = false,
+      }) async {
     try {
       final base64String = await compute(_encodeBytes, imageBytes);
       final response = await http
           .post(
-            Uri.parse('$baseUrl/api/wardrobe/capture/analyze'),
-            headers: await _authHeaders(),
-            body: jsonEncode({
-              'user_id': await _currentUserId(),
-              'image_base64': base64String,
-              'auto_save': autoSave,
-              'save_duplicates': saveDuplicates,
-            }),
-          )
-          // Vision enrichment runs 70-150s server-side; keep headroom.
+        Uri.parse('$baseUrl/api/wardrobe/capture/analyze'),
+        headers: await _authHeaders(),
+        body: jsonEncode({
+          'user_id': await _currentUserId(),
+          'image_base64': base64String,
+          'auto_save': autoSave,
+          'save_duplicates': saveDuplicates,
+        }),
+      )
+      // Vision enrichment runs 70-150s server-side; keep headroom.
           .timeout(const Duration(seconds: 180));
 
       if (response.statusCode == 200) {
@@ -766,25 +919,25 @@ class BackendService {
   }
 
   Future<Map<String, dynamic>?> findSimilarByImage(
-    Uint8List imageBytes, {
-    String filename = 'ahvi-lens.jpg',
-  }) async {
+      Uint8List imageBytes, {
+        String filename = 'ahvi-lens.jpg',
+      }) async {
     try {
       final headers = await _authHeaders();
       headers.remove('Content-Type');
       final request =
-          http.MultipartRequest(
-              'POST',
-              Uri.parse('$baseUrl/api/lens/find-similar'),
-            )
-            ..headers.addAll(headers)
-            ..files.add(
-              http.MultipartFile.fromBytes(
-                'file',
-                imageBytes,
-                filename: filename,
-              ),
-            );
+      http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/api/lens/find-similar'),
+      )
+        ..headers.addAll(headers)
+        ..files.add(
+          http.MultipartFile.fromBytes(
+            'file',
+            imageBytes,
+            filename: filename,
+          ),
+        );
       final streamed = await request.send().timeout(
         const Duration(seconds: 45),
       );
@@ -811,10 +964,10 @@ class BackendService {
   }
 
   Future<Map<String, dynamic>?> analyzeImagesBatch(
-    List<Uint8List> images, {
-    bool autoSave = false,
-    bool saveDuplicates = false,
-  }) async {
+      List<Uint8List> images, {
+        bool autoSave = false,
+        bool saveDuplicates = false,
+      }) async {
     if (images.isEmpty) return null;
     try {
       final encoded = await Future.wait(
@@ -822,16 +975,16 @@ class BackendService {
       );
       final response = await http
           .post(
-            Uri.parse('$baseUrl/api/wardrobe/capture/analyze-batch'),
-            headers: await _authHeaders(),
-            body: jsonEncode({
-              'user_id': await _currentUserId(),
-              'image_base64s': encoded,
-              'auto_save': autoSave,
-              'save_duplicates': saveDuplicates,
-            }),
-          )
-          // Batch vision enrichment runs 160-220s server-side; keep headroom.
+        Uri.parse('$baseUrl/api/wardrobe/capture/analyze-batch'),
+        headers: await _authHeaders(),
+        body: jsonEncode({
+          'user_id': await _currentUserId(),
+          'image_base64s': encoded,
+          'auto_save': autoSave,
+          'save_duplicates': saveDuplicates,
+        }),
+      )
+      // Batch vision enrichment runs 160-220s server-side; keep headroom.
           .timeout(const Duration(seconds: 240));
 
       if (response.statusCode == 200) {
@@ -855,32 +1008,32 @@ class BackendService {
   }
 
   Future<Map<String, dynamic>?> saveWardrobeLabels(
-    List<Map<String, dynamic>> detectedItems,
-  ) async {
+      List<Map<String, dynamic>> detectedItems,
+      ) async {
     try {
       final approvedItems = detectedItems
           .where((item) {
-            final status =
-                (item['validation_status'] ?? item['validationStatus'] ?? 'ok')
-                    .toString()
-                    .trim()
-                    .toLowerCase();
-            return status.isEmpty || status == 'ok';
-          })
+        final status =
+        (item['validation_status'] ?? item['validationStatus'] ?? 'ok')
+            .toString()
+            .trim()
+            .toLowerCase();
+        return status.isEmpty || status == 'ok';
+      })
           .toList(growable: false);
       final response = await http
           .post(
-            Uri.parse('$baseUrl/api/wardrobe/capture/save-selected'),
-            headers: await _authHeaders(),
-            body: jsonEncode({
-              'user_id': await _currentUserId(),
-              'selected_item_ids': approvedItems
-                  .map((item) => item['item_id']?.toString() ?? '')
-                  .where((id) => id.isNotEmpty)
-                  .toList(),
-              'detected_items': approvedItems,
-            }),
-          )
+        Uri.parse('$baseUrl/api/wardrobe/capture/save-selected'),
+        headers: await _authHeaders(),
+        body: jsonEncode({
+          'user_id': await _currentUserId(),
+          'selected_item_ids': approvedItems
+              .map((item) => item['item_id']?.toString() ?? '')
+              .where((id) => id.isNotEmpty)
+              .toList(),
+          'detected_items': approvedItems,
+        }),
+      )
           .timeout(const Duration(seconds: 120));
 
       if (response.statusCode == 200) {
@@ -913,24 +1066,26 @@ class BackendService {
   /// handle a non-null map with success == false.
   Future<Map<String, dynamic>?> styleWardrobeItem({
     required String itemId,
-    required String mode,
+    required String scenario,
     Map<String, dynamic>? anchorItem,
     String? occasion,
   }) async {
     try {
       final response = await http
           .post(
-            Uri.parse(
-              '$baseUrl/api/stylist/items/${Uri.encodeComponent(itemId)}/style',
-            ),
-            headers: await _authHeaders(),
-            body: jsonEncode({
-              'user_id': await _currentUserId(),
-              'mode': mode,
-              if (occasion != null && occasion.isNotEmpty) 'occasion': occasion,
-              if (anchorItem != null) 'anchor_item': anchorItem,
-            }),
-          )
+        Uri.parse(
+          '$baseUrl/api/stylist/items/${Uri.encodeComponent(itemId)}/style',
+        ),
+        headers: await _authHeaders(),
+        body: jsonEncode({
+          'user_id': await _currentUserId(),
+          'mode': scenario,
+          'scenario': scenario,
+          'anchor_garment_id': itemId,
+          if (occasion != null && occasion.isNotEmpty) 'occasion': occasion,
+          if (anchorItem != null) 'anchor_item': anchorItem,
+        }),
+      )
           .timeout(const Duration(seconds: 60));
 
       if (response.statusCode == 200) {
@@ -974,10 +1129,10 @@ class BackendService {
 
       final response = await http
           .post(
-            Uri.parse('$baseUrl/api/wardrobe/update-labels'),
-            headers: await _authHeaders(),
-            body: jsonEncode(payload),
-          )
+        Uri.parse('$baseUrl/api/wardrobe/update-labels'),
+        headers: await _authHeaders(),
+        body: jsonEncode(payload),
+      )
           .timeout(const Duration(seconds: 30));
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -994,16 +1149,16 @@ class BackendService {
         final parsed = await compute(_parseJsonMap, response.body);
         detail =
             (parsed['detail'] ??
-                    parsed['error'] ??
-                    parsed['message'] ??
-                    response.body)
+                parsed['error'] ??
+                parsed['message'] ??
+                response.body)
                 .toString();
       } catch (_) {
         // body wasn't JSON; keep raw
       }
       debugPrint(
         'AHVI_BACKEND_FAIL endpoint=/api/wardrobe/update-labels '
-        'status=${response.statusCode} body=${response.body}',
+            'status=${response.statusCode} body=${response.body}',
       );
       return {
         'success': false,
@@ -1020,21 +1175,21 @@ class BackendService {
   }
 
   Future<Map<String, dynamic>?> deleteWardrobeItems(
-    List<Map<String, dynamic>> items, {
-    bool deleteR2 = true,
-  }) async {
+      List<Map<String, dynamic>> items, {
+        bool deleteR2 = true,
+      }) async {
     try {
       final ids = items
           .map(
             (item) =>
-                item[r'$id'] ??
-                item['document_id'] ??
-                item['documentId'] ??
-                item['id'] ??
-                item['item_id'] ??
-                item['itemId'] ??
-                '',
-          )
+        item[r'$id'] ??
+            item['document_id'] ??
+            item['documentId'] ??
+            item['id'] ??
+            item['item_id'] ??
+            item['itemId'] ??
+            '',
+      )
           .map((id) => id.toString().trim())
           .where((id) => id.isNotEmpty)
           .toSet()
@@ -1053,9 +1208,9 @@ class BackendService {
       for (final id in ids) {
         final response = await http
             .delete(
-              Uri.parse('$baseUrl/api/wardrobe/${Uri.encodeComponent(id)}'),
-              headers: await _authHeaders(),
-            )
+          Uri.parse('$baseUrl/api/wardrobe/${Uri.encodeComponent(id)}'),
+          headers: await _authHeaders(),
+        )
             .timeout(const Duration(seconds: 35));
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -1181,24 +1336,24 @@ class BackendService {
     try {
       final response = await http
           .post(
-            Uri.parse('$baseUrl/api/calendar/events'),
-            headers: await _authHeaders(),
-            body: jsonEncode({
-              'title': title,
-              'description': description,
-              'start_time': startTime.toIso8601String(),
-              'end_time': endTime?.toIso8601String(),
-              'timezone': timezone,
-              'type': type,
-              'source': source,
-              'status': status,
-              'dress_code': dressCode,
-              'venue_name': venueName,
-              'venue_address': venueAddress,
-              'reminder_minutes': reminderMinutes,
-              'metadata': metadata ?? <String, dynamic>{},
-            }),
-          )
+        Uri.parse('$baseUrl/api/calendar/events'),
+        headers: await _authHeaders(),
+        body: jsonEncode({
+          'title': title,
+          'description': description,
+          'start_time': startTime.toIso8601String(),
+          'end_time': endTime?.toIso8601String(),
+          'timezone': timezone,
+          'type': type,
+          'source': source,
+          'status': status,
+          'dress_code': dressCode,
+          'venue_name': venueName,
+          'venue_address': venueAddress,
+          'reminder_minutes': reminderMinutes,
+          'metadata': metadata ?? <String, dynamic>{},
+        }),
+      )
           .timeout(const Duration(seconds: 30));
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -1220,9 +1375,9 @@ class BackendService {
     try {
       final response = await http
           .get(
-            Uri.parse('$baseUrl/api/workouts/today'),
-            headers: await _authHeaders(),
-          )
+        Uri.parse('$baseUrl/api/workouts/today'),
+        headers: await _authHeaders(),
+      )
           .timeout(const Duration(seconds: 20));
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -1250,18 +1405,18 @@ class BackendService {
     try {
       final response = await http
           .post(
-            Uri.parse('$baseUrl/api/workouts/recommend'),
-            headers: await _authHeaders(),
-            body: jsonEncode({
-              'goal': goal,
-              'duration': duration,
-              'location': location,
-              'equipment': equipment,
-              if (constraint != null && constraint.trim().isNotEmpty)
-                'constraint': constraint,
-              if (weather != null) 'weather': weather,
-            }),
-          )
+        Uri.parse('$baseUrl/api/workouts/recommend'),
+        headers: await _authHeaders(),
+        body: jsonEncode({
+          'goal': goal,
+          'duration': duration,
+          'location': location,
+          'equipment': equipment,
+          if (constraint != null && constraint.trim().isNotEmpty)
+            'constraint': constraint,
+          if (weather != null) 'weather': weather,
+        }),
+      )
           .timeout(const Duration(seconds: 25));
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -1279,21 +1434,21 @@ class BackendService {
   }
 
   Future<bool> completeWorkout(
-    String workoutId, {
-    String? difficultyFeedback,
-  }) async {
+      String workoutId, {
+        String? difficultyFeedback,
+      }) async {
     try {
       final response = await http
           .post(
-            Uri.parse('$baseUrl/api/workouts/complete'),
-            headers: await _authHeaders(),
-            body: jsonEncode({
-              'workout_id': workoutId,
-              'completed': true,
-              if (difficultyFeedback != null)
-                'difficulty_feedback': difficultyFeedback,
-            }),
-          )
+        Uri.parse('$baseUrl/api/workouts/complete'),
+        headers: await _authHeaders(),
+        body: jsonEncode({
+          'workout_id': workoutId,
+          'completed': true,
+          if (difficultyFeedback != null)
+            'difficulty_feedback': difficultyFeedback,
+        }),
+      )
           .timeout(const Duration(seconds: 20));
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
@@ -1306,14 +1461,14 @@ class BackendService {
     try {
       final response = await http
           .post(
-            Uri.parse('$baseUrl/api/workouts/skip'),
-            headers: await _authHeaders(),
-            body: jsonEncode({
-              'workout_id': workoutId,
-              'skipped': true,
-              if (reason != null) 'reason': reason,
-            }),
-          )
+        Uri.parse('$baseUrl/api/workouts/skip'),
+        headers: await _authHeaders(),
+        body: jsonEncode({
+          'workout_id': workoutId,
+          'skipped': true,
+          if (reason != null) 'reason': reason,
+        }),
+      )
           .timeout(const Duration(seconds: 20));
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
@@ -1323,16 +1478,16 @@ class BackendService {
   }
 
   Future<Map<String, dynamic>?> updateCalendarEvent(
-    String eventId,
-    Map<String, dynamic> fields,
-  ) async {
+      String eventId,
+      Map<String, dynamic> fields,
+      ) async {
     try {
       final response = await http
           .patch(
-            Uri.parse('$baseUrl/api/calendar/events/$eventId'),
-            headers: await _authHeaders(),
-            body: jsonEncode(fields),
-          )
+        Uri.parse('$baseUrl/api/calendar/events/$eventId'),
+        headers: await _authHeaders(),
+        body: jsonEncode(fields),
+      )
           .timeout(const Duration(seconds: 30));
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -1354,9 +1509,9 @@ class BackendService {
     try {
       final response = await http
           .delete(
-            Uri.parse('$baseUrl/api/calendar/events/$eventId'),
-            headers: await _authHeaders(),
-          )
+        Uri.parse('$baseUrl/api/calendar/events/$eventId'),
+        headers: await _authHeaders(),
+      )
           .timeout(const Duration(seconds: 30));
 
       return response.statusCode >= 200 && response.statusCode < 300;
@@ -1373,25 +1528,56 @@ class BackendService {
     String source = 'app',
     String priority = 'light',
     int offsetMinutes = 0,
+    String medId = '',
+    String medName = '',
+    String dose = '',
+    String notificationKey = '',
   }) async {
     try {
+      final sendAtISO = sendAt.toUtc().toIso8601String();
+      final reminder = <String, dynamic>{
+        'sendAtISO': sendAtISO,
+        'scheduledFor': sendAtISO,
+        'message': message,
+        'body': message,
+        'title': source == 'medi'
+            ? 'Medicine reminder'
+            : 'AHVI reminder',
+        'priority': priority,
+        'offsetMinutes': offsetMinutes,
+      };
+
+      if (medId.trim().isNotEmpty) {
+        reminder['medId'] = medId.trim();
+        reminder['notificationKey'] =
+            notificationKey.trim().isNotEmpty
+                ? notificationKey.trim()
+                : 'med:${medId.trim()}:$sendAtISO';
+      }
+
+      if (medName.trim().isNotEmpty) {
+        reminder['medName'] = medName.trim();
+      }
+
+      if (dose.trim().isNotEmpty) {
+        reminder['dose'] = dose.trim();
+      }
+
       final response = await http.post(
         Uri.parse('$baseUrl/api/notifications/reminders/schedule'),
         headers: await _authHeaders(),
         body: jsonEncode({
           'eventId': eventId,
           'source': source,
-          'reminders': [
-            {
-              'sendAtISO': sendAt.toUtc().toIso8601String(),
-              'message': message,
-              'priority': priority,
-              'offsetMinutes': offsetMinutes,
-            },
-          ],
+          'medId': medId,
+          'medName': medName,
+          'dose': dose,
+          'reminders': [reminder],
         }),
       );
-      return response.statusCode >= 200 && response.statusCode < 300;
+
+      return response.statusCode >= 200 &&
+          response.statusCode < 300;
     } catch (e) {
       debugPrint('Reminder schedule error: $e');
       return false;

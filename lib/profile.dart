@@ -10,6 +10,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
 import 'package:myapp/theme/theme_controller.dart';
 import 'package:myapp/theme/profile_theme.dart';
@@ -69,6 +72,7 @@ class ProfileState {
   String dob;
   String gender;
   int skinTone;
+  String faceShape;
   String bodyShape;
   Set<String> styles;
   Set<String> shopPrefs;
@@ -86,6 +90,7 @@ class ProfileState {
     this.dob = '',
     this.gender = 'Female',
     this.skinTone = 3,
+    this.faceShape = 'Oval',
     this.bodyShape = 'Rectangle',
     Set<String>? styles,
     Set<String>? shopPrefs,
@@ -95,7 +100,7 @@ class ProfileState {
     this.avatarPath,
     this.locationLabel = 'Not set',
   }) : styles = styles ?? {'Casual', 'Minimalist'},
-       shopPrefs = shopPrefs ?? {};
+        shopPrefs = shopPrefs ?? {};
 
   ProfileState copyWith({
     String? name,
@@ -105,6 +110,7 @@ class ProfileState {
     String? dob,
     String? gender,
     int? skinTone,
+    String? faceShape,
     String? bodyShape,
     Set<String>? styles,
     Set<String>? shopPrefs,
@@ -123,6 +129,7 @@ class ProfileState {
       dob: dob ?? this.dob,
       gender: gender ?? this.gender,
       skinTone: skinTone ?? this.skinTone,
+      faceShape: faceShape ?? this.faceShape,
       bodyShape: bodyShape ?? this.bodyShape,
       styles: styles ?? Set.from(this.styles),
       shopPrefs: shopPrefs ?? Set.from(this.shopPrefs),
@@ -133,6 +140,46 @@ class ProfileState {
       locationLabel: locationLabel ?? this.locationLabel,
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FACE ANALYSIS DATA MODEL  (mirrors onboarding3.dart's advanced face scan)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class FaceAnalysisData {
+  final bool faceDetected;
+  final String faceShape;
+  final String skinTone;
+  final Color skinToneColor;
+  final double skinQuality;
+  final bool acneDetected;
+  final int acneSeverity; // 0-100
+  final bool pigmentationDetected;
+  final double pigmentationIntensity; // 0-1
+  final String eyeShape;
+  final double eyeSize; // 0-1
+  final String lipColor;
+  final double lipFullness; // 0-1
+  final bool darkerCircles; // Under eye
+  final List<String> recommendations;
+
+  FaceAnalysisData({
+    required this.faceDetected,
+    required this.faceShape,
+    required this.skinTone,
+    required this.skinToneColor,
+    required this.skinQuality,
+    required this.acneDetected,
+    required this.acneSeverity,
+    required this.pigmentationDetected,
+    required this.pigmentationIntensity,
+    required this.eyeShape,
+    required this.eyeSize,
+    required this.lipColor,
+    required this.lipFullness,
+    required this.darkerCircles,
+    required this.recommendations,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -183,6 +230,7 @@ class AppStrings {
   final String gender;
   final String skinTone;
   final String shopPreferences;
+  final String faceShape;
   final String bodyShape;
   final String chooseStyles;
   final String tapToSelect;
@@ -245,6 +293,7 @@ class AppStrings {
     required this.gender,
     required this.skinTone,
     required this.shopPreferences,
+    required this.faceShape,
     required this.bodyShape,
     required this.chooseStyles,
     required this.tapToSelect,
@@ -313,12 +362,13 @@ class AppStrings {
       gender: 'Gender',
       skinTone: 'Skin Tone',
       shopPreferences: 'Shop Preferences',
+      faceShape: 'Face Shape',
       bodyShape: 'Body Shape',
       chooseStyles: 'Choose styles that match your vibe ✨',
       tapToSelect: 'Tap to select multiple',
       personalizedFitPreview: 'Personalized Fit Preview',
       personalizedFitBody:
-          'Upload a face and body photo to enable AI-powered try-on and personalised style recommendations.',
+      'Upload a face and body photo to enable AI-powered try-on and personalised style recommendations.',
       enableTryOn: 'Enable Try-On',
       uploadFacePhoto: 'Face Photo',
       uploadBodyPhoto: 'Body Photo',
@@ -326,21 +376,21 @@ class AppStrings {
       uploadPhoto: 'Upload Photo',
       discardChanges: 'Discard Changes?',
       discardChangesBody:
-          "You have unsaved changes. If you leave now, they'll be lost.",
+      "You have unsaved changes. If you leave now, they'll be lost.",
       discard: 'Discard',
       keepEditing: 'Keep Editing',
       logOutTitle: 'Log Out?',
       logOutBody:
-          "Are you sure you want to log out? You'll need to sign in again to access your profile.",
+      "Are you sure you want to log out? You'll need to sign in again to access your profile.",
       logOutConfirm: 'Log Out',
       enableLocation: 'Enable Location',
       enableLocationBody:
-          'Allow the app to access your location to show nearby stores, personalised recommendations, and local trends.',
+      'Allow the app to access your location to show nearby stores, personalised recommendations, and local trends.',
       enableLocationConfirm: 'Enable Location',
       notNow: 'Not Now',
       deleteAccountTitle: 'Delete Account?',
       deleteAccountBody:
-          'This will permanently delete your account and all associated data. This action cannot be undone.',
+      'This will permanently delete your account and all associated data. This action cannot be undone.',
       deleteAccountConfirm: 'Delete Account',
       profileUpdated: '✓ Profile updated',
       photoUpdated: '✓ Photo updated',
@@ -380,12 +430,13 @@ class AppStrings {
       gender: 'लिंग',
       skinTone: 'त्वचा का रंग',
       shopPreferences: 'शॉप प्राथमिकताएँ',
+      faceShape: 'चेहरे का आकार',
       bodyShape: 'शरीर का आकार',
       chooseStyles: 'अपनी पसंद की स्टाइल चुनें ✨',
       tapToSelect: 'कई चुनने के लिए टैप करें',
       personalizedFitPreview: 'व्यक्तिगत फ़िट पूर्वावलोकन',
       personalizedFitBody:
-          'AI ट्राय-ऑन और व्यक्तिगत शैली सुझावों के लिए फ़ोटो अपलोड करें।',
+      'AI ट्राय-ऑन और व्यक्तिगत शैली सुझावों के लिए फ़ोटो अपलोड करें।',
       enableTryOn: 'ट्राय-ऑन चालू करें',
       uploadFacePhoto: 'चेहरे की फ़ोटो',
       uploadBodyPhoto: 'शरीर की फ़ोटो',
@@ -397,16 +448,16 @@ class AppStrings {
       keepEditing: 'संपादन जारी रखें',
       logOutTitle: 'लॉग आउट करें?',
       logOutBody:
-          'क्या आप वाकई लॉग आउट करना चाहते हैं? वापस आने के लिए फिर से साइन इन करना होगा।',
+      'क्या आप वाकई लॉग आउट करना चाहते हैं? वापस आने के लिए फिर से साइन इन करना होगा।',
       logOutConfirm: 'लॉग आउट',
       enableLocation: 'स्थान सक्षम करें',
       enableLocationBody:
-          'पास की दुकानें, व्यक्तिगत सुझाव और स्थानीय ट्रेंड देखने के लिए स्थान की अनुमति दें।',
+      'पास की दुकानें, व्यक्तिगत सुझाव और स्थानीय ट्रेंड देखने के लिए स्थान की अनुमति दें।',
       enableLocationConfirm: 'स्थान सक्षम करें',
       notNow: 'अभी नहीं',
       deleteAccountTitle: 'अकाउंट हटाएं?',
       deleteAccountBody:
-          'इससे आपका अकाउंट और सभी डेटा स्थायी रूप से हट जाएगा। यह क्रिया पूर्ववत नहीं की जा सकती।',
+      'इससे आपका अकाउंट और सभी डेटा स्थायी रूप से हट जाएगा। यह क्रिया पूर्ववत नहीं की जा सकती।',
       deleteAccountConfirm: 'अकाउंट हटाएं',
       profileUpdated: '✓ प्रोफ़ाइल अपडेट हुई',
       photoUpdated: '✓ फ़ोटो अपडेट हुई',
@@ -446,12 +497,13 @@ class AppStrings {
       gender: 'பாலினம்',
       skinTone: 'தோல் நிறம்',
       shopPreferences: 'கடை விருப்பங்கள்',
+      faceShape: 'முக வடிவம்',
       bodyShape: 'உடல் வடிவம்',
       chooseStyles: 'உங்கள் விருப்பமான பாணிகளை தேர்ந்தெடுக்கவும் ✨',
       tapToSelect: 'பலவற்றை தேர்ந்தெடுக்க தட்டவும்',
       personalizedFitPreview: 'தனிப்பயனாக்கப்பட்ட பொருத்தம்',
       personalizedFitBody:
-          'AI ட்ரை-ஆன் மற்றும் பரிந்துரைகளுக்கு புகைப்படங்களை பதிவேற்றவும்.',
+      'AI ட்ரை-ஆன் மற்றும் பரிந்துரைகளுக்கு புகைப்படங்களை பதிவேற்றவும்.',
       enableTryOn: 'ட்ரை-ஆன் இயக்கு',
       uploadFacePhoto: 'முக புகைப்படம்',
       uploadBodyPhoto: 'உடல் புகைப்படம்',
@@ -459,7 +511,7 @@ class AppStrings {
       uploadPhoto: 'புகைப்படம் பதிவேற்று',
       discardChanges: 'மாற்றங்களை நீக்கவா?',
       discardChangesBody:
-          'சேமிக்கப்படாத மாற்றங்கள் உள்ளன. இப்போது வெளியேறினால் அவை இழக்கப்படும்.',
+      'சேமிக்கப்படாத மாற்றங்கள் உள்ளன. இப்போது வெளியேறினால் அவை இழக்கப்படும்.',
       discard: 'நீக்கு',
       keepEditing: 'திருத்தம் தொடரு',
       logOutTitle: 'வெளியேறவா?',
@@ -467,12 +519,12 @@ class AppStrings {
       logOutConfirm: 'வெளியேறு',
       enableLocation: 'இடம் இயக்கு',
       enableLocationBody:
-          'அருகிலுள்ள கடைகள் மற்றும் பரிந்துரைகளுக்கு இட அனுமதி வழங்கவும்.',
+      'அருகிலுள்ள கடைகள் மற்றும் பரிந்துரைகளுக்கு இட அனுமதி வழங்கவும்.',
       enableLocationConfirm: 'இடம் இயக்கு',
       notNow: 'இப்போது வேண்டாம்',
       deleteAccountTitle: 'கணக்கை நீக்கவா?',
       deleteAccountBody:
-          'இது உங்கள் கணக்கை நிரந்தரமாக நீக்கும். இந்த செயலை மீட்க முடியாது.',
+      'இது உங்கள் கணக்கை நிரந்தரமாக நீக்கும். இந்த செயலை மீட்க முடியாது.',
       deleteAccountConfirm: 'கணக்கை நீக்கு',
       profileUpdated: '✓ சுயவிவரம் புதுப்பிக்கப்பட்டது',
       photoUpdated: '✓ புகைப்படம் புதுப்பிக்கப்பட்டது',
@@ -512,6 +564,7 @@ class AppStrings {
       gender: 'లింగం',
       skinTone: 'చర్మం రంగు',
       shopPreferences: 'షాప్ ప్రాధాన్యతలు',
+      faceShape: 'ముఖ ఆకారం',
       bodyShape: 'శరీర ఆకారం',
       chooseStyles: 'మీ అభిరుచికి సరిపడే స్టైల్స్ ఎంచుకోండి ✨',
       tapToSelect: 'అనేకం ఎంచుకోవడానికి నొక్కండి',
@@ -524,21 +577,21 @@ class AppStrings {
       uploadPhoto: 'ఫోటో అప్‌లోడ్ చేయి',
       discardChanges: 'మార్పులు తొలగించాలా?',
       discardChangesBody:
-          'సేవ్ చేయని మార్పులు ఉన్నాయి. ఇప్పుడు వెళ్ళిపోతే అవి పోతాయి.',
+      'సేవ్ చేయని మార్పులు ఉన్నాయి. ఇప్పుడు వెళ్ళిపోతే అవి పోతాయి.',
       discard: 'తొలగించు',
       keepEditing: 'సవరణ కొనసాగించు',
       logOutTitle: 'లాగ్ అవుట్ చేయాలా?',
       logOutBody:
-          'మీరు లాగ్ అవుట్ చేయాలనుకుంటున్నారా? తిరిగి యాక్సెస్ కోసం సైన్ ఇన్ అవ్వాలి.',
+      'మీరు లాగ్ అవుట్ చేయాలనుకుంటున్నారా? తిరిగి యాక్సెస్ కోసం సైన్ ఇన్ అవ్వాలి.',
       logOutConfirm: 'లాగ్ అవుట్',
       enableLocation: 'లొకేషన్ ఆన్ చేయి',
       enableLocationBody:
-          'దగ్గరలోని దుకాణాలు మరియు సూచనలకు లొకేషన్ అనుమతించండి.',
+      'దగ్గరలోని దుకాణాలు మరియు సూచనలకు లొకేషన్ అనుమతించండి.',
       enableLocationConfirm: 'లొకేషన్ ఆన్ చేయి',
       notNow: 'ఇప్పుడు వద్దు',
       deleteAccountTitle: 'ఖాతా తొలగించాలా?',
       deleteAccountBody:
-          'ఇది మీ ఖాతా మరియు డేటాను శాశ్వతంగా తొలగిస్తుంది. ఇది రద్దు చేయలేరు.',
+      'ఇది మీ ఖాతా మరియు డేటాను శాశ్వతంగా తొలగిస్తుంది. ఇది రద్దు చేయలేరు.',
       deleteAccountConfirm: 'ఖాతా తొలగించు',
       profileUpdated: '✓ ప్రొఫైల్ అప్‌డేట్ అయింది',
       photoUpdated: '✓ ఫోటో అప్‌డేట్ అయింది',
@@ -578,12 +631,13 @@ class AppStrings {
       gender: 'ಲಿಂಗ',
       skinTone: 'ಚರ್ಮದ ಬಣ್ಣ',
       shopPreferences: 'ಅಂಗಡಿ ಆದ್ಯತೆಗಳು',
+      faceShape: 'ಮುಖದ ಆಕಾರ',
       bodyShape: 'ದೇಹದ ಆಕಾರ',
       chooseStyles: 'ನಿಮ್ಮ ಅಭಿರುಚಿಗೆ ತಕ್ಕ ಶೈಲಿಗಳನ್ನು ಆಯ್ಕೆ ಮಾಡಿ ✨',
       tapToSelect: 'ಹಲವು ಆಯ್ಕೆ ಮಾಡಲು ಟ್ಯಾಪ್ ಮಾಡಿ',
       personalizedFitPreview: 'ವ್ಯಕ್ತಿಗತ ಫಿಟ್ ಪ್ರಿವ್ಯೂ',
       personalizedFitBody:
-          'AI ಟ್ರೈ-ಆನ್ ಮತ್ತು ಸಲಹೆಗಳಿಗೆ ಫೋಟೋಗಳನ್ನು ಅಪ್‌ಲೋಡ್ ಮಾಡಿ.',
+      'AI ಟ್ರೈ-ಆನ್ ಮತ್ತು ಸಲಹೆಗಳಿಗೆ ಫೋಟೋಗಳನ್ನು ಅಪ್‌ಲೋಡ್ ಮಾಡಿ.',
       enableTryOn: 'ಟ್ರೈ-ಆನ್ ಚಾಲನೆ ಮಾಡಿ',
       uploadFacePhoto: 'ಮುಖದ ಫೋಟೋ',
       uploadBodyPhoto: 'ದೇಹದ ಫೋಟೋ',
@@ -602,7 +656,7 @@ class AppStrings {
       notNow: 'ಈಗ ಬೇಡ',
       deleteAccountTitle: 'ಖಾತೆ ಅಳಿಸಬೇಕೇ?',
       deleteAccountBody:
-          'ಇದು ನಿಮ್ಮ ಖಾತೆ ಮತ್ತು ಡೇಟಾವನ್ನು ಶಾಶ್ವತವಾಗಿ ಅಳಿಸುತ್ತದೆ.',
+      'ಇದು ನಿಮ್ಮ ಖಾತೆ ಮತ್ತು ಡೇಟಾವನ್ನು ಶಾಶ್ವತವಾಗಿ ಅಳಿಸುತ್ತದೆ.',
       deleteAccountConfirm: 'ಖಾತೆ ಅಳಿಸಿ',
       profileUpdated: '✓ ಪ್ರೊಫೈಲ್ ಅಪ್‌ಡೇಟ್ ಆಯಿತು',
       photoUpdated: '✓ ಫೋಟೋ ಅಪ್‌ಡೇಟ್ ಆಯಿತು',
@@ -642,12 +696,13 @@ class AppStrings {
       gender: 'ലിംഗം',
       skinTone: 'ചർമ്മ നിറം',
       shopPreferences: 'ഷോപ്പ് മുൻഗണനകൾ',
+      faceShape: 'മുഖാകൃതി',
       bodyShape: 'ശരീരാകൃതി',
       chooseStyles: 'നിങ്ങളുടെ ഇഷ്ടത്തിന് ചേർന്ന ശൈലികൾ തിരഞ്ഞെടുക്കുക ✨',
       tapToSelect: 'ഒന്നിലധികം തിരഞ്ഞെടുക്കാൻ ടാപ്പ് ചെയ്യുക',
       personalizedFitPreview: 'വ്യക്തിഗത ഫിറ്റ് പ്രിവ്യൂ',
       personalizedFitBody:
-          'AI ട്രൈ-ഓൺ, നിർദ്ദേശങ്ങൾ എന്നിവയ്ക്ക് ഫോട്ടോ അപ്‌ലോഡ് ചെയ്യുക.',
+      'AI ട്രൈ-ഓൺ, നിർദ്ദേശങ്ങൾ എന്നിവയ്ക്ക് ഫോട്ടോ അപ്‌ലോഡ് ചെയ്യുക.',
       enableTryOn: 'ട്രൈ-ഓൺ ഓണാക്കുക',
       uploadFacePhoto: 'മുഖ ഫോട്ടോ',
       uploadBodyPhoto: 'ശരീര ഫോട്ടോ',
@@ -655,21 +710,21 @@ class AppStrings {
       uploadPhoto: 'ഫോട്ടോ അപ്‌ലോഡ് ചെയ്യുക',
       discardChanges: 'മാറ്റങ്ങൾ ഉപേക്ഷിക്കണോ?',
       discardChangesBody:
-          'സേവ് ചെയ്യാത്ത മാറ്റങ്ങൾ ഉണ്ട്. ഇപ്പോൾ പോകുകയാണെങ്കിൽ അവ നഷ്ടപ്പെടും.',
+      'സേവ് ചെയ്യാത്ത മാറ്റങ്ങൾ ഉണ്ട്. ഇപ്പോൾ പോകുകയാണെങ്കിൽ അവ നഷ്ടപ്പെടും.',
       discard: 'ഉപേക്ഷിക്കുക',
       keepEditing: 'തിരുത്തൽ തുടരുക',
       logOutTitle: 'ലോഗ് ഔട്ട് ചെയ്യണോ?',
       logOutBody:
-          'ലോഗ് ഔട്ട് ചെയ്യണമെന്ന് ഉറപ്പാണോ? വീണ്ടും പ്രവേശിക്കാൻ സൈൻ ഇൻ ചെയ്യണം.',
+      'ലോഗ് ഔട്ട് ചെയ്യണമെന്ന് ഉറപ്പാണോ? വീണ്ടും പ്രവേശിക്കാൻ സൈൻ ഇൻ ചെയ്യണം.',
       logOutConfirm: 'ലോഗ് ഔട്ട്',
       enableLocation: 'ലൊക്കേഷൻ ഓണാക്കുക',
       enableLocationBody:
-          'അടുത്തുള്ള കടകൾ, നിർദ്ദേശങ്ങൾ എന്നിവയ്ക്ക് ലൊക്കേഷൻ അനുവദിക്കുക.',
+      'അടുത്തുള്ള കടകൾ, നിർദ്ദേശങ്ങൾ എന്നിവയ്ക്ക് ലൊക്കേഷൻ അനുവദിക്കുക.',
       enableLocationConfirm: 'ലൊക്കേഷൻ ഓണാക്കുക',
       notNow: 'ഇപ്പോൾ വേണ്ട',
       deleteAccountTitle: 'അക്കൗണ്ട് ഇല്ലാതാക്കണോ?',
       deleteAccountBody:
-          'ഇത് നിങ്ങളുടെ അക്കൗണ്ടും ഡേറ്റയും സ്ഥിരമായി ഇല്ലാതാക്കും.',
+      'ഇത് നിങ്ങളുടെ അക്കൗണ്ടും ഡേറ്റയും സ്ഥിരമായി ഇല്ലാതാക്കും.',
       deleteAccountConfirm: 'അക്കൗണ്ട് ഇല്ലാതാക്കുക',
       profileUpdated: '✓ പ്രൊഫൈൽ അപ്‌ഡേറ്റ് ചെയ്തു',
       photoUpdated: '✓ ഫോട്ടോ അപ്‌ഡേറ്റ് ചെയ്തു',
@@ -709,6 +764,7 @@ class AppStrings {
       gender: 'লিঙ্গ',
       skinTone: 'ত্বকের রঙ',
       shopPreferences: 'শপ পছন্দ',
+      faceShape: 'মুখের আকৃতি',
       bodyShape: 'শরীরের আকৃতি',
       chooseStyles: 'আপনার পছন্দের স্টাইল বেছে নিন ✨',
       tapToSelect: 'একাধিক বাছাই করতে ট্যাপ করুন',
@@ -721,12 +777,12 @@ class AppStrings {
       uploadPhoto: 'ছবি আপলোড করুন',
       discardChanges: 'পরিবর্তন বাতিল করবেন?',
       discardChangesBody:
-          'সংরক্ষিত হয়নি এমন পরিবর্তন আছে। এখন চলে গেলে সেগুলো হারিয়ে যাবে।',
+      'সংরক্ষিত হয়নি এমন পরিবর্তন আছে। এখন চলে গেলে সেগুলো হারিয়ে যাবে।',
       discard: 'বাতিল করুন',
       keepEditing: 'সম্পাদনা চালিয়ে যান',
       logOutTitle: 'লগ আউট করবেন?',
       logOutBody:
-          'আপনি কি লগ আউট করতে নিশ্চিত? পুনরায় অ্যাক্সেসের জন্য সাইন ইন করতে হবে।',
+      'আপনি কি লগ আউট করতে নিশ্চিত? পুনরায় অ্যাক্সেসের জন্য সাইন ইন করতে হবে।',
       logOutConfirm: 'লগ আউট',
       enableLocation: 'লোকেশন চালু করুন',
       enableLocationBody: 'কাছের দোকান এবং সুপারিশের জন্য লোকেশন অনুমতি দিন।',
@@ -734,7 +790,7 @@ class AppStrings {
       notNow: 'এখন নয়',
       deleteAccountTitle: 'অ্যাকাউন্ট মুছবেন?',
       deleteAccountBody:
-          'এটি আপনার অ্যাকাউন্ট ও ডেটা স্থায়ীভাবে মুছে দেবে। এই কাজ পূর্বাবস্থায় ফেরানো যাবে না।',
+      'এটি আপনার অ্যাকাউন্ট ও ডেটা স্থায়ীভাবে মুছে দেবে। এই কাজ পূর্বাবস্থায় ফেরানো যাবে না।',
       deleteAccountConfirm: 'অ্যাকাউন্ট মুছুন',
       profileUpdated: '✓ প্রোফাইল আপডেট হয়েছে',
       photoUpdated: '✓ ছবি আপডেট হয়েছে',
@@ -774,6 +830,7 @@ class AppStrings {
       gender: 'लिंग',
       skinTone: 'त्वचेचा रंग',
       shopPreferences: 'खरेदी प्राधान्ये',
+      faceShape: 'चेहऱ्याचा आकार',
       bodyShape: 'शरीराचा आकार',
       chooseStyles: 'तुमच्या आवडीच्या स्टाइल्स निवडा ✨',
       tapToSelect: 'अनेक निवडण्यासाठी टॅप करा',
@@ -790,7 +847,7 @@ class AppStrings {
       keepEditing: 'संपादन सुरू ठेवा',
       logOutTitle: 'लॉग आउट करायचे?',
       logOutBody:
-          'तुम्हाला खात्री आहे का? परत प्रवेशासाठी पुन्हा साइन इन करावे लागेल.',
+      'तुम्हाला खात्री आहे का? परत प्रवेशासाठी पुन्हा साइन इन करावे लागेल.',
       logOutConfirm: 'लॉग आउट',
       enableLocation: 'स्थान सक्षम करा',
       enableLocationBody: 'जवळच्या दुकाने आणि शिफारसींसाठी स्थान परवानगी द्या.',
@@ -798,7 +855,7 @@ class AppStrings {
       notNow: 'आत्ता नाही',
       deleteAccountTitle: 'खाते हटवायचे?',
       deleteAccountBody:
-          'हे तुमचे खाते आणि सर्व डेटा कायमचे हटवेल. हे पूर्ववत करता येणार नाही.',
+      'हे तुमचे खाते आणि सर्व डेटा कायमचे हटवेल. हे पूर्ववत करता येणार नाही.',
       deleteAccountConfirm: 'खाते हटवा',
       profileUpdated: '✓ प्रोफाइल अपडेट झाली',
       photoUpdated: '✓ फोटो अपडेट झाला',
@@ -838,12 +895,13 @@ class AppStrings {
       gender: 'Genre',
       skinTone: 'Teinte de Peau',
       shopPreferences: 'Préférences Boutique',
+      faceShape: 'Forme du Visage',
       bodyShape: 'Forme Corporelle',
       chooseStyles: 'Choisissez les styles qui vous correspondent ✨',
       tapToSelect: 'Appuyez pour sélectionner plusieurs',
       personalizedFitPreview: 'Aperçu Personnalisé',
       personalizedFitBody:
-          "Téléchargez une photo de visage et de corps pour l'essayage IA et les recommandations.",
+      "Téléchargez une photo de visage et de corps pour l'essayage IA et les recommandations.",
       enableTryOn: "Activer l'Essayage",
       uploadFacePhoto: 'Photo du Visage',
       uploadBodyPhoto: 'Photo du Corps',
@@ -851,21 +909,21 @@ class AppStrings {
       uploadPhoto: 'Télécharger une Photo',
       discardChanges: 'Annuler les Modifications?',
       discardChangesBody:
-          'Vous avez des modifications non enregistrées. Si vous partez maintenant, elles seront perdues.',
+      'Vous avez des modifications non enregistrées. Si vous partez maintenant, elles seront perdues.',
       discard: 'Annuler',
       keepEditing: 'Continuer à Modifier',
       logOutTitle: 'Se Déconnecter?',
       logOutBody:
-          'Êtes-vous sûr de vouloir vous déconnecter? Vous devrez vous reconnecter pour accéder à votre profil.',
+      'Êtes-vous sûr de vouloir vous déconnecter? Vous devrez vous reconnecter pour accéder à votre profil.',
       logOutConfirm: 'Se Déconnecter',
       enableLocation: 'Activer la Localisation',
       enableLocationBody:
-          'Autorisez l\'application à accéder à votre position pour afficher les magasins à proximité.',
+      'Autorisez l\'application à accéder à votre position pour afficher les magasins à proximité.',
       enableLocationConfirm: 'Activer la Localisation',
       notNow: 'Pas Maintenant',
       deleteAccountTitle: 'Supprimer le Compte?',
       deleteAccountBody:
-          'Cela supprimera définitivement votre compte et toutes les données associées.',
+      'Cela supprimera définitivement votre compte et toutes les données associées.',
       deleteAccountConfirm: 'Supprimer le Compte',
       profileUpdated: '✓ Profil mis à jour',
       photoUpdated: '✓ Photo mise à jour',
@@ -905,12 +963,13 @@ class AppStrings {
       gender: 'Género',
       skinTone: 'Tono de Piel',
       shopPreferences: 'Preferencias de Tienda',
+      faceShape: 'Forma del Rostro',
       bodyShape: 'Forma Corporal',
       chooseStyles: 'Elige los estilos que van contigo ✨',
       tapToSelect: 'Toca para seleccionar varios',
       personalizedFitPreview: 'Vista Previa Personalizada',
       personalizedFitBody:
-          'Sube una foto de cara y cuerpo para el probador IA y recomendaciones.',
+      'Sube una foto de cara y cuerpo para el probador IA y recomendaciones.',
       enableTryOn: 'Activar Probador',
       uploadFacePhoto: 'Foto de Cara',
       uploadBodyPhoto: 'Foto de Cuerpo',
@@ -918,21 +977,21 @@ class AppStrings {
       uploadPhoto: 'Subir Foto',
       discardChanges: '¿Descartar Cambios?',
       discardChangesBody:
-          'Tienes cambios sin guardar. Si te vas ahora, se perderán.',
+      'Tienes cambios sin guardar. Si te vas ahora, se perderán.',
       discard: 'Descartar',
       keepEditing: 'Seguir Editando',
       logOutTitle: '¿Cerrar Sesión?',
       logOutBody:
-          '¿Estás seguro de que quieres cerrar sesión? Deberás iniciar sesión de nuevo para acceder a tu perfil.',
+      '¿Estás seguro de que quieres cerrar sesión? Deberás iniciar sesión de nuevo para acceder a tu perfil.',
       logOutConfirm: 'Cerrar Sesión',
       enableLocation: 'Activar Ubicación',
       enableLocationBody:
-          'Permite que la app acceda a tu ubicación para mostrar tiendas cercanas y recomendaciones.',
+      'Permite que la app acceda a tu ubicación para mostrar tiendas cercanas y recomendaciones.',
       enableLocationConfirm: 'Activar Ubicación',
       notNow: 'Ahora No',
       deleteAccountTitle: '¿Eliminar Cuenta?',
       deleteAccountBody:
-          'Esto eliminará permanentemente tu cuenta y todos los datos asociados.',
+      'Esto eliminará permanentemente tu cuenta y todos los datos asociados.',
       deleteAccountConfirm: 'Eliminar Cuenta',
       profileUpdated: '✓ Perfil actualizado',
       photoUpdated: '✓ Foto actualizada',
@@ -972,12 +1031,13 @@ class AppStrings {
       gender: 'Geschlecht',
       skinTone: 'Hautton',
       shopPreferences: 'Shop-Präferenzen',
+      faceShape: 'Gesichtsform',
       bodyShape: 'Körperform',
       chooseStyles: 'Wählen Sie Stile, die zu Ihnen passen ✨',
       tapToSelect: 'Tippen, um mehrere auszuwählen',
       personalizedFitPreview: 'Personalisierte Vorschau',
       personalizedFitBody:
-          'Laden Sie ein Gesichts- und Körperfoto für KI-Anprobe und Empfehlungen hoch.',
+      'Laden Sie ein Gesichts- und Körperfoto für KI-Anprobe und Empfehlungen hoch.',
       enableTryOn: 'Anprobe aktivieren',
       uploadFacePhoto: 'Gesichtsfoto',
       uploadBodyPhoto: 'Körperfoto',
@@ -985,21 +1045,21 @@ class AppStrings {
       uploadPhoto: 'Foto hochladen',
       discardChanges: 'Änderungen verwerfen?',
       discardChangesBody:
-          'Sie haben ungespeicherte Änderungen. Wenn Sie jetzt gehen, gehen sie verloren.',
+      'Sie haben ungespeicherte Änderungen. Wenn Sie jetzt gehen, gehen sie verloren.',
       discard: 'Verwerfen',
       keepEditing: 'Weiter Bearbeiten',
       logOutTitle: 'Abmelden?',
       logOutBody:
-          'Möchten Sie sich wirklich abmelden? Sie müssen sich erneut anmelden, um auf Ihr Profil zuzugreifen.',
+      'Möchten Sie sich wirklich abmelden? Sie müssen sich erneut anmelden, um auf Ihr Profil zuzugreifen.',
       logOutConfirm: 'Abmelden',
       enableLocation: 'Standort Aktivieren',
       enableLocationBody:
-          'Erlauben Sie der App den Zugriff auf Ihren Standort für nahegelegene Geschäfte und Empfehlungen.',
+      'Erlauben Sie der App den Zugriff auf Ihren Standort für nahegelegene Geschäfte und Empfehlungen.',
       enableLocationConfirm: 'Standort Aktivieren',
       notNow: 'Nicht Jetzt',
       deleteAccountTitle: 'Konto Löschen?',
       deleteAccountBody:
-          'Dadurch wird Ihr Konto und alle zugehörigen Daten dauerhaft gelöscht.',
+      'Dadurch wird Ihr Konto und alle zugehörigen Daten dauerhaft gelöscht.',
       deleteAccountConfirm: 'Konto Löschen',
       profileUpdated: '✓ Profil aktualisiert',
       photoUpdated: '✓ Foto aktualisiert',
@@ -1039,12 +1099,13 @@ class AppStrings {
       gender: 'الجنس',
       skinTone: 'لون البشرة',
       shopPreferences: 'تفضيلات التسوق',
+      faceShape: 'شكل الوجه',
       bodyShape: 'شكل الجسم',
       chooseStyles: 'اختر الأساليب التي تناسبك ✨',
       tapToSelect: 'اضغط لاختيار أكثر من واحد',
       personalizedFitPreview: 'معاينة مخصصة',
       personalizedFitBody:
-          'ارفع صورة وجه وجسم لتجربة ملابس بالذكاء الاصطناعي والتوصيات.',
+      'ارفع صورة وجه وجسم لتجربة ملابس بالذكاء الاصطناعي والتوصيات.',
       enableTryOn: 'تفعيل التجربة',
       uploadFacePhoto: 'صورة الوجه',
       uploadBodyPhoto: 'صورة الجسم',
@@ -1056,16 +1117,16 @@ class AppStrings {
       keepEditing: 'متابعة التعديل',
       logOutTitle: 'تسجيل الخروج؟',
       logOutBody:
-          'هل أنت متأكد من تسجيل الخروج؟ ستحتاج إلى تسجيل الدخول مرة أخرى.',
+      'هل أنت متأكد من تسجيل الخروج؟ ستحتاج إلى تسجيل الدخول مرة أخرى.',
       logOutConfirm: 'تسجيل الخروج',
       enableLocation: 'تفعيل الموقع',
       enableLocationBody:
-          'اسمح للتطبيق بالوصول إلى موقعك لعرض المتاجر القريبة والتوصيات.',
+      'اسمح للتطبيق بالوصول إلى موقعك لعرض المتاجر القريبة والتوصيات.',
       enableLocationConfirm: 'تفعيل الموقع',
       notNow: 'ليس الآن',
       deleteAccountTitle: 'حذف الحساب؟',
       deleteAccountBody:
-          'سيؤدي هذا إلى حذف حسابك وجميع بياناتك نهائياً. لا يمكن التراجع عن هذا الإجراء.',
+      'سيؤدي هذا إلى حذف حسابك وجميع بياناتك نهائياً. لا يمكن التراجع عن هذا الإجراء.',
       deleteAccountConfirm: 'حذف الحساب',
       profileUpdated: '✓ تم تحديث الملف الشخصي',
       photoUpdated: '✓ تم تحديث الصورة',
@@ -1105,6 +1166,7 @@ class AppStrings {
       gender: '性別',
       skinTone: '肌のトーン',
       shopPreferences: 'ショップ設定',
+      faceShape: '顔の形',
       bodyShape: '体型',
       chooseStyles: 'あなたに合うスタイルを選んでください ✨',
       tapToSelect: 'タップして複数選択',
@@ -1173,6 +1235,15 @@ const List<Map<String, String>> kShopPrefs = [
   {'label': 'Ethnic', 'gender': 'both', 'img': 'assets/shop/ethnic.jpg'},
 ];
 
+const List<Map<String, String>> kFaceShapes = [
+  {'name': 'Oval', 'img': 'assets/face_shapes/oval.jpeg'},
+  {'name': 'Round', 'img': 'assets/face_shapes/round.jpeg'},
+  {'name': 'Square', 'img': 'assets/face_shapes/square.jpeg'},
+  {'name': 'Heart', 'img': 'assets/face_shapes/heart.jpeg'},
+  {'name': 'Diamond', 'img': 'assets/face_shapes/diamond.jpeg'},
+  {'name': 'Oblong', 'img': 'assets/face_shapes/oblong.jpeg'},
+];
+
 const Map<String, List<Map<String, String>>> kBodyShapes = {
   'women': [
     {'name': 'Hourglass', 'img': 'assets/body_shapes/women_hourglass.jpeg'},
@@ -1205,6 +1276,9 @@ class ProfileController extends ChangeNotifier {
   }
 
   void setLanguage(String newLang) {
+    // ⚠️ CRITICAL: Prevent infinite update loop
+    if (_state.lang == newLang) return;
+
     _state = _state.copyWith(lang: newLang);
     notifyListeners();
   }
@@ -1218,6 +1292,7 @@ class ProfileController extends ChangeNotifier {
     String? dob,
     String? gender,
     int? skinTone,
+    String? faceShape,
     String? bodyShape,
     Set<String>? shopPrefs,
     String? lang,
@@ -1231,6 +1306,7 @@ class ProfileController extends ChangeNotifier {
       dob: dob,
       gender: gender,
       skinTone: skinTone,
+      faceShape: faceShape,
       bodyShape: bodyShape,
       shopPrefs: shopPrefs,
       lang: lang,
@@ -1281,7 +1357,7 @@ class ProfileController extends ChangeNotifier {
 
     // Derive a username from the display name if still at the placeholder
     final resolvedUsername =
-        _state.username == '@username' && resolvedName != 'New User'
+    _state.username == '@username' && resolvedName != 'New User'
         ? '@${resolvedName.toLowerCase().replaceAll(' ', '_')}'
         : _state.username;
 
@@ -1289,6 +1365,59 @@ class ProfileController extends ChangeNotifier {
       name: resolvedName,
       email: resolvedEmail,
       username: resolvedUsername,
+    );
+    notifyListeners();
+  }
+
+  /// Rehydrates the rest of the profile (gender, dob, phone, skinTone,
+  /// faceShape, bodyShape, styles, shopPrefs) from the Appwrite "users"
+  /// document. Call this on cold start right after fetching the profile
+  /// doc — otherwise ProfileState()'s hardcoded defaults (e.g. gender
+  /// defaulting to 'Female') silently override whatever the user actually
+  /// picked during onboarding.
+  void hydrateFromProfileDoc(Map<String, dynamic>? doc) {
+    if (doc == null) return;
+
+    String? asNonEmptyString(dynamic v) {
+      if (v == null) return null;
+      final s = v.toString().trim();
+      return s.isEmpty ? null : s;
+    }
+
+    // onboarding1.dart saves gender lowercased ('male'/'female'/'others'),
+    // but the UI (edit-profile pills, ['Male','Female','Others']) compares
+    // against Title-Case. Normalize so the saved value actually matches.
+    String? titleCase(dynamic v) {
+      final s = asNonEmptyString(v);
+      if (s == null) return null;
+      return s[0].toUpperCase() + s.substring(1).toLowerCase();
+    }
+
+    int? asInt(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      if (v is String) return int.tryParse(v);
+      return null;
+    }
+
+    Set<String>? asStringSet(dynamic v) {
+      if (v is List) {
+        final set = v.map((e) => e.toString()).toSet();
+        return set.isEmpty ? null : set;
+      }
+      return null;
+    }
+
+    _state = _state.copyWith(
+      name: asNonEmptyString(doc['name']),
+      phone: asNonEmptyString(doc['phone']),
+      dob: asNonEmptyString(doc['dob']),
+      gender: titleCase(doc['gender']),
+      skinTone: asInt(doc['skinTone']),
+      faceShape: asNonEmptyString(doc['faceShape']),
+      bodyShape: asNonEmptyString(doc['bodyShape']),
+      styles: asStringSet(doc['stylePreferences']),
+      shopPrefs: asStringSet(doc['shopPrefs']),
     );
     notifyListeners();
   }
@@ -1323,10 +1452,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _syncTheme(
-    BuildContext context,
-    ProfileState newState,
-    ProfileState oldState,
-  ) {
+      BuildContext context,
+      ProfileState newState,
+      ProfileState oldState,
+      ) {
     try {
       final themeCtrl = Provider.of<ThemeController>(context, listen: false);
 
@@ -1340,7 +1469,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // Accent theme sync — AppTheme → ProfileTheme convert చేసి set చేయి
       if (newState.theme != oldState.theme) {
         final profileTheme = ProfileTheme.values.firstWhere(
-          (t) => t.name == newState.theme.name,
+              (t) => t.name == newState.theme.name,
           orElse: () => ProfileTheme.coolBlue,
         );
         themeCtrl.setTheme(profileTheme);
@@ -1414,7 +1543,7 @@ class _ProfilePageState extends State<ProfilePage>
   void _update(ProfileState newState) {
     widget.onStateChange(newState);
     setState(
-      () {},
+          () {},
     ); // force rebuild so language/theme changes reflect immediately
   }
 
@@ -1428,40 +1557,40 @@ class _ProfilePageState extends State<ProfilePage>
           duration: const Duration(milliseconds: 300),
           child: _showEdit
               ? _EditView(
-                  key: const ValueKey('edit'),
-                  state: s,
-                  colors: c,
-                  bg: _bg,
-                  bg2: _bg2,
-                  panel: _panel,
-                  card: _card,
-                  cardBorder: _cardBorder,
-                  textPrimary: _textPrimary,
-                  textMuted: _textMuted,
-                  onSave: (newState) {
-                    _update(newState);
-                    setState(() => _showEdit = false);
-                    _showToast(AppStrings.of(newState.lang).profileUpdated);
-                  },
-                  onDiscard: () => setState(() => _showEdit = false),
-                  onToast: _showToast,
-                )
+            key: const ValueKey('edit'),
+            state: s,
+            colors: c,
+            bg: _bg,
+            bg2: _bg2,
+            panel: _panel,
+            card: _card,
+            cardBorder: _cardBorder,
+            textPrimary: _textPrimary,
+            textMuted: _textMuted,
+            onSave: (newState) {
+              _update(newState);
+              setState(() => _showEdit = false);
+              _showToast(AppStrings.of(newState.lang).profileUpdated);
+            },
+            onDiscard: () => setState(() => _showEdit = false),
+            onToast: _showToast,
+          )
               : _ProfileView(
-                  key: const ValueKey('profile'),
-                  state: s,
-                  colors: c,
-                  bg: _bg,
-                  bg2: _bg2,
-                  panel: _panel,
-                  card: _card,
-                  cardBorder: _cardBorder,
-                  textPrimary: _textPrimary,
-                  textMuted: _textMuted,
-                  danger: _danger,
-                  onEditTap: () => setState(() => _showEdit = true),
-                  onStateChange: _update,
-                  onToast: _showToast,
-                ),
+            key: const ValueKey('profile'),
+            state: s,
+            colors: c,
+            bg: _bg,
+            bg2: _bg2,
+            panel: _panel,
+            card: _card,
+            cardBorder: _cardBorder,
+            textPrimary: _textPrimary,
+            textMuted: _textMuted,
+            danger: _danger,
+            onEditTap: () => setState(() => _showEdit = true),
+            onStateChange: _update,
+            onToast: _showToast,
+          ),
         ),
       ),
     );
@@ -1673,23 +1802,23 @@ class _ProfileView extends StatelessWidget {
                               return SegmentedButton<ThemeMode>(
                                 style: ButtonStyle(
                                   backgroundColor:
-                                      WidgetStateProperty.resolveWith((states) {
-                                        if (states.contains(
-                                          WidgetState.selected,
-                                        ))
-                                          return colors.accent1.withOpacity(
-                                            0.18,
-                                          );
-                                        return Colors.transparent;
-                                      }),
+                                  WidgetStateProperty.resolveWith((states) {
+                                    if (states.contains(
+                                      WidgetState.selected,
+                                    ))
+                                      return colors.accent1.withOpacity(
+                                        0.18,
+                                      );
+                                    return Colors.transparent;
+                                  }),
                                   foregroundColor:
-                                      WidgetStateProperty.resolveWith((states) {
-                                        if (states.contains(
-                                          WidgetState.selected,
-                                        ))
-                                          return colors.accent1;
-                                        return textMuted;
-                                      }),
+                                  WidgetStateProperty.resolveWith((states) {
+                                    if (states.contains(
+                                      WidgetState.selected,
+                                    ))
+                                      return colors.accent1;
+                                    return textMuted;
+                                  }),
                                   side: WidgetStatePropertyAll(
                                     BorderSide(color: cardBorder),
                                   ),
@@ -1914,9 +2043,9 @@ class _ProfileView extends StatelessWidget {
   }
 
   Future<void> _fetchAndUpdateLocation(
-    BuildContext context,
-    AppStrings t,
-  ) async {
+      BuildContext context,
+      AppStrings t,
+      ) async {
     try {
       // Permission check
       LocationPermission permission = await Geolocator.checkPermission();
@@ -1944,14 +2073,14 @@ class _ProfileView extends StatelessWidget {
       try {
         final uri = Uri.parse(
           'https://nominatim.openstreetmap.org/reverse'
-          '?lat=${position.latitude}&lon=${position.longitude}'
-          '&format=json&addressdetails=1',
+              '?lat=${position.latitude}&lon=${position.longitude}'
+              '&format=json&addressdetails=1',
         );
         final response = await http
             .get(
-              uri,
-              headers: {'User-Agent': 'AhviApp/1.0', 'Accept-Language': 'en'},
-            )
+          uri,
+          headers: {'User-Agent': 'AhviApp/1.0', 'Accept-Language': 'en'},
+        )
             .timeout(const Duration(seconds: 8));
 
         if (response.statusCode == 200) {
@@ -2028,17 +2157,65 @@ class _ProfileView extends StatelessWidget {
               context,
               listen: false,
             );
-            // deleteAccount() deletes all sessions (signs out everywhere)
-            await appwrite.deleteAccount();
-          } catch (_) {}
-          // Clear onboardingComplete flag
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setBool('onboardingComplete', false);
-          // Navigate to SignIn, clear entire stack
-          if (context.mounted) {
-            Navigator.of(
-              context,
-            ).pushNamedAndRemoveUntil(AppRoutes.signin, (route) => false);
+
+            // STEP 2: Call the FastAPI backend to wipe the account, wardrobe,
+            // and style history from the server.  Throws on failure so we
+            // can show an error and abort before touching local state.
+            final userId = appwrite.currentUserId ?? '';
+            if (userId.isNotEmpty) {
+              await appwrite.deleteAccountFromBackend(userId);
+            }
+
+            // STEP 2b: Tear down Appwrite sessions on all devices.
+            try {
+              await appwrite.deleteAccount();
+            } catch (_) {
+              // Fallback: at minimum kill the current session
+              try {
+                await appwrite.account.deleteSession(sessionId: 'current');
+              } catch (_) {}
+            }
+
+            // STEP 3: Wipe ALL local storage so this device has zero memory
+            // of onboarding, Style DNA, cached user identity, OTP state, etc.
+            // A re-signup on this device will be treated as brand-new.
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.clear();
+
+            // STEP 4: Clear in-memory Provider / app state.
+            if (context.mounted) {
+              Provider.of<ProfileController>(context, listen: false).reset();
+              appwrite.clearUserCache();
+              await appwrite.clearCachedUserIdentity();
+            }
+
+            // STEP 5: Navigate to SignIn, clear entire back-stack.
+            if (context.mounted) {
+              Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil(AppRoutes.signin, (route) => false);
+            }
+          } catch (e) {
+            debugPrint('AHVI_DELETE_ACCOUNT_ERROR: $e');
+            // Surface the failure so the user knows deletion did not complete.
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Could not delete account. Please try again.',
+                    style: TextStyle(
+                      color: textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  backgroundColor: bg2,
+                  shape: const StadiumBorder(),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(milliseconds: 3000),
+                ),
+              );
+            }
           }
         },
         onCancel: () => Navigator.pop(context),
@@ -2094,6 +2271,12 @@ class _EditViewState extends State<_EditView>
   bool _tryOnEnabled = false;
   String _bodyGender =
       'women'; // tracks which gender tab is selected in Body Shape
+
+  // ── Face analyser (mirrors onboarding3) ──
+  late FaceDetector _faceDetector;
+  bool _isAnalyzingFace = false;
+  FaceAnalysisData? _faceAnalysisData;
+  final ImagePicker _facePicker = ImagePicker();
 
   // ── Country code picker state (mirrors onboarding1) ──
   String _selectedCountryCode = '+91';
@@ -2159,6 +2342,7 @@ class _EditViewState extends State<_EditView>
     _tabController = TabController(length: 3, vsync: this);
     _faceUploaded = false;
     _bodyUploaded = false;
+    _initializeFaceDetector();
     _draft = widget.state.copyWith();
     _nameCtrl = TextEditingController(text: widget.state.name);
     _emailCtrl = TextEditingController(text: widget.state.email);
@@ -2173,7 +2357,7 @@ class _EditViewState extends State<_EditView>
         final code = phone.substring(0, spaceIdx);
         final number = phone.substring(spaceIdx + 1);
         final match = _countries.firstWhere(
-          (c) => c['code'] == code,
+              (c) => c['code'] == code,
           orElse: () => _countries.first,
         );
         _selectedCountryCode = match['code'] as String;
@@ -2215,16 +2399,623 @@ class _EditViewState extends State<_EditView>
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
     _dobCtrl.dispose();
+    _faceDetector.close();
     super.dispose();
   }
 
   void _markDirty() => setState(() => _isDirty = true);
 
+  // ─────────────────────────────────────────────────────────────────────
+  // FACE ANALYSER (mirrors onboarding3.dart) — real camera capture + ML
+  // Kit face detection, used to auto-fill Face Shape and Skin Tone below.
+  // ─────────────────────────────────────────────────────────────────────
+
+  void _initializeFaceDetector() {
+    _faceDetector = FaceDetector(
+      options: FaceDetectorOptions(
+        enableLandmarks: true,
+        enableClassification: true,
+        enableContours: true,
+      ),
+    );
+  }
+
+  Future<void> _captureAndAnalyzeFacePhoto() async {
+    if (_isAnalyzingFace) return;
+
+    final status = await Permission.camera.request();
+    if (status.isPermanentlyDenied) {
+      widget.onToast('Camera permission denied. Please enable it in Settings.');
+      await openAppSettings();
+      return;
+    }
+    if (!status.isGranted) {
+      widget.onToast('Camera permission is required for face scan.');
+      return;
+    }
+
+    XFile? photo;
+    try {
+      photo = await _facePicker.pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.front,
+      );
+    } catch (e) {
+      debugPrint('Face capture error: $e');
+      widget.onToast('Failed to capture face photo.');
+      return;
+    }
+    if (photo == null) return;
+
+    setState(() => _isAnalyzingFace = true);
+
+    try {
+      final imageFile = File(photo.path);
+      final inputImage = InputImage.fromFile(imageFile);
+      final faces = await _faceDetector.processImage(inputImage);
+
+      if (faces.isEmpty) {
+        widget.onToast('No face detected. Please try a clear, front-facing photo.');
+        setState(() => _isAnalyzingFace = false);
+        return;
+      }
+
+      final imageBytes = await imageFile.readAsBytes();
+      final decodedImage = img.decodeImage(imageBytes);
+      if (decodedImage == null) {
+        widget.onToast('Failed to process image.');
+        setState(() => _isAnalyzingFace = false);
+        return;
+      }
+
+      final face = faces.first;
+
+      // Extract facial features (mirrors onboarding3's _analyzeFaceAdvanced)
+      final faceShape = _analyzeFaceShape(face);
+      final skinToneData = _extractSkinTone(decodedImage, face);
+      final skinToneLabel = skinToneData['label'] as String;
+      final skinToneColor = skinToneData['color'] as Color;
+      final skinToneIndex = _nearestSkinToneIndex(skinToneColor);
+      final skinQuality = _calculateSkinQuality(decodedImage, face);
+      final acneData = _detectAcne(decodedImage, face);
+      final pigmentationData = _detectPigmentation(decodedImage, face);
+      final eyeShapeData = _analyzeEyeShape(face);
+      final lipColorData = _analyzeLipColor(decodedImage, face);
+      final darkerCircles = _detectDarkCircles(decodedImage, face);
+
+      final recommendations = _generateRecommendations(
+        skinToneLabel,
+        acneData['detected'] as bool,
+        pigmentationData['detected'] as bool,
+        eyeShapeData,
+        darkerCircles,
+        faceShape,
+      );
+
+      final analysisData = FaceAnalysisData(
+        faceDetected: true,
+        faceShape: faceShape,
+        skinTone: skinToneLabel,
+        skinToneColor: skinToneColor,
+        skinQuality: skinQuality,
+        acneDetected: acneData['detected'] as bool,
+        acneSeverity: acneData['severity'] as int,
+        pigmentationDetected: pigmentationData['detected'] as bool,
+        pigmentationIntensity: pigmentationData['intensity'] as double,
+        eyeShape: eyeShapeData,
+        eyeSize: _calculateEyeSize(face),
+        lipColor: lipColorData,
+        lipFullness: _calculateLipFullness(face),
+        darkerCircles: darkerCircles,
+        recommendations: recommendations,
+      );
+
+      setState(() {
+        _faceUploaded = true;
+        _faceAnalysisData = analysisData;
+        _draft = _draft.copyWith(
+          faceShape: faceShape,
+          skinTone: skinToneIndex,
+          avatarPath: _draft.avatarPath ?? imageFile.path,
+        );
+        _isAnalyzingFace = false;
+        _isDirty = true;
+      });
+
+      widget.onToast('Detected: $faceShape face shape');
+    } catch (e) {
+      debugPrint('Face analysis error: $e');
+      widget.onToast('Failed to analyze face. Please try again.');
+      setState(() => _isAnalyzingFace = false);
+    }
+  }
+
+  // ── Face Shape Analysis ─────────────────────────────────────────
+  // Uses the ML Kit face oval contour to compare forehead, cheekbone,
+  // and jaw widths against overall face length for a heuristic
+  // classification, matching the values in kFaceShapes.
+  String _analyzeFaceShape(Face face) {
+    try {
+      final faceContour = face.contours[FaceContourType.face];
+      final points = faceContour?.points;
+
+      if (points == null || points.length < 8) {
+        return _analyzeFaceShapeFromBoundingBox(face);
+      }
+
+      double minX = points.first.x.toDouble();
+      double maxX = points.first.x.toDouble();
+      double minY = points.first.y.toDouble();
+      double maxY = points.first.y.toDouble();
+
+      for (final p in points) {
+        final x = p.x.toDouble();
+        final y = p.y.toDouble();
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+
+      final faceLength = maxY - minY;
+      final faceWidth = maxX - minX;
+      if (faceWidth <= 0 || faceLength <= 0) return 'Oval';
+
+      final topThird = minY + faceLength * 0.33;
+      final bottomThird = minY + faceLength * 0.66;
+
+      double foreheadMinX = double.infinity, foreheadMaxX = -double.infinity;
+      double cheekMinX = double.infinity, cheekMaxX = -double.infinity;
+      double jawMinX = double.infinity, jawMaxX = -double.infinity;
+
+      for (final p in points) {
+        final x = p.x.toDouble();
+        final y = p.y.toDouble();
+        if (y <= topThird) {
+          if (x < foreheadMinX) foreheadMinX = x;
+          if (x > foreheadMaxX) foreheadMaxX = x;
+        } else if (y <= bottomThird) {
+          if (x < cheekMinX) cheekMinX = x;
+          if (x > cheekMaxX) cheekMaxX = x;
+        } else {
+          if (x < jawMinX) jawMinX = x;
+          if (x > jawMaxX) jawMaxX = x;
+        }
+      }
+
+      final foreheadWidth = (foreheadMaxX > foreheadMinX) ? foreheadMaxX - foreheadMinX : faceWidth;
+      final cheekWidth = (cheekMaxX > cheekMinX) ? cheekMaxX - cheekMinX : faceWidth;
+      final jawWidth = (jawMaxX > jawMinX) ? jawMaxX - jawMinX : faceWidth;
+
+      final lengthToWidthRatio = faceLength / faceWidth;
+      final jawToCheekRatio = jawWidth / cheekWidth;
+      final foreheadToJawRatio = foreheadWidth / jawWidth;
+
+      if (lengthToWidthRatio > 1.55) {
+        return 'Oblong';
+      } else if (foreheadToJawRatio > 1.15 && jawToCheekRatio < 0.85) {
+        return 'Heart';
+      } else if (cheekWidth > foreheadWidth * 1.08 && cheekWidth > jawWidth * 1.08) {
+        return 'Diamond';
+      } else if (jawToCheekRatio > 0.92 && foreheadWidth > cheekWidth * 0.92 && lengthToWidthRatio < 1.15) {
+        return 'Square';
+      } else if (jawToCheekRatio > 0.85 && lengthToWidthRatio < 1.3) {
+        return 'Round';
+      } else {
+        return 'Oval';
+      }
+    } catch (e) {
+      return _analyzeFaceShapeFromBoundingBox(face);
+    }
+  }
+
+  String _analyzeFaceShapeFromBoundingBox(Face face) {
+    try {
+      final ratio = face.boundingBox.height / face.boundingBox.width;
+      if (ratio > 1.4) return 'Oblong';
+      if (ratio < 1.15) return 'Round';
+      return 'Oval';
+    } catch (e) {
+      return 'Oval';
+    }
+  }
+
+  // ── Skin Tone Extraction (actual sampled color) ─────────────────
+  // Samples the forehead and both cheeks and averages them for a
+  // representative reading, returning the actual Color.
+  Map<String, dynamic> _extractSkinTone(img.Image image, Face face) {
+    const fallback = {'label': 'Medium', 'color': Color(0xFFC68863)};
+    try {
+      final bbox = face.boundingBox;
+
+      final samplePoints = <List<double>>[
+        [bbox.center.dx, bbox.top + bbox.height * 0.28], // forehead
+        [bbox.left + bbox.width * 0.28, bbox.top + bbox.height * 0.58], // left cheek
+        [bbox.right - bbox.width * 0.28, bbox.top + bbox.height * 0.58], // right cheek
+      ];
+
+      int rSum = 0, gSum = 0, bSum = 0, samples = 0;
+
+      for (final point in samplePoints) {
+        final x = (point[0] * image.width).toInt();
+        final y = (point[1] * image.height).toInt();
+        if (x < 0 || x >= image.width || y < 0 || y >= image.height) continue;
+
+        final pixel = image.getPixelSafe(x, y);
+        rSum += pixel.r.toInt();
+        gSum += pixel.g.toInt();
+        bSum += pixel.b.toInt();
+        samples++;
+      }
+
+      if (samples == 0) return fallback;
+
+      final avgR = (rSum / samples).round().clamp(0, 255);
+      final avgG = (gSum / samples).round().clamp(0, 255);
+      final avgB = (bSum / samples).round().clamp(0, 255);
+      final skinColor = Color.fromARGB(255, avgR, avgG, avgB);
+      final brightness = (avgR + avgG + avgB) / 3;
+
+      String label;
+      if (brightness > 200) {
+        label = 'Very Fair';
+      } else if (brightness > 170) {
+        label = 'Fair';
+      } else if (brightness > 140) {
+        label = 'Light Medium';
+      } else if (brightness > 110) {
+        label = 'Medium';
+      } else if (brightness > 80) {
+        label = 'Medium Deep';
+      } else if (brightness > 60) {
+        label = 'Deep';
+      } else {
+        label = 'Very Deep';
+      }
+
+      return {'label': label, 'color': skinColor};
+    } catch (e) {
+      return fallback;
+    }
+  }
+
+  // Maps a sampled skin color to the closest swatch in kSkinTones so it
+  // can populate ProfileState.skinTone (a 1-based index into that list).
+  int _nearestSkinToneIndex(Color sampled) {
+    int bestIndex = 0;
+    double bestDistance = double.infinity;
+
+    for (int i = 0; i < kSkinTones.length; i++) {
+      final swatch = kSkinTones[i];
+      final dr = sampled.red - swatch.red;
+      final dg = sampled.green - swatch.green;
+      final db = sampled.blue - swatch.blue;
+      final distance = (dr * dr + dg * dg + db * db).toDouble();
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = i;
+      }
+    }
+    return bestIndex + 1; // matches the 1-based convention used elsewhere
+  }
+
+  // ── Acne Detection ─────────────────────────────────────────────
+  Map<String, dynamic> _detectAcne(img.Image image, Face face) {
+    try {
+      final bbox = face.boundingBox;
+      final width = (bbox.width * image.width).toInt();
+      final height = (bbox.height * image.height).toInt();
+      final startX = (bbox.left * image.width).toInt().clamp(0, image.width - 1);
+      final startY = (bbox.top * image.height).toInt().clamp(0, image.height - 1);
+
+      int irregularPixels = 0;
+      int totalPixels = 0;
+
+      final regionWidth = (width * 0.8).toInt();
+      final regionHeight = (height * 0.7).toInt();
+
+      for (int x = startX; x < startX + regionWidth && x < image.width; x++) {
+        for (int y = startY; y < startY + regionHeight && y < image.height; y++) {
+          totalPixels++;
+          final pixel = image.getPixelSafe(x, y);
+          final r = pixel.r.toInt();
+          final g = pixel.g.toInt();
+          final b = pixel.b.toInt();
+
+          // Detect red spots (potential acne)
+          if (r > g + 30 && r > b + 30) {
+            irregularPixels++;
+          }
+        }
+      }
+
+      final acnePercentage = totalPixels > 0 ? (irregularPixels / totalPixels * 100).toInt() : 0;
+      final detected = acnePercentage > 5;
+      final severity = acnePercentage.clamp(0, 100);
+
+      return {
+        'detected': detected,
+        'severity': severity,
+      };
+    } catch (e) {
+      return {'detected': false, 'severity': 0};
+    }
+  }
+
+  // ── Pigmentation Detection ─────────────────────────────────────
+  Map<String, dynamic> _detectPigmentation(img.Image image, Face face) {
+    try {
+      final bbox = face.boundingBox;
+      final width = (bbox.width * image.width).toInt();
+      final height = (bbox.height * image.height).toInt();
+      final startX = (bbox.left * image.width).toInt().clamp(0, image.width - 1);
+      final startY = (bbox.top * image.height).toInt().clamp(0, image.height - 1);
+
+      double totalColorVariance = 0;
+      int sampleCount = 0;
+
+      for (int x = startX; x < startX + width && x < image.width; x += 5) {
+        for (int y = startY; y < startY + height && y < image.height; y += 5) {
+          sampleCount++;
+          final pixel = image.getPixelSafe(x, y);
+          final r = pixel.r.toDouble();
+          final g = pixel.g.toDouble();
+          final b = pixel.b.toDouble();
+
+          final variance = ((r - g).abs() + (g - b).abs() + (r - b).abs()) / 3;
+          totalColorVariance += variance;
+        }
+      }
+
+      final avgVariance = sampleCount > 0 ? totalColorVariance / sampleCount : 0;
+      final intensity = (avgVariance / 100).clamp(0.0, 1.0);
+      final detected = intensity > 0.3;
+
+      return {
+        'detected': detected,
+        'intensity': intensity,
+      };
+    } catch (e) {
+      return {'detected': false, 'intensity': 0.0};
+    }
+  }
+
+  // ── Eye Shape Analysis ────────────────────────────────────────
+  String _analyzeEyeShape(Face face) {
+    try {
+      if (face.landmarks.isEmpty) return 'Standard';
+
+      final leftEyeLandmark = face.landmarks.values.firstWhere(
+            (lm) => lm?.type == FaceLandmarkType.leftEye,
+        orElse: () => null,
+      );
+
+      if (leftEyeLandmark == null) return 'Standard';
+
+      final position = leftEyeLandmark.position;
+      if (position.y < face.boundingBox.top + face.boundingBox.height * 0.4) {
+        return 'Almond';
+      } else if (position.y > face.boundingBox.top + face.boundingBox.height * 0.45) {
+        return 'Hooded';
+      } else {
+        return 'Round';
+      }
+    } catch (e) {
+      return 'Standard';
+    }
+  }
+
+  // ── Eye Size Calculation ──────────────────────────────────────
+  double _calculateEyeSize(Face face) {
+    try {
+      if (face.landmarks.isEmpty) return 0.5;
+
+      final eyeWidth = face.boundingBox.width * 0.15;
+      return (eyeWidth / (face.boundingBox.width * 0.3)).clamp(0.0, 1.0);
+    } catch (e) {
+      return 0.5;
+    }
+  }
+
+  // ── Lip Color Analysis ────────────────────────────────────────
+  String _analyzeLipColor(img.Image image, Face face) {
+    try {
+      final bbox = face.boundingBox;
+      final centerX = (bbox.center.dx * image.width).toInt();
+      final centerY = (bbox.bottom * image.height * 0.95).toInt();
+
+      if (centerX < 0 || centerX >= image.width || centerY < 0 || centerY >= image.height) {
+        return 'Natural';
+      }
+
+      final pixel = image.getPixelSafe(centerX, centerY);
+      final r = pixel.r.toInt();
+      final g = pixel.g.toInt();
+      final b = pixel.b.toInt();
+
+      if (r > g + 20 && r > b + 20) {
+        return 'Deep Red/Pink';
+      } else if (r > g && r > b) {
+        return 'Warm Tone';
+      } else if (b > r && b > g) {
+        return 'Cool Tone';
+      } else {
+        return 'Natural';
+      }
+    } catch (e) {
+      return 'Natural';
+    }
+  }
+
+  // ── Lip Fullness Calculation ──────────────────────────────────
+  double _calculateLipFullness(Face face) {
+    try {
+      final lipsHeight = face.boundingBox.height * 0.08;
+      return (lipsHeight / (face.boundingBox.height * 0.15)).clamp(0.0, 1.0);
+    } catch (e) {
+      return 0.5;
+    }
+  }
+
+  // ── Dark Circles Detection ────────────────────────────────────
+  bool _detectDarkCircles(img.Image image, Face face) {
+    try {
+      final bbox = face.boundingBox;
+      final underEyeY = (bbox.top + bbox.height * 0.5).toInt();
+      final sampleX = (bbox.center.dx * image.width).toInt();
+
+      if (sampleX < 0 || sampleX >= image.width || underEyeY < 0 || underEyeY >= image.height) {
+        return false;
+      }
+
+      final pixel = image.getPixelSafe(sampleX, underEyeY);
+      final brightness = (pixel.r.toInt() + pixel.g.toInt() + pixel.b.toInt()) / 3;
+
+      return brightness < 100;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ── Skin Quality Calculation ──────────────────────────────────
+  double _calculateSkinQuality(img.Image image, Face face) {
+    try {
+      final acneData = _detectAcne(image, face);
+      final pigmentationData = _detectPigmentation(image, face);
+
+      double quality = 100.0;
+      quality -= (acneData['severity'] as int) * 0.5;
+      quality -= ((pigmentationData['intensity'] as double) * 100) * 0.3;
+
+      return quality.clamp(0.0, 100.0);
+    } catch (e) {
+      return 75.0;
+    }
+  }
+
+  // ── Generate Recommendations ──────────────────────────────────
+  List<String> _generateRecommendations(
+      String skinTone,
+      bool hasAcne,
+      bool hasPigmentation,
+      String eyeShape,
+      bool darkCircles,
+      String faceShape,
+      ) {
+    final recommendations = <String>[];
+
+    if (hasAcne) {
+      recommendations.add('Try acne-fighting products with salicylic acid');
+    }
+
+    if (hasPigmentation) {
+      recommendations.add('Consider vitamin C serums for brightening');
+    }
+
+    if (darkCircles) {
+      recommendations.add('Use eye creams with caffeine to reduce puffiness');
+    }
+
+    if (eyeShape == 'Hooded') {
+      recommendations.add('Highlight inner corner for wider eye appearance');
+    }
+
+    switch (faceShape) {
+      case 'Round':
+        recommendations.add('Contour cheeks softly to add definition');
+        break;
+      case 'Square':
+        recommendations.add('Soften angles with rounded blush placement');
+        break;
+      case 'Heart':
+        recommendations.add('Balance a wider forehead with soft, side-swept styling');
+        break;
+      case 'Oblong':
+        recommendations.add('Add visual width with horizontal blush placement');
+        break;
+      case 'Diamond':
+        recommendations.add('Highlight cheekbones — your strongest feature');
+        break;
+      default:
+        recommendations.add('Your balanced face shape suits most styles');
+    }
+
+    recommendations.add('Stay hydrated for healthy, glowing skin');
+
+    if (recommendations.isEmpty) {
+      recommendations.add('Your skin looks great! Maintain current routine');
+    }
+
+    return recommendations;
+  }
+
+  Widget _buildFaceShapeCard(
+      Map<String, String> shape,
+      bool isActive,
+      ThemeColors colors,
+      ) {
+    return GestureDetector(
+      onTap: () => setState(() {
+        _draft = _draft.copyWith(faceShape: shape['name']!);
+        _markDirty();
+      }),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isActive ? colors.accent1 : _cardBorder,
+            width: isActive ? 2 : 1,
+          ),
+          color: isActive ? colors.accent1.withOpacity(0.1) : _panel,
+        ),
+        child: Column(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(13),
+                ),
+                child: Image.asset(
+                  shape['img']!,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  errorBuilder: (_, _, _) =>
+                      Container(
+                        color: _card,
+                        child: Center(
+                          child: Icon(
+                            Icons.face_outlined,
+                            color: _textMuted,
+                            size: 36,
+                          ),
+                        ),
+                      ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                shape['name']!,
+                style: TextStyle(
+                  color: isActive ? colors.accent1 : _textMuted,
+                  fontSize: 11,
+                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildBodyShapeCard(
-    Map<String, String> shape,
-    bool isActive,
-    ThemeColors colors,
-  ) {
+      Map<String, String> shape,
+      bool isActive,
+      ThemeColors colors,
+      ) {
     return GestureDetector(
       onTap: () => setState(() {
         _draft = _draft.copyWith(bodyShape: shape['name']!);
@@ -2251,8 +3042,19 @@ class _EditViewState extends State<_EditView>
                   shape['img']!,
                   fit: BoxFit.cover,
                   width: double.infinity,
+                  // ✅ FIX: Changed from filled Icons.person to outline version
+                  // and wrapped in Container with proper centering
                   errorBuilder: (_, _, _) =>
-                      Icon(Icons.person, color: _textMuted, size: 36),
+                      Container(
+                        color: _card,
+                        child: Center(
+                          child: Icon(
+                            Icons.person_outline,
+                            color: _textMuted,
+                            size: 36,
+                          ),
+                        ),
+                      ),
                 ),
               ),
             ),
@@ -2312,10 +3114,10 @@ class _EditViewState extends State<_EditView>
   }
 
   void _showDobPicker(
-    String title,
-    List<String> options,
-    ValueChanged<String?> onChanged,
-  ) {
+      String title,
+      List<String> options,
+      ValueChanged<String?> onChanged,
+      ) {
     int tempIndex = 0;
     showModalBottomSheet(
       context: context,
@@ -2370,12 +3172,12 @@ class _EditViewState extends State<_EditView>
                 children: options
                     .map(
                       (o) => Center(
-                        child: Text(
-                          o,
-                          style: TextStyle(color: _textPrimary, fontSize: 15),
-                        ),
-                      ),
-                    )
+                    child: Text(
+                      o,
+                      style: TextStyle(color: _textPrimary, fontSize: 15),
+                    ),
+                  ),
+                )
                     .toList(),
               ),
             ),
@@ -2386,11 +3188,11 @@ class _EditViewState extends State<_EditView>
   }
 
   Widget _buildDobDropdown(
-    String hint,
-    String? value,
-    List<String> options,
-    ValueChanged<String?> onChanged,
-  ) {
+      String hint,
+      String? value,
+      List<String> options,
+      ValueChanged<String?> onChanged,
+      ) {
     final isSelected = value != null;
     return GestureDetector(
       onTap: () => _showDobPicker(hint, options, onChanged),
@@ -2407,12 +3209,12 @@ class _EditViewState extends State<_EditView>
           borderRadius: BorderRadius.circular(14),
           boxShadow: isSelected
               ? [
-                  BoxShadow(
-                    color: c.accent1.withOpacity(0.15),
-                    blurRadius: 12,
-                    spreadRadius: 3,
-                  ),
-                ]
+            BoxShadow(
+              color: c.accent1.withOpacity(0.15),
+              blurRadius: 12,
+              spreadRadius: 3,
+            ),
+          ]
               : [],
         ),
         child: Row(
@@ -2509,7 +3311,12 @@ class _EditViewState extends State<_EditView>
     }
   }
 
-  void _save() {
+  bool _saving = false;
+
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+
     final name = _nameCtrl.text.trim().isEmpty
         ? 'New User'
         : _nameCtrl.text.trim();
@@ -2522,14 +3329,56 @@ class _EditViewState extends State<_EditView>
     final dob = (_dobDay != null && _dobMonth != null && _dobYear != null)
         ? '$_dobDay $_dobMonth $_dobYear'
         : _dobCtrl.text.trim();
-    widget.onSave(
-      _draft.copyWith(
-        name: name,
-        email: _emailCtrl.text.trim(),
-        phone: phone,
-        dob: dob,
-      ),
+
+    final updatedDraft = _draft.copyWith(
+      name: name,
+      email: _emailCtrl.text.trim(),
+      phone: phone,
+      dob: dob,
     );
+
+    // ── STEP 1: Sync to Appwrite DB ─────────────────────────────────────────
+    try {
+      final appwrite = Provider.of<AppwriteService>(context, listen: false);
+      await appwrite.updateCurrentUserProfileFields({
+        'name': name,
+        'email': updatedDraft.email,
+        'phone': phone,
+        'dob': dob,
+        'gender': updatedDraft.gender,
+        'skinTone': updatedDraft.skinTone,
+        'faceShape': updatedDraft.faceShape,
+        'bodyShape': updatedDraft.bodyShape,
+        'stylePreferences': updatedDraft.styles.toList(),
+        'shopPrefs': updatedDraft.shopPrefs.toList(),
+      });
+      // Also update the Appwrite Auth account name so account.get() stays fresh
+      await appwrite.account.updateName(name: name);
+    } catch (e) {
+      debugPrint('AHVI_PROFILE_SAVE_APPWRITE_ERROR: $e');
+      // Don't block the UI — fall through to update local state anyway
+    }
+
+    // ── STEP 2: Overwrite SharedPreferences cache ────────────────────────────
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('userName', name);
+      await prefs.setString('userEmail', updatedDraft.email);
+      await prefs.setString('userPhone', phone);
+      await prefs.setString('userDob', dob);
+      await prefs.setString('userGender', updatedDraft.gender);
+      await prefs.setInt('userSkinTone', updatedDraft.skinTone);
+      await prefs.setString('userFaceShape', updatedDraft.faceShape);
+      await prefs.setString('userBodyShape', updatedDraft.bodyShape);
+      await prefs.setStringList('userStyles', updatedDraft.styles.toList());
+      await prefs.setStringList('userShopPrefs', updatedDraft.shopPrefs.toList());
+    } catch (e) {
+      debugPrint('AHVI_PROFILE_SAVE_PREFS_ERROR: $e');
+    }
+
+    // ── STEP 3: Update Provider state → instant UI refresh ──────────────────
+    if (mounted) setState(() => _saving = false);
+    widget.onSave(updatedDraft);
   }
 
   void _showDiscardModal() {
@@ -2810,7 +3659,7 @@ class _EditViewState extends State<_EditView>
                               'Day',
                               _dobDay,
                               List.generate(31, (i) => '${i + 1}'),
-                              (val) => setState(() {
+                                  (val) => setState(() {
                                 _dobDay = val;
                                 _markDirty();
                               }),
@@ -2835,7 +3684,7 @@ class _EditViewState extends State<_EditView>
                                 'November',
                                 'December',
                               ],
-                              (val) => setState(() {
+                                  (val) => setState(() {
                                 _dobMonth = val;
                                 _markDirty();
                               }),
@@ -2848,15 +3697,74 @@ class _EditViewState extends State<_EditView>
                               _dobYear,
                               List.generate(
                                 100,
-                                (i) => '${DateTime.now().year - 13 - i}',
+                                    (i) => '${DateTime.now().year - 13 - i}',
                               ),
-                              (val) => setState(() {
+                                  (val) => setState(() {
                                 _dobYear = val;
                                 _markDirty();
                               }),
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      // ── Gender (onboarding1-style pill selector) ──
+                      // Was previously missing here — ProfileState already
+                      // stored `gender`, but there was no UI to view/edit it
+                      // after onboarding. Options match onboarding1 exactly.
+                      _FieldLabel(text: _t.gender, textMuted: _textMuted),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: List.generate(3, (i) {
+                          const genders = ['Male', 'Female', 'Others'];
+                          final label = genders[i];
+                          final isActive = _draft.gender == label;
+                          return Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                right: i < genders.length - 1 ? 8 : 0,
+                              ),
+                              child: GestureDetector(
+                                onTap: () => setState(() {
+                                  _draft = _draft.copyWith(gender: label);
+                                  _markDirty();
+                                }),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isActive
+                                        ? c.accent1.withOpacity(0.13)
+                                        : _panel,
+                                    border: Border.all(
+                                      color: isActive
+                                          ? c.accent1
+                                          : _cardBorder,
+                                      width: isActive ? 1.5 : 1,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    label,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: isActive
+                                          ? FontWeight.w600
+                                          : FontWeight.w500,
+                                      color: isActive
+                                          ? _textPrimary
+                                          : _textMuted,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
                       ),
                       const SizedBox(height: 14),
 
@@ -2882,9 +3790,9 @@ class _EditViewState extends State<_EditView>
                                 border: active
                                     ? Border.all(color: c.accent1, width: 3)
                                     : Border.all(
-                                        color: Colors.transparent,
-                                        width: 3,
-                                      ),
+                                  color: Colors.transparent,
+                                  width: 3,
+                                ),
                               ),
                               transform: active
                                   ? (Matrix4.identity()..scale(1.15))
@@ -2901,16 +3809,16 @@ class _EditViewState extends State<_EditView>
                         textMuted: _textMuted,
                       ),
                       const SizedBox(height: 6),
-                      () {
+                          () {
                         final bool womenSelected =
                             _draft.shopPrefs.length == 1 &&
-                            _draft.shopPrefs.contains('Women');
+                                _draft.shopPrefs.contains('Women');
                         final bool menSelected =
                             _draft.shopPrefs.length == 1 &&
-                            _draft.shopPrefs.contains('Men');
+                                _draft.shopPrefs.contains('Men');
                         final bool bothSelected =
                             _draft.shopPrefs.contains('Women') &&
-                            _draft.shopPrefs.contains('Men');
+                                _draft.shopPrefs.contains('Men');
                         bool isCardActive(String label) {
                           if (label == 'Women') return womenSelected;
                           if (label == 'Men') return menSelected;
@@ -2960,7 +3868,7 @@ class _EditViewState extends State<_EditView>
                                       _bodyGender = 'men';
                                       _draft = _draft.copyWith(
                                         bodyShape:
-                                            kBodyShapes['men']!.first['name']!,
+                                        kBodyShapes['men']!.first['name']!,
                                       );
                                     }
                                     _markDirty();
@@ -2990,7 +3898,7 @@ class _EditViewState extends State<_EditView>
                                             fit: BoxFit.cover,
                                             alignment: Alignment.topCenter,
                                             errorBuilder: (_, _, _) =>
-                                                const SizedBox(),
+                                            const SizedBox(),
                                           ),
                                           Container(
                                             decoration: BoxDecoration(
@@ -3015,9 +3923,9 @@ class _EditViewState extends State<_EditView>
                                                   if (isActive)
                                                     Padding(
                                                       padding:
-                                                          const EdgeInsets.only(
-                                                            right: 4,
-                                                          ),
+                                                      const EdgeInsets.only(
+                                                        right: 4,
+                                                      ),
                                                       child: Icon(
                                                         Icons.check_circle,
                                                         color: c.accent1,
@@ -3030,7 +3938,7 @@ class _EditViewState extends State<_EditView>
                                                       color: Colors.white,
                                                       fontSize: 12,
                                                       fontWeight:
-                                                          FontWeight.w600,
+                                                      FontWeight.w600,
                                                     ),
                                                   ),
                                                 ],
@@ -3051,7 +3959,7 @@ class _EditViewState extends State<_EditView>
                       // ── Body Shape — onboarding1 exact: both → Women+Men sections separately ──
                       _ProfileBodyShapeReveal(
                         visible:
-                            _draft.shopPrefs.contains('Women') ||
+                        _draft.shopPrefs.contains('Women') ||
                             _draft.shopPrefs.contains('Men'),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -3132,19 +4040,19 @@ class _EditViewState extends State<_EditView>
                                 mainAxisSpacing: 10,
                                 childAspectRatio: 0.65,
                                 children:
-                                    kBodyShapes[_bodyGender == 'both'
-                                            ? 'women'
-                                            : _bodyGender]!
-                                        .map((shape) {
-                                          final isActive =
-                                              _draft.bodyShape == shape['name'];
-                                          return _buildBodyShapeCard(
-                                            shape,
-                                            isActive,
-                                            c,
-                                          );
-                                        })
-                                        .toList(),
+                                kBodyShapes[_bodyGender == 'both'
+                                    ? 'women'
+                                    : _bodyGender]!
+                                    .map((shape) {
+                                  final isActive =
+                                      _draft.bodyShape == shape['name'];
+                                  return _buildBodyShapeCard(
+                                    shape,
+                                    isActive,
+                                    c,
+                                  );
+                                })
+                                    .toList(),
                               ),
                           ],
                         ),
@@ -3284,7 +4192,7 @@ class _EditViewState extends State<_EditView>
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                      CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           _t.personalizedFitPreview,
@@ -3400,8 +4308,12 @@ class _EditViewState extends State<_EditView>
                       _TryOnUploadRow(
                         title: _t.uploadFacePhoto,
                         subtitle:
-                            'Used only to enhance facial fit and styling.',
+                        'Used only to enhance facial fit and styling.',
                         uploaded: _faceUploaded,
+                        isAnalyzing: _isAnalyzingFace,
+                        resultLabel: _faceUploaded
+                            ? '${_draft.faceShape} face detected'
+                            : null,
                         isFace: true,
                         colors: c,
                         card: _card,
@@ -3409,11 +4321,20 @@ class _EditViewState extends State<_EditView>
                         panel: _panel,
                         textPrimary: _textPrimary,
                         textMuted: _textMuted,
-                        onTap: () => setState(() {
-                          _faceUploaded = !_faceUploaded;
-                          _markDirty();
-                        }),
+                        onTap: _captureAndAnalyzeFacePhoto,
                       ),
+                      if (_faceAnalysisData != null) ...[
+                        const SizedBox(height: 12),
+                        _FaceAnalysisPreview(
+                          data: _faceAnalysisData!,
+                          colors: c,
+                          card: _card,
+                          cardBorder: _cardBorder,
+                          textPrimary: _textPrimary,
+                          textMuted: _textMuted,
+                          isDark: _draft.isDark,
+                        ),
+                      ],
                       const SizedBox(height: 12),
 
                       // Body upload row
@@ -3513,18 +4434,18 @@ class _EditViewState extends State<_EditView>
                   : tab == 1
                   ? '${_t.tryOn}  →'
                   : _t.profileUpdated.replaceAll('✓ ', '');
-              final canTap = isLastTab ? _isDirty : true;
+              final canTap = isLastTab ? (_isDirty && !_saving) : true;
               return Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 child: GestureDetector(
                   onTap: canTap
                       ? () {
-                          if (isLastTab) {
-                            _save();
-                          } else {
-                            _tabController.animateTo(tab + 1);
-                          }
-                        }
+                    if (isLastTab) {
+                      _save();
+                    } else {
+                      _tabController.animateTo(tab + 1);
+                    }
+                  }
                       : null,
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 200),
@@ -3550,7 +4471,17 @@ class _EditViewState extends State<_EditView>
                       alignment: Alignment.center,
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 220),
-                        child: Text(
+                        child: (_saving && isLastTab)
+                            ? SizedBox(
+                          key: const ValueKey('saving'),
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.2,
+                            color: _textPrimary,
+                          ),
+                        )
+                            : Text(
                           label,
                           key: ValueKey(tab),
                           style: TextStyle(
@@ -3652,17 +4583,17 @@ class _AvatarWidget extends StatelessWidget {
               child: state.avatarPath != null
                   ? Image.file(File(state.avatarPath!), fit: BoxFit.cover)
                   : Center(
-                      child: Text(
-                        (state.name.isEmpty ? 'C' : state.name[0])
-                            .toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 30,
-                          fontWeight: FontWeight.w300,
-                          color: colors.accent1,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                    ),
+                child: Text(
+                  (state.name.isEmpty ? 'C' : state.name[0])
+                      .toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w300,
+                    color: colors.accent1,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ),
             ),
           ),
           // Camera badge
@@ -3766,8 +4697,8 @@ class _SectionGroup extends StatelessWidget {
         children: children
             .map(
               (c) =>
-                  Padding(padding: const EdgeInsets.only(bottom: 3), child: c),
-            )
+              Padding(padding: const EdgeInsets.only(bottom: 3), child: c),
+        )
             .toList(),
       ),
     );
@@ -3932,19 +4863,19 @@ class _ThemeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final themes = [
       (
-        AppTheme.coolBlue,
-        'Cool Blue',
-        [const Color(0xFF6B91FF), const Color(0xFF04D7C8)],
+      AppTheme.coolBlue,
+      'Cool Blue',
+      [const Color(0xFF6B91FF), const Color(0xFF04D7C8)],
       ),
       (
-        AppTheme.sunsetPop,
-        'Sunset Pop',
-        [const Color(0xFFFF9E66), const Color(0xFFFF8EC7)],
+      AppTheme.sunsetPop,
+      'Sunset Pop',
+      [const Color(0xFFFF9E66), const Color(0xFFFF8EC7)],
       ),
       (
-        AppTheme.futureCandy,
-        'Future Candy',
-        [const Color(0xFFFF8EC7), const Color(0xFF04D7C8)],
+      AppTheme.futureCandy,
+      'Future Candy',
+      [const Color(0xFFFF8EC7), const Color(0xFF04D7C8)],
       ),
     ];
 
@@ -3963,11 +4894,11 @@ class _ThemeRow extends StatelessWidget {
                 borderRadius: BorderRadius.circular(9),
                 boxShadow: active
                     ? [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.20),
-                          blurRadius: 8,
-                        ),
-                      ]
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.20),
+                    blurRadius: 8,
+                  ),
+                ]
                     : [],
               ),
               child: Row(
@@ -4169,11 +5100,11 @@ class _PrefCard extends StatelessWidget {
           ),
           boxShadow: active
               ? [
-                  BoxShadow(
-                    color: colors.accent1.withOpacity(0.28),
-                    blurRadius: 8,
-                  ),
-                ]
+            BoxShadow(
+              color: colors.accent1.withOpacity(0.28),
+              blurRadius: 8,
+            ),
+          ]
               : [],
         ),
         clipBehavior: Clip.hardEdge,
@@ -4277,11 +5208,11 @@ class _StyleImgCard extends StatelessWidget {
           ),
           boxShadow: active
               ? [
-                  BoxShadow(
-                    color: colors.accent1.withOpacity(0.30),
-                    blurRadius: 8,
-                  ),
-                ]
+            BoxShadow(
+              color: colors.accent1.withOpacity(0.30),
+              blurRadius: 8,
+            ),
+          ]
               : [],
         ),
         clipBehavior: Clip.hardEdge,
@@ -4362,6 +5293,8 @@ class _TryOnUploadRow extends StatelessWidget {
   final String subtitle;
   final bool uploaded;
   final bool isFace;
+  final bool isAnalyzing;
+  final String? resultLabel;
   final ThemeColors colors;
   final Color card, cardBorder, panel, textPrimary, textMuted;
   final VoidCallback onTap;
@@ -4371,6 +5304,8 @@ class _TryOnUploadRow extends StatelessWidget {
     required this.subtitle,
     required this.uploaded,
     required this.isFace,
+    this.isAnalyzing = false,
+    this.resultLabel,
     required this.colors,
     required this.card,
     required this.cardBorder,
@@ -4398,19 +5333,19 @@ class _TryOnUploadRow extends StatelessWidget {
           border: Border.all(color: borderColor),
           boxShadow: uploaded
               ? [
-                  BoxShadow(
-                    color: colors.accent1.withOpacity(0.15),
-                    blurRadius: 20,
-                    offset: const Offset(0, 4),
-                  ),
-                ]
+            BoxShadow(
+              color: colors.accent1.withOpacity(0.15),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+            ),
+          ]
               : [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           children: [
@@ -4428,7 +5363,16 @@ class _TryOnUploadRow extends StatelessWidget {
                       : cardBorder,
                 ),
               ),
-              child: Icon(
+              child: isAnalyzing
+                  ? SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: colors.accent1,
+                ),
+              )
+                  : Icon(
                 isFace
                     ? Icons.person_outline
                     : Icons.accessibility_new_outlined,
@@ -4452,7 +5396,16 @@ class _TryOnUploadRow extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 3),
-                  if (!uploaded)
+                  if (isAnalyzing)
+                    Text(
+                      'Analyzing…',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colors.accent1,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    )
+                  else if (!uploaded)
                     Text(
                       subtitle,
                       style: TextStyle(
@@ -4462,13 +5415,13 @@ class _TryOnUploadRow extends StatelessWidget {
                         height: 1.4,
                       ),
                     ),
-                  if (uploaded)
+                  if (uploaded && !isAnalyzing)
                     Row(
                       children: [
                         Icon(Icons.check, color: colors.accent2, size: 12),
                         const SizedBox(width: 5),
                         Text(
-                          'Photo added · encrypted',
+                          resultLabel ?? 'Photo added · encrypted',
                           style: TextStyle(
                             fontSize: 11,
                             color: colors.accent2,
@@ -4507,6 +5460,318 @@ class _TryOnUploadRow extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FACE ANALYSIS PREVIEW  (mirrors onboarding3.dart's _FaceAnalysisPreview)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FaceAnalysisPreview extends StatelessWidget {
+  final FaceAnalysisData data;
+  final ThemeColors colors;
+  final Color card, cardBorder, textPrimary, textMuted;
+  final bool isDark;
+
+  const _FaceAnalysisPreview({
+    required this.data,
+    required this.colors,
+    required this.card,
+    required this.cardBorder,
+    required this.textPrimary,
+    required this.textMuted,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final danger = isDark ? const Color(0xFFFF6B6E) : const Color(0xFFE5484D);
+    final warning = isDark ? const Color(0xFFFFC94D) : const Color(0xFFF5A524);
+    final statusPurple =
+    isDark ? const Color(0xFFA78BFA) : const Color(0xFF8B5CF6);
+    final statusPink =
+    isDark ? const Color(0xFFF472B6) : const Color(0xFFEC4899);
+    final recommendationBg =
+    isDark ? const Color(0xFF3A2E12) : const Color(0xFFFFF8E8);
+    final recommendationBorder =
+    isDark ? const Color(0xFF5C4720) : const Color(0xFFFFE5B4);
+    final recommendationTitle =
+    isDark ? const Color(0xFFFFC66D) : const Color(0xFFD97706);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cardBorder, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '✨ Face Analysis Results',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: textPrimary,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Skin Analysis Section
+          _AnalysisSection(
+            title: '🎨 Skin Profile',
+            textPrimary: textPrimary,
+            textMuted: textMuted,
+            cardBorder: cardBorder,
+            items: [
+              _AnalysisItem(
+                label: 'Skin Tone',
+                value: data.skinTone,
+                icon: '🌿',
+                color: colors.accent3,
+                swatchColor: data.skinToneColor,
+              ),
+              _AnalysisItem(
+                label: 'Skin Quality',
+                value: '${data.skinQuality.toStringAsFixed(0)}%',
+                icon: '✨',
+                color: colors.accent1,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Acne & Pigmentation Section
+          _AnalysisSection(
+            title: '🔍 Skin Conditions',
+            textPrimary: textPrimary,
+            textMuted: textMuted,
+            cardBorder: cardBorder,
+            items: [
+              _AnalysisItem(
+                label: 'Acne Status',
+                value: data.acneDetected
+                    ? 'Detected (${data.acneSeverity}%)'
+                    : 'Clear',
+                icon: data.acneDetected ? '⚠️' : '✅',
+                color: data.acneDetected ? danger : colors.accent3,
+              ),
+              _AnalysisItem(
+                label: 'Pigmentation',
+                value: data.pigmentationDetected ? 'Present' : 'Even',
+                icon: data.pigmentationDetected ? '⚠️' : '✅',
+                color: data.pigmentationDetected ? warning : colors.accent3,
+              ),
+              if (data.darkerCircles)
+                _AnalysisItem(
+                  label: 'Dark Circles',
+                  value: 'Detected',
+                  icon: '👁️',
+                  color: statusPurple,
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Eye & Lip Section
+          _AnalysisSection(
+            title: '👁️ Facial Features',
+            textPrimary: textPrimary,
+            textMuted: textMuted,
+            cardBorder: cardBorder,
+            items: [
+              _AnalysisItem(
+                label: 'Face Shape',
+                value: data.faceShape,
+                icon: '🧑',
+                color: colors.accent1,
+              ),
+              _AnalysisItem(
+                label: 'Eye Shape',
+                value: data.eyeShape,
+                icon: '👁️',
+                color: colors.accent2,
+              ),
+              _AnalysisItem(
+                label: 'Eye Size',
+                value: _getSizeLabel(data.eyeSize),
+                icon: '💫',
+                color: colors.accent2,
+              ),
+              _AnalysisItem(
+                label: 'Lip Color',
+                value: data.lipColor,
+                icon: '💋',
+                color: statusPink,
+              ),
+              _AnalysisItem(
+                label: 'Lip Fullness',
+                value: _getSizeLabel(data.lipFullness),
+                icon: '✨',
+                color: statusPink,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Recommendations Section
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: recommendationBg,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: recommendationBorder, width: 1),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '💡 Personalized Recommendations',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: recommendationTitle,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...data.recommendations.map(
+                      (rec) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('• ', style: TextStyle(color: textMuted)),
+                        Expanded(
+                          child: Text(
+                            rec,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: textMuted,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getSizeLabel(double size) {
+    if (size < 0.3) return 'Small';
+    if (size < 0.6) return 'Medium';
+    if (size < 0.8) return 'Large';
+    return 'Very Large';
+  }
+}
+
+class _AnalysisSection extends StatelessWidget {
+  final String title;
+  final List<_AnalysisItem> items;
+  final Color textPrimary, textMuted, cardBorder;
+
+  const _AnalysisSection({
+    required this.title,
+    required this.items,
+    required this.textPrimary,
+    required this.textMuted,
+    required this.cardBorder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: textMuted,
+            letterSpacing: 0.3,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...items.map(
+              (item) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Text(item.icon, style: const TextStyle(fontSize: 16)),
+                      const SizedBox(width: 8),
+                      Text(
+                        item.label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: textPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (item.swatchColor != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 14,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            color: item.swatchColor,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: cardBorder, width: 1),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Container(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: item.color.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    item.value,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: item.color,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AnalysisItem {
+  final String label;
+  final String value;
+  final String icon;
+  final Color color;
+  final Color? swatchColor; // Optional actual color dot (e.g. skin tone)
+
+  _AnalysisItem({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+    this.swatchColor,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4549,11 +5814,11 @@ class _ProfileBodyShapeRevealState extends State<_ProfileBodyShapeReveal>
     // Slide: comes from slightly below (positive y = down)
     _slide = Tween<Offset>(begin: const Offset(0, 0.12), end: Offset.zero)
         .animate(
-          CurvedAnimation(
-            parent: _ctrl,
-            curve: const Interval(0.0, 0.85, curve: Curves.easeOutCubic),
-          ),
-        );
+      CurvedAnimation(
+        parent: _ctrl,
+        curve: const Interval(0.0, 0.85, curve: Curves.easeOutCubic),
+      ),
+    );
 
     // Subtle scale: grows from 0.95 → 1.0
     _scale = Tween<double>(begin: 0.95, end: 1.0).animate(
@@ -4593,16 +5858,16 @@ class _ProfileBodyShapeRevealState extends State<_ProfileBodyShapeReveal>
           child: _ctrl.isDismissed
               ? const SizedBox.shrink()
               : FadeTransition(
-                  opacity: _fade,
-                  child: SlideTransition(
-                    position: _slide,
-                    child: ScaleTransition(
-                      scale: _scale,
-                      alignment: Alignment.topCenter,
-                      child: widget.child,
-                    ),
-                  ),
-                ),
+            opacity: _fade,
+            child: SlideTransition(
+              position: _slide,
+              child: ScaleTransition(
+                scale: _scale,
+                alignment: Alignment.topCenter,
+                child: widget.child,
+              ),
+            ),
+          ),
         );
       },
     );
@@ -4669,7 +5934,7 @@ class _LanguageSheet extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           ...kLanguages.map(
-            (l) => GestureDetector(
+                (l) => GestureDetector(
               onTap: () => onSelect(l),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 13),
@@ -4986,7 +6251,7 @@ class _ProfileCountryDropdownState extends State<_ProfileCountryDropdown> {
                         final country = filtered[i];
                         final isSelected =
                             country['code'] == widget.selectedCode &&
-                            country['flag'] == widget.selectedFlag;
+                                country['flag'] == widget.selectedFlag;
                         return GestureDetector(
                           onTap: () => widget.onSelected(country),
                           child: Container(

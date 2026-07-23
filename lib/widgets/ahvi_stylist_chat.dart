@@ -509,6 +509,22 @@ Future<void> showAhviStylistChatSheet(
       Future<void> Function()? onRefresh,
       String? initialPrompt,
     }) {
+  final normalizedModuleContext = moduleContext.trim().toLowerCase();
+  if (normalizedModuleContext == 'style') {
+    return Navigator.of(context, rootNavigator: true).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => _AhviStylistChatSheet(
+          moduleContext: normalizedModuleContext,
+          contextData: contextData,
+          rootContext: context,
+          onRefresh: onRefresh,
+          initialPrompt: initialPrompt,
+          isFullScreen: true,
+        ),
+      ),
+    );
+  }
+
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -524,11 +540,12 @@ Future<void> showAhviStylistChatSheet(
         child: SizedBox(
           height: sheetH,
           child: _AhviStylistChatSheet(
-            moduleContext: moduleContext,
+            moduleContext: normalizedModuleContext,
             contextData: contextData,
             rootContext: context,
             onRefresh: onRefresh,
             initialPrompt: initialPrompt,
+            isFullScreen: false,
           ),
         ),
       );
@@ -656,6 +673,7 @@ class _AhviStylistChatSheet extends StatefulWidget {
   final BuildContext rootContext;
   final Future<void> Function()? onRefresh;
   final String? initialPrompt;
+  final bool isFullScreen;
 
   const _AhviStylistChatSheet({
     this.moduleContext = 'style',
@@ -663,6 +681,7 @@ class _AhviStylistChatSheet extends StatefulWidget {
     required this.rootContext,
     this.onRefresh,
     this.initialPrompt,
+    required this.isFullScreen,
   });
 
   @override
@@ -1674,14 +1693,13 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
     final double attachH = _pendingAttachment != null ? 52.0 : 0.0;
     final double inputAreaH = promptBarH + chipsH + attachH + 8.0;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      resizeToAvoidBottomInset: false,
-      body: Container(
+    final content = Container(
         decoration: BoxDecoration(
           color: t.backgroundPrimary,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          border: Border.all(color: t.cardBorder),
+          borderRadius: widget.isFullScreen
+              ? null
+              : const BorderRadius.vertical(top: Radius.circular(28)),
+          border: widget.isFullScreen ? null : Border.all(color: t.cardBorder),
         ),
         child: Stack(
           children: [
@@ -1689,15 +1707,18 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
             Column(
               children: [
                 // ── Handle ─────────────────────────────────────────
-                const SizedBox(height: 8),
-                Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: t.panelBorder,
-                    borderRadius: BorderRadius.circular(2),
+                if (!widget.isFullScreen) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    key: const ValueKey('ahvi-chat-modal-drag-handle'),
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: t.panelBorder,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
+                ],
                 // ── Header ─────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
@@ -1772,9 +1793,11 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
               child: Container(
                 decoration: BoxDecoration(
                   color: t.phoneShellInner,
-                  borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(28),
-                  ),
+                  borderRadius: widget.isFullScreen
+                      ? null
+                      : const BorderRadius.vertical(
+                          bottom: Radius.circular(28),
+                        ),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1878,7 +1901,13 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
             Positioned(top: 0, bottom: 0, left: 0, child: _historyPanel()),
           ],
         ),
-      ),
+      );
+
+    return Scaffold(
+      backgroundColor:
+          widget.isFullScreen ? t.backgroundPrimary : Colors.transparent,
+      resizeToAvoidBottomInset: widget.isFullScreen,
+      body: widget.isFullScreen ? SafeArea(child: content) : content,
     );
   }
 }

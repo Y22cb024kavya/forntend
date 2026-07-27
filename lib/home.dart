@@ -688,7 +688,9 @@ class _Screen4State extends State<Screen4> with TickerProviderStateMixin, Widget
   Future<void> _fetchCalendarSignal() async {
     try {
       final backend = Provider.of<BackendService>(context, listen: false);
-      final raw = await backend.getTodayCalendarEvents().timeout(
+      final raw = await backend
+          .getTodayCalendarEvents(surface: CalendarListSurface.homeToday)
+          .timeout(
         const Duration(seconds: 8),
         onTimeout: () => [],
       );

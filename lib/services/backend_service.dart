@@ -13,20 +13,6 @@ Map<String, dynamic> _parseJsonMap(String payload) => Map<String, dynamic>.from(
 
 String _encodeBytes(Uint8List bytes) => base64Encode(bytes);
 
-List<Map<String, dynamic>> _calendarEventMaps(Object? value) {
-  if (value is! List) return <Map<String, dynamic>>[];
-  final events = <Map<String, dynamic>>[];
-  for (final raw in value) {
-    final event = calendarJsonMap(raw);
-    if (event == null) {
-      debugPrint('AHVI_CALENDAR_PARSE_SKIPPED event_id=unknown field=event');
-      continue;
-    }
-    events.add(event);
-  }
-  return events;
-}
-
 String canonicalModuleChatDomain(
   String domain, {
   bool plannerRequest = false,
@@ -1312,8 +1298,15 @@ class BackendService {
     DateTime? startTime,
     DateTime? endTime,
     int limit = 200,
+    CalendarListSurface surface = CalendarListSurface.calendar,
   }) async {
-    debugPrint('AHVI_CALENDAR_LIST_START');
+    debugPrint(
+      calendarListStartDiagnostic(
+        surface: surface,
+        from: startTime,
+        to: endTime,
+      ),
+    );
     try {
       final params = <String, String>{
         'limit': limit.toString(),
@@ -1331,9 +1324,14 @@ class BackendService {
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = await compute(_parseJsonMap, response.body);
-        final events = _calendarEventMaps(data['events']);
-        debugPrint('AHVI_CALENDAR_LIST_OK count=${events.length}');
-        return events;
+        final batch = CalendarEventBatch.parse(
+          data['events'],
+          onSkipped: (eventId, field) => debugPrint(
+            'AHVI_CALENDAR_PARSE_SKIPPED event_id=$eventId field=$field',
+          ),
+        );
+        debugPrint(calendarListOkDiagnostic(surface: surface, batch: batch));
+        return batch.events;
       }
 
       debugPrint(
@@ -1348,10 +1346,15 @@ class BackendService {
 
   Future<List<Map<String, dynamic>>> getTodayCalendarEvents({
     DateTime? date,
+    CalendarListSurface surface = CalendarListSurface.homeToday,
   }) async {
-    debugPrint('AHVI_CALENDAR_LIST_START');
+    final day = date ?? DateTime.now();
+    final from = DateTime(day.year, day.month, day.day);
+    final to = from.add(const Duration(days: 1));
+    debugPrint(
+      calendarListStartDiagnostic(surface: surface, from: from, to: to),
+    );
     try {
-      final day = date ?? DateTime.now();
       final yyyy = day.year.toString().padLeft(4, '0');
       final mm = day.month.toString().padLeft(2, '0');
       final dd = day.day.toString().padLeft(2, '0');
@@ -1366,9 +1369,14 @@ class BackendService {
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = await compute(_parseJsonMap, response.body);
-        final events = _calendarEventMaps(data['events']);
-        debugPrint('AHVI_CALENDAR_LIST_OK count=${events.length}');
-        return events;
+        final batch = CalendarEventBatch.parse(
+          data['events'],
+          onSkipped: (eventId, field) => debugPrint(
+            'AHVI_CALENDAR_PARSE_SKIPPED event_id=$eventId field=$field',
+          ),
+        );
+        debugPrint(calendarListOkDiagnostic(surface: surface, batch: batch));
+        return batch.events;
       }
 
       debugPrint(

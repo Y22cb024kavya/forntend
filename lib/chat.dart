@@ -8,6 +8,7 @@ import 'package:myapp/calendar.dart' as calendar_page;
 import 'package:myapp/daily_wear.dart' as daily_wear_page;
 import 'package:myapp/medi_tracker.dart' as medi_tracker_page;
 import 'package:myapp/app_localizations.dart';
+import 'package:myapp/models/calendar_actions.dart';
 import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
 import 'package:myapp/widgets/ahvi_header.dart';
@@ -1011,6 +1012,7 @@ class _ChatScreenState extends State<ChatScreen>
   // clarification; later board actions must not be sent as clarification answers.
   bool _clarificationResolvedByCards = false;
   bool _isTyping = false;
+  bool _calendarNavigationPending = false;
   bool _lastRequestWasWardrobe = false;
   String _userName = 'User';
   final Map<String, List<List<bool>>> _checklistChecksByTitle = {};
@@ -1685,7 +1687,7 @@ class _ChatScreenState extends State<ChatScreen>
     }
   });
 
-  void _openOrganizePage(String pageKey) {
+  Future<void> _openOrganizePage(String pageKey) async {
     Widget? page;
     final safePageKey = sanitizeUtf16(pageKey);
     if (safePageKey != pageKey) {
@@ -1693,7 +1695,10 @@ class _ChatScreenState extends State<ChatScreen>
         'AHVI_UTF16_SANITIZED surface=legacy_chat_route field=page_key',
       );
     }
-    final key = safePageKey.toLowerCase().trim();
+    final normalizedCalendarRoute = normalizeCalendarRoute(safePageKey);
+    final key = normalizedCalendarRoute != null
+        ? 'calendar'
+        : safePageKey.toLowerCase().trim();
     switch (key) {
       case 'meal':
       case 'meals':
@@ -1737,7 +1742,15 @@ class _ChatScreenState extends State<ChatScreen>
         Navigator.of(context).maybePop();
         return;
     }
-    if (page == null) return;
+    if (page == null) {
+      debugPrint(
+        'AHVI_CALENDAR_ACTION action=open_module '
+        'outcome=ignored route=$safePageKey',
+      );
+      return;
+    }
+    if (normalizedCalendarRoute != null && _calendarNavigationPending) return;
+    if (normalizedCalendarRoute != null) _calendarNavigationPending = true;
     // Close any active modal / bottom-sheet before navigating to a
     // full-screen route so no stale scrim leaks onto the destination
     // (see Daily Wear "permanent faded overlay" regression).
@@ -1751,7 +1764,14 @@ class _ChatScreenState extends State<ChatScreen>
       }
     }
     FocusManager.instance.primaryFocus?.unfocus();
-    nav.push(MaterialPageRoute(builder: (_) => page!));
+    if (normalizedCalendarRoute != null) {
+      debugPrint(
+        'AHVI_CALENDAR_ACTION action=view_events '
+        'outcome=navigated route=$normalizedCalendarRoute',
+      );
+    }
+    await nav.push(MaterialPageRoute(builder: (_) => page!));
+    if (normalizedCalendarRoute != null) _calendarNavigationPending = false;
   }
 
   @override

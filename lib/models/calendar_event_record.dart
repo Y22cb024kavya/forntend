@@ -70,6 +70,77 @@ class CalendarEventRecord {
   }
 }
 
+enum CalendarListSurface {
+  homeToday('home_today'),
+  calendar('calendar');
+
+  const CalendarListSurface(this.wireName);
+
+  final String wireName;
+}
+
+String calendarListStartDiagnostic({
+  required CalendarListSurface surface,
+  DateTime? from,
+  DateTime? to,
+}) =>
+    'AHVI_CALENDAR_LIST_START surface=${surface.wireName} '
+    'from=${from?.toIso8601String() ?? 'none'} '
+    'to=${to?.toIso8601String() ?? 'none'}';
+
+String calendarListOkDiagnostic({
+  required CalendarListSurface surface,
+  required CalendarEventBatch batch,
+}) =>
+    'AHVI_CALENDAR_LIST_OK surface=${surface.wireName} '
+    'raw_count=${batch.rawCount} parsed_count=${batch.parsedCount} '
+    'skipped_count=${batch.skippedCount}';
+
+class CalendarEventBatch {
+  const CalendarEventBatch({
+    required this.events,
+    required this.rawCount,
+    required this.skippedCount,
+  });
+
+  final List<Map<String, dynamic>> events;
+  final int rawCount;
+  final int skippedCount;
+
+  int get parsedCount => events.length;
+
+  static CalendarEventBatch parse(
+    Object? raw, {
+    void Function(String eventId, String field)? onSkipped,
+  }) {
+    if (raw is! List) {
+      return const CalendarEventBatch(
+        events: <Map<String, dynamic>>[],
+        rawCount: 0,
+        skippedCount: 0,
+      );
+    }
+    final events = <Map<String, dynamic>>[];
+    var skippedCount = 0;
+    for (final value in raw) {
+      final event = calendarJsonMap(value);
+      final record = CalendarEventRecord.tryParse(
+        event,
+        onSkipped: (eventId, field) {
+          skippedCount++;
+          onSkipped?.call(eventId, field);
+        },
+      );
+      if (record != null && event != null) events.add(event);
+    }
+    return CalendarEventBatch(
+      events: events,
+      rawCount: raw.length,
+      skippedCount: skippedCount,
+    );
+  }
+}
+
 class CalendarMutationResult {
   const CalendarMutationResult({
     required this.eventId,

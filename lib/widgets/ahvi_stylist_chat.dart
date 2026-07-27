@@ -506,6 +506,19 @@ final Map<String, AhviModuleConfig> _moduleConfigs = {
       'Wardrobe detox tips',
     ],
   ),
+  'prepare': AhviModuleConfig(
+    moduleContext: 'prepare',
+    subtitle: 'Planning Assistant',
+    hintTextKey: 'daily_wear_chat_hint',
+    greetingKey: 'intent_prepare_s1',
+    quickPrompts: (ctx) => [
+      AppLocalizations.t(ctx, 'intent_prepare_s1'),
+      AppLocalizations.t(ctx, 'intent_prepare_s2'),
+      AppLocalizations.t(ctx, 'intent_prepare_s3'),
+      'Plan outfits for an event',
+      'Create a weather-ready checklist',
+    ],
+  ),
 };
 
 AhviModuleConfig _configFor(String moduleContext) =>
@@ -1319,14 +1332,14 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
               },
             }
           : widget.contextData;
-      final response =
-      styleModules.contains(widget.moduleContext) || isPlanPackRequest
+      final response = styleModules.contains(widget.moduleContext) &&
+              !isPlanPackRequest
           ? await backend.sendChatQuery(
         query,
         '',
         List<Map<String, String>>.from(_chatHistory),
         _runningMemory,
-        moduleContext: isPlanPackRequest ? 'chat' : styleModuleContext,
+        moduleContext: styleModuleContext,
         styleAction: isClosestStyleAction ? 'show_closest_option' : null,
         action: isClosestStyleAction
             ? 'show_closest_option'
@@ -1364,7 +1377,10 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
         closest: isClosestStyleAction,
       )
           : await backend.sendModuleChat(
-        domain: widget.moduleContext,
+        domain: canonicalModuleChatDomain(
+          widget.moduleContext,
+          plannerRequest: isPlanPackRequest,
+        ),
         message: query,
         chatHistory: List<Map<String, String>>.from(_chatHistory),
         context: moduleContextData,

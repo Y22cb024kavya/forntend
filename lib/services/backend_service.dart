@@ -12,6 +12,15 @@ Map<String, dynamic> _parseJsonMap(String payload) => Map<String, dynamic>.from(
 
 String _encodeBytes(Uint8List bytes) => base64Encode(bytes);
 
+String canonicalModuleChatDomain(
+  String domain, {
+  bool plannerRequest = false,
+}) {
+  if (plannerRequest) return 'planner';
+  final normalized = domain.trim().toLowerCase();
+  return normalized == 'prepare' ? 'plan' : normalized;
+}
+
 Object? _jsonSafe(Object? value) {
   if (value == null || value is String || value is num || value is bool) {
     return value;
@@ -199,24 +208,24 @@ class BackendService {
   }
 
   Future<Map<String, dynamic>?> getDailyBoard() async {
-    try {
-      final response = await http
-          .get(
-        Uri.parse('$baseUrl/api/stylist/daily-board'),
-        headers: await _authHeaders(),
-      )
-          .timeout(const Duration(seconds: 45));
-      if (response.statusCode == 200) {
-        return await compute(_parseJsonMap, response.body);
-      }
-      debugPrint(
-        'getDailyBoard failed: ${response.statusCode} - ${response.body}',
-      );
-      return null;
-    } catch (e) {
-      debugPrint('getDailyBoard error: $e');
-      return null;
-    }
+    final response = await sendModuleChat(
+      domain: 'style',
+      message: 'Build my wardrobe-first looks for today',
+      context: const {'surface': 'daily_wear', 'request': 'daily_board'},
+    );
+    final rawData = response['data'];
+    final data = rawData is Map
+        ? Map<String, dynamic>.from(rawData)
+        : <String, dynamic>{};
+    final cards = data['cards'] ??
+        data['rendered_boards'] ??
+        response['cards'] ??
+        response['style_boards'] ??
+        const <dynamic>[];
+    return {
+      ...response,
+      'data': {...data, 'cards': cards},
+    };
   }
 
   Future<bool> logWear(List<String> itemIds) async {
@@ -690,7 +699,7 @@ class BackendService {
     List<Map<String, String>> chatHistory = const [],
     Map<String, dynamic>? userProfile,
   }) async {
-    final module = domain.trim().toLowerCase();
+    final module = canonicalModuleChatDomain(domain);
     final query = message.trim();
     try {
       final authedUserId = await _currentUserId();

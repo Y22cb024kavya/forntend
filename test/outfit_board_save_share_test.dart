@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -84,6 +85,29 @@ void main() {
     await tester.pump();
 
     expect(calls, 1);
+  });
+
+  testWidgets('Save completion after navigation does not use disposed context', (tester) async {
+    final pending = Completer<String?>();
+    await _pumpBar(
+      tester,
+      OutfitActionBar(
+        direction: _direction(),
+        editorialCover: const {},
+        primaryLabel: 'Office Look',
+        missingName: '',
+        shareBoundaryKey: GlobalKey(),
+        saveBoardOverride: ({required occasion, required outfitDescription, required imageUrl, required title, required itemIds, required items}) => pending.future,
+      ),
+    );
+
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+    pending.complete('doc-1');
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Save failure restores the unsaved icon and surfaces an error', (tester) async {

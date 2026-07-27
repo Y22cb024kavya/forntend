@@ -37,19 +37,21 @@ String _shuffleFailureMessage(String code) => switch (code) {
     'No curated pieces are available for this look right now.',
   'BOARD_SOURCE_POLICY_UNKNOWN' =>
     'This board is missing its styling source. Ask AHVI for a fresh look to continue.',
-  _ => 'We couldn’t refresh these pieces. Your current look has been preserved.',
+  _ =>
+    'We couldn’t refresh these pieces. Your current look has been preserved.',
 };
 
 /// Persists a board and returns the created document id (or null on failure).
 /// Overridable so tests can drive Save without a live Appwrite backend.
-typedef BoardSaveFn = Future<String?> Function({
-  required String occasion,
-  required String outfitDescription,
-  required String imageUrl,
-  required String title,
-  required List<String> itemIds,
-  required List<Map<String, dynamic>> items,
-});
+typedef BoardSaveFn =
+    Future<String?> Function({
+      required String occasion,
+      required String outfitDescription,
+      required String imageUrl,
+      required String title,
+      required List<String> itemIds,
+      required List<Map<String, dynamic>> items,
+    });
 
 class AhviOutfitBoardCard extends StatefulWidget {
   final Map<String, dynamic> direction;
@@ -62,6 +64,7 @@ class AhviOutfitBoardCard extends StatefulWidget {
   /// gesture so Save / Shuffle / Style This / Missing never trigger the sheet.
   final VoidCallback? onTapBoard;
   final StyleBoardShuffleCall? shuffleCall;
+  final BoardSaveFn? saveBoardOverride;
 
   const AhviOutfitBoardCard({
     super.key,
@@ -71,6 +74,7 @@ class AhviOutfitBoardCard extends StatefulWidget {
     this.editorialCover = const {},
     this.onTapBoard,
     this.shuffleCall,
+    this.saveBoardOverride,
   });
 
   @override
@@ -247,6 +251,25 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
     );
   }
 
+  Map<String, dynamic> get _currentDirection {
+    final board = _currentBoard;
+    return {
+      ...widget.direction,
+      'board_id': board.boardId,
+      'revision': board.revision,
+      'scenario': board.scenario,
+      'source_policy': board.sourcePolicy,
+      'allow_wardrobe_fallback': board.allowWardrobeFallback,
+      'title': board.title,
+      'occasion': board.occasion,
+      'why_it_works': board.whyItWorks,
+      'styling_tip': board.stylingTip,
+      'board_items': board.items
+          .map((item) => item.toContractJson())
+          .toList(growable: false),
+    }..removeWhere((_, value) => value == null);
+  }
+
   @override
   void dispose() {
     _controller?.removeListener(_handleControllerChange);
@@ -302,7 +325,7 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                                     board: board,
                                     lockedItemIds:
                                         _controller?.state.lockedItemIds ??
-                                            const {},
+                                        const {},
                                     onToggleLock: _controller?.toggleLock,
                                   )
                                 : _IncompleteBoardFallback(
@@ -322,13 +345,14 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                   onShuffle: _shuffleBoard,
                 ),
               OutfitActionBar(
-                direction: widget.direction,
+                direction: _currentDirection,
                 editorialCover: widget.editorialCover,
                 primaryLabel: _model.title,
                 missingName: _model.missingName,
                 onSendMessage: widget.onSendMessage,
                 onShuffle: _controller == null ? null : _shuffleBoard,
                 shareBoundaryKey: _shareBoundaryKey,
+                saveBoardOverride: widget.saveBoardOverride,
               ),
             ],
           ),
@@ -747,7 +771,7 @@ class OutfitActionBar extends StatefulWidget {
   final BoardSaveFn? saveBoardOverride;
   final Future<Uint8List?> Function()? captureOverride;
   final Future<void> Function(Uint8List bytes, String caption)?
-      shareImageOverride;
+  shareImageOverride;
   final Future<void> Function(String text)? shareTextOverride;
 
   const OutfitActionBar({
@@ -774,15 +798,25 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
   bool _saving = false;
   bool _liked = false;
   bool _disliked = false;
+  BackendService? _backend;
+  ScaffoldMessengerState? _messenger;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      _backend = Provider.of<BackendService>(context, listen: false);
+    } catch (_) {
+      _backend = null;
+    }
+  }
 
   void _sendFeedback(String action) {
     // Fire-and-forget; also the adaptive stylist-brain training signal.
     // Never let a missing provider or feedback error break Save/Share.
     try {
-      Provider.of<BackendService>(
-        context,
-        listen: false,
-      ).sendBoardFeedback(action: action, board: widget.direction);
+      _backend?.sendBoardFeedback(action: action, board: widget.direction);
     } catch (_) {}
   }
 
@@ -927,7 +961,7 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
       } catch (e2) {
         debugPrint('AHVI_BOARD_SHARE_FAILED error=$e2');
         if (mounted) {
-          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          _messenger?.showSnackBar(
             const SnackBar(content: Text('Could not open the share sheet.')),
           );
         }
@@ -1078,14 +1112,14 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
         _saved = true; // heart only flips AFTER persistence succeeds
         _saving = false;
       });
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      _messenger?.showSnackBar(
         const SnackBar(content: Text('Saved to your boards')),
       );
     } catch (e) {
       debugPrint('AHVI_BOARD_SAVE_FAILED error=$e');
       if (!mounted) return;
       setState(() => _saving = false); // stays unsaved on failure
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      _messenger?.showSnackBar(
         const SnackBar(
           content: Text('Could not save board. Please try again.'),
         ),
@@ -1585,7 +1619,8 @@ StyleBoardData _toStyleBoardData(
       source = 'wardrobe';
     }
     final hasStableId = item.id.trim().isNotEmpty;
-    final carriedRaw = raw ??
+    final carriedRaw =
+        raw ??
         (hasStableId
             ? <String, dynamic>{
                 'item_id': item.id,

@@ -148,6 +148,39 @@ void main() {
     expect(find.byKey(const ValueKey<String>('anchor')), findsOneWidget);
   });
 
+  testWidgets('Save persists the current shuffled board items', (tester) async {
+    List<Map<String, dynamic>>? savedItems;
+    await _pumpCard(
+      tester,
+      board: _board(),
+      shuffleCall: (state) async => _success(state),
+      saveBoardOverride:
+          ({
+            required occasion,
+            required outfitDescription,
+            required imageUrl,
+            required title,
+            required itemIds,
+            required items,
+          }) async {
+            savedItems = items;
+            return 'doc-1';
+          },
+    );
+
+    await tester.tap(find.text('Shuffle'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(savedItems, isNotNull);
+    expect(savedItems!.map((item) => item['item_id']), [
+      'anchor',
+      'bottom-1-new',
+      'shoe-1-new',
+    ]);
+  });
+
   testWidgets(
     'wardrobe board without positions enables footer durable shuffle only',
     (tester) async {
@@ -195,7 +228,9 @@ void main() {
     },
   );
 
-  testWidgets('contract check logs the actual failed predicate', (tester) async {
+  testWidgets('contract check logs the actual failed predicate', (
+    tester,
+  ) async {
     final messages = <String>[];
     final previousDebugPrint = debugPrint;
     debugPrint = (message, {wrapWidth}) {
@@ -358,8 +393,7 @@ void main() {
           final items = state.items.map((item) {
             if (state.lockedItemIds.contains(item.itemId)) return item;
             return StyleBoardItem.fromJson({
-              ..._item('${item.itemId}-new', item.slot,
-                  x: item.position!.x!),
+              ..._item('${item.itemId}-new', item.slot, x: item.position!.x!),
               'source': 'style_asset',
             });
           }).toList();
@@ -456,6 +490,7 @@ Future<void> _pumpCard(
   required Future<StyleBoardShuffleResult> Function(StyleBoardState)
   shuffleCall,
   ValueChanged<String>? onSendMessage,
+  BoardSaveFn? saveBoardOverride,
 }) async {
   await tester.binding.setSurfaceSize(const Size(430, 900));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -472,6 +507,7 @@ Future<void> _pumpCard(
             width: 390,
             onSendMessage: onSendMessage ?? (_) {},
             shuffleCall: shuffleCall,
+            saveBoardOverride: saveBoardOverride,
           ),
         ),
       ),

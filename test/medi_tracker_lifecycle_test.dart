@@ -98,4 +98,33 @@ void main() {
     await tester.pump();
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('rapid taps create only one persisted Mark Taken log', (
+    tester,
+  ) async {
+    final pending = Completer<void>();
+    var logCreates = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(extensions: [AppThemeTokens.light(_accent)]),
+        home: MediTrackScreen(
+          skipInitialFetch: true,
+          initialMeds: [_medicine()],
+          markTakenSync: (_, newLeft, takenAtIso) => pending.future,
+          deleteSync: (id) async {},
+          onMarkTakenLogCreated: () => logCreates++,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Aspirin'));
+    await tester.tap(find.text('Aspirin'));
+    await tester.pump();
+    expect(logCreates, 1);
+
+    pending.complete();
+    await tester.pump();
+    expect(logCreates, 1);
+  });
 }

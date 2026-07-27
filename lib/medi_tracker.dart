@@ -22,6 +22,19 @@ typedef MediMarkTakenSync = Future<void> Function(
 typedef MediDeleteSync = Future<void> Function(String id);
 typedef MediRecordDiagnostic = void Function(String message);
 
+String sanitizeMediSurfaceText(
+  String value, {
+  required String surface,
+  required String field,
+}) {
+  debugPrint('AHVI_MEDI_TEXT_SOURCE field=$field');
+  final safe = sanitizeUtf16(value);
+  if (safe != value) {
+    debugPrint('AHVI_UTF16_SANITIZED surface=$surface field=$field');
+  }
+  return safe;
+}
+
 String _sanitizeMediField(
   Object? value, {
   required String field,
@@ -189,6 +202,8 @@ class MediTrackScreen extends StatefulWidget {
   final List<Map<String, dynamic>> initialMeds;
   final MediMarkTakenSync? markTakenSync;
   final MediDeleteSync? deleteSync;
+  final Future<void> Function()? beforeInitialFetch;
+  final VoidCallback? onMarkTakenLogCreated;
   const MediTrackScreen({
     super.key,
     this.fromHome = false,
@@ -196,6 +211,8 @@ class MediTrackScreen extends StatefulWidget {
     this.initialMeds = const [],
     this.markTakenSync,
     this.deleteSync,
+    this.beforeInitialFetch,
+    this.onMarkTakenLogCreated,
   });
 
   @override
@@ -326,9 +343,10 @@ class _MediTrackScreenState extends State<MediTrackScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _messenger = ScaffoldMessenger.maybeOf(context);
-    if (!widget.skipInitialFetch ||
-        widget.markTakenSync == null ||
-        widget.deleteSync == null) {
+    if (widget.beforeInitialFetch == null &&
+        (!widget.skipInitialFetch ||
+            widget.markTakenSync == null ||
+            widget.deleteSync == null)) {
       _appwrite = Provider.of<AppwriteService>(context, listen: false);
     }
     _toastBackground = bg2;
@@ -513,6 +531,7 @@ class _MediTrackScreenState extends State<MediTrackScreen>
     final mutationAtStart = _mutationRevision;
     debugPrint('AHVI_MEDI_FETCH_START generation=$generation');
     try {
+      await widget.beforeInitialFetch?.call();
       final appwrite = _appwrite;
       if (appwrite == null) {
         debugPrint(
@@ -618,6 +637,7 @@ class _MediTrackScreenState extends State<MediTrackScreen>
       });
       _animateRing(_computeRingProgress());
     });
+    widget.onMarkTakenLogCreated?.call();
     _showToast(markedMessage, '✅');
 
     // DB Update. Appwrite's datetime attributes require an ISO 8601
@@ -711,19 +731,35 @@ class _MediTrackScreenState extends State<MediTrackScreen>
   String _getGreeting(BuildContext context) {
     final l = AppLocalizations.t;
     final hour = DateTime.now().hour;
-    if (hour < 5) return l(context, 'medi_greeting_latenight');
-    if (hour < 12) return l(context, 'medi_greeting_morning');
-    if (hour < 18) return l(context, 'medi_greeting_afternoon');
-    return l(context, 'medi_greeting_evening');
+    final value = hour < 5
+        ? l(context, 'medi_greeting_latenight')
+        : hour < 12
+        ? l(context, 'medi_greeting_morning')
+        : hour < 18
+        ? l(context, 'medi_greeting_afternoon')
+        : l(context, 'medi_greeting_evening');
+    return sanitizeMediSurfaceText(
+      value,
+      surface: 'medi_tracker',
+      field: 'greeting',
+    );
   }
 
   String _getGreetingTitle(BuildContext context) {
     final l = AppLocalizations.t;
     final hour = DateTime.now().hour;
-    if (hour < 5) return l(context, 'medi_title_latenight');
-    if (hour < 12) return l(context, 'medi_title_morning');
-    if (hour < 18) return l(context, 'medi_title_afternoon');
-    return l(context, 'medi_title_evening');
+    final value = hour < 5
+        ? l(context, 'medi_title_latenight')
+        : hour < 12
+        ? l(context, 'medi_title_morning')
+        : hour < 18
+        ? l(context, 'medi_title_afternoon')
+        : l(context, 'medi_title_evening');
+    return sanitizeMediSurfaceText(
+      value,
+      surface: 'medi_tracker',
+      field: 'greeting_title',
+    );
   }
 
   void navTo(String screen) {
@@ -736,6 +772,10 @@ class _MediTrackScreenState extends State<MediTrackScreen>
 
   @override
   Widget build(BuildContext context) {
+    debugPrint(
+      'AHVI_MEDI_BUILD phase=${_isLoading ? "loading" : "loaded"} '
+      'from_home=${widget.fromHome}',
+    );
     if (!_isLoading && !_renderReadyLogged) {
       _renderReadyLogged = true;
       debugPrint(
@@ -832,7 +872,11 @@ class _MediTrackScreenState extends State<MediTrackScreen>
               ),
               const SizedBox(width: 9),
               Text(
-                AppLocalizations.t(context, 'medi_app_name'),
+                sanitizeMediSurfaceText(
+                  AppLocalizations.t(context, 'medi_app_name'),
+                  surface: 'medi_tracker',
+                  field: 'app_name',
+                ),
                 style: TextStyle(
                   color: textColor,
                   fontSize: 19,
@@ -1017,7 +1061,11 @@ class _MediTrackScreenState extends State<MediTrackScreen>
       l(context, 'medi_weekday_saturday'),
       l(context, 'medi_weekday_sunday'),
     ];
-    return '${days[now.weekday - 1]}, ${months[now.month - 1]} ${now.day}';
+    return sanitizeMediSurfaceText(
+      '${days[now.weekday - 1]}, ${months[now.month - 1]} ${now.day}',
+      surface: 'medi_tracker',
+      field: 'hero_date',
+    );
   }
 
   Widget _buildProgressCard() {

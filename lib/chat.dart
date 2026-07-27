@@ -1687,7 +1687,13 @@ class _ChatScreenState extends State<ChatScreen>
 
   void _openOrganizePage(String pageKey) {
     Widget? page;
-    final key = pageKey.toLowerCase().trim();
+    final safePageKey = sanitizeUtf16(pageKey);
+    if (safePageKey != pageKey) {
+      debugPrint(
+        'AHVI_UTF16_SANITIZED surface=legacy_chat_route field=page_key',
+      );
+    }
+    final key = safePageKey.toLowerCase().trim();
     switch (key) {
       case 'meal':
       case 'meals':
@@ -1700,6 +1706,7 @@ class _ChatScreenState extends State<ChatScreen>
       case 'meds':
       case 'medicine':
       case 'medicines':
+        debugPrint('AHVI_MEDI_NAV source=legacy_chat_organize_action');
         page = medi_tracker_page.MediTrackScreen(); // Medicine Tracker
         break;
       case 'bill':

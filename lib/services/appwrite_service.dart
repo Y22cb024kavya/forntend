@@ -1301,8 +1301,9 @@ class AppwriteService extends ChangeNotifier {
           : <String>[];
       final outfitItems = _savedBoardItemList(extra?['outfitItems']);
       final items = _savedBoardItemList(extra?['items']);
-      final boardPayload = _savedBoardPayload(extra?['board_payload']);
-      final boardPayloadCamel = _savedBoardPayload(extra?['boardPayload']);
+      final boardPayload = _savedBoardPayload(
+        extra?['board_payload'] ?? extra?['boardPayload'],
+      );
 
       final storageOccasion = _savedBoardOccasionLabel(occasion);
       final categoryLabel = boardCategoryLabel?.trim().isNotEmpty == true
@@ -1311,8 +1312,6 @@ class AppwriteService extends ChangeNotifier {
       final categoryKey = boardCategory?.trim().isNotEmpty == true
           ? boardCategory!.trim()
           : _savedBoardCategoryKey(categoryLabel);
-      final nowIso = DateTime.now().toIso8601String();
-
       final richData = <String, dynamic>{
         'userId': user.$id,
         'occasion': storageOccasion,
@@ -1331,10 +1330,14 @@ class AppwriteService extends ChangeNotifier {
       };
       if (outfitItems.isNotEmpty) richData['outfitItems'] = outfitItems;
       if (items.isNotEmpty) richData['items'] = items;
-      if (boardPayload.isNotEmpty) richData['board_payload'] = boardPayload;
-      if (boardPayloadCamel.isNotEmpty) {
-        richData['boardPayload'] = boardPayloadCamel;
-      }
+      final canonicalPayload = boardPayload.isNotEmpty
+          ? boardPayload
+          : jsonEncode({
+              'title': richData['title'],
+              'occasion': storageOccasion,
+              'items': outfitItems.isNotEmpty ? outfitItems : items,
+            });
+      richData['board_payload'] = canonicalPayload;
 
       try {
         return await databases.createDocument(
@@ -1350,12 +1353,6 @@ class AppwriteService extends ChangeNotifier {
       }
 
       if (outfitItems.isNotEmpty || items.isNotEmpty) {
-        final payloadItems = outfitItems.isNotEmpty ? outfitItems : items;
-        final jsonPayload = jsonEncode({
-          'title': richData['title'],
-          'occasion': storageOccasion,
-          'items': payloadItems,
-        });
         try {
           return await databases.createDocument(
             databaseId: Env.appwriteDatabaseId,
@@ -1374,7 +1371,7 @@ class AppwriteService extends ChangeNotifier {
               'outfitDescription': richData['outfitDescription'],
               'emoji': richData['emoji'],
               // ✅ REMOVED: 'createdAt' - Appwrite manages this as $createdAt
-              'board_payload': jsonPayload,
+              'board_payload': canonicalPayload,
             },
           );
         } catch (e) {
@@ -1393,6 +1390,7 @@ class AppwriteService extends ChangeNotifier {
           'occasion': storageOccasion,
           'imageUrl': cleanImageUrl,
           'itemIds': itemIds,
+          'board_payload': canonicalPayload,
         },
       );
     } catch (e) {
@@ -1422,9 +1420,17 @@ class AppwriteService extends ChangeNotifier {
         .toList();
   }
 
-  Map<String, dynamic> _savedBoardPayload(Object? raw) {
-    if (raw is Map) return Map<String, dynamic>.from(raw);
-    return const <String, dynamic>{};
+  String _savedBoardPayload(Object? raw) {
+    if (raw is Map) return jsonEncode(Map<String, dynamic>.from(raw));
+    if (raw is String) {
+      final value = raw.trim();
+      if (value.isEmpty) return '';
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is Map) return jsonEncode(decoded);
+      } catch (_) {}
+    }
+    return '';
   }
 
   String _savedBoardOccasionLabel(String value) {

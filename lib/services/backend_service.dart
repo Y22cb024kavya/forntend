@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:myapp/config/env.dart';
+import 'package:myapp/models/calendar_event_record.dart';
 import 'package:myapp/services/appwrite_service.dart';
 import 'package:myapp/util/safe_text.dart';
 
@@ -11,6 +12,20 @@ Map<String, dynamic> _parseJsonMap(String payload) => Map<String, dynamic>.from(
     );
 
 String _encodeBytes(Uint8List bytes) => base64Encode(bytes);
+
+List<Map<String, dynamic>> _calendarEventMaps(Object? value) {
+  if (value is! List) return <Map<String, dynamic>>[];
+  final events = <Map<String, dynamic>>[];
+  for (final raw in value) {
+    final event = calendarJsonMap(raw);
+    if (event == null) {
+      debugPrint('AHVI_CALENDAR_PARSE_SKIPPED event_id=unknown field=event');
+      continue;
+    }
+    events.add(event);
+  }
+  return events;
+}
 
 String canonicalModuleChatDomain(
   String domain, {
@@ -1298,6 +1313,7 @@ class BackendService {
     DateTime? endTime,
     int limit = 200,
   }) async {
+    debugPrint('AHVI_CALENDAR_LIST_START');
     try {
       final params = <String, String>{
         'limit': limit.toString(),
@@ -1315,9 +1331,9 @@ class BackendService {
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = await compute(_parseJsonMap, response.body);
-        return List<Map<String, dynamic>>.from(
-          data['events'] as List? ?? const [],
-        );
+        final events = _calendarEventMaps(data['events']);
+        debugPrint('AHVI_CALENDAR_LIST_OK count=${events.length}');
+        return events;
       }
 
       debugPrint(
@@ -1333,6 +1349,7 @@ class BackendService {
   Future<List<Map<String, dynamic>>> getTodayCalendarEvents({
     DateTime? date,
   }) async {
+    debugPrint('AHVI_CALENDAR_LIST_START');
     try {
       final day = date ?? DateTime.now();
       final yyyy = day.year.toString().padLeft(4, '0');
@@ -1349,9 +1366,9 @@ class BackendService {
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = await compute(_parseJsonMap, response.body);
-        return List<Map<String, dynamic>>.from(
-          data['events'] as List? ?? const [],
-        );
+        final events = _calendarEventMaps(data['events']);
+        debugPrint('AHVI_CALENDAR_LIST_OK count=${events.length}');
+        return events;
       }
 
       debugPrint(
@@ -1379,6 +1396,7 @@ class BackendService {
     int reminderMinutes = 30,
     Map<String, dynamic>? metadata,
   }) async {
+    debugPrint('AHVI_CALENDAR_CREATE_START');
     try {
       final response = await http
           .post(
@@ -1404,7 +1422,16 @@ class BackendService {
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = await compute(_parseJsonMap, response.body);
-        return Map<String, dynamic>.from(data['event'] as Map? ?? data);
+        final event = calendarJsonMap(data['event']) ?? data;
+        final record = CalendarEventRecord.tryParse(
+          event,
+          onSkipped: (eventId, field) => debugPrint(
+            'AHVI_CALENDAR_PARSE_SKIPPED event_id=$eventId field=$field',
+          ),
+        );
+        if (record == null) return null;
+        debugPrint('AHVI_CALENDAR_CREATE_OK event_id=${record.id}');
+        return event;
       }
 
       debugPrint(

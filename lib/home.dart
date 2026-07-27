@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:myapp/models/calendar_event_record.dart';
 import 'package:myapp/navigation/ahvi_back_navigation.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter/services.dart';
@@ -692,17 +693,17 @@ class _Screen4State extends State<Screen4> with TickerProviderStateMixin, Widget
         onTimeout: () => [],
       );
 
-      final events = raw.map<_CalendarEvent>((e) {
-        // Parse start_time — ISO-8601 string from the backend.
-        DateTime startsAt;
-        try {
-          startsAt = DateTime.parse(e['start_time']?.toString() ?? '');
-        } catch (_) {
-          startsAt = DateTime.now().add(const Duration(hours: 8));
-        }
-
+      final events = <_CalendarEvent>[];
+      for (final event in raw) {
+        final record = CalendarEventRecord.tryParse(
+          event,
+          onSkipped: (eventId, field) => debugPrint(
+            'AHVI_CALENDAR_PARSE_SKIPPED event_id=$eventId field=$field',
+          ),
+        );
+        if (record == null) continue;
         // Map backend `type` field to our internal enum.
-        final rawType = (e['type'] ?? e['event_type'] ?? '').toString().toLowerCase();
+        final rawType = record.type.toLowerCase();
         final _EventType type;
         if (rawType.contains('meet') || rawType.contains('work') || rawType.contains('call')) {
           type = _EventType.meeting;
@@ -720,12 +721,12 @@ class _Screen4State extends State<Screen4> with TickerProviderStateMixin, Widget
           type = _EventType.other;
         }
 
-        return _CalendarEvent(
-          title: e['title']?.toString() ?? e['summary']?.toString() ?? AppLocalizations.t(context, 'event_default_title'),
-          startsAt: startsAt,
+        events.add(_CalendarEvent(
+          title: record.title,
+          startsAt: record.startTime,
           type: type,
-        );
-      }).toList();
+        ));
+      }
 
       // Sort chronologically so nextMeeting / nextOccasion pick the soonest.
       events.sort((a, b) => a.startsAt.compareTo(b.startsAt));
@@ -740,6 +741,10 @@ class _Screen4State extends State<Screen4> with TickerProviderStateMixin, Widget
       debugPrint('📅 Calendar fetch error: $e');
       // Leave _calendarEvents unchanged — app continues normally
     }
+  }
+
+  void _onCalendarRefresh() {
+    if (mounted) _fetchCalendarSignal();
   }
 
   // ── Wardrobe ───────────────────────────────────────────────────────────────
@@ -1193,6 +1198,7 @@ class _Screen4State extends State<Screen4> with TickerProviderStateMixin, Widget
   @override
   void initState() {
     super.initState();
+    CalendarRefreshSignal.generation.addListener(_onCalendarRefresh);
     _initSpeech();
     // Keyboard height track చేయడానికి FocusNode listener
     _chatFocusNode.addListener(_onChatFocusChange);
@@ -1516,6 +1522,7 @@ class _Screen4State extends State<Screen4> with TickerProviderStateMixin, Widget
   }
 
   void dispose() {
+    CalendarRefreshSignal.generation.removeListener(_onCalendarRefresh);
     _chatFocusNode.removeListener(_onChatFocusChange);
     WidgetsBinding.instance.removeObserver(this);
     _keyboardHeight.dispose();

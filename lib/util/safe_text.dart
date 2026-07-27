@@ -28,10 +28,9 @@ Object? sanitizeUtf16Deep(Object? value) {
   if (value is String) return sanitizeUtf16(value);
   if (value is List) return value.map(sanitizeUtf16Deep).toList();
   if (value is Map) {
-    return {
+    return <String, dynamic>{
       for (final entry in value.entries)
-        entry.key is String ? sanitizeUtf16(entry.key as String) : entry.key:
-            sanitizeUtf16Deep(entry.value),
+        sanitizeUtf16(entry.key.toString()): sanitizeUtf16Deep(entry.value),
     };
   }
   return value;

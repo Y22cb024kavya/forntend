@@ -26,6 +26,7 @@ import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/models/ahvi_visual_board_model.dart';
 import 'package:myapp/widgets/ahvi_module_card.dart';
 import 'package:myapp/widgets/ahvi_visual_board.dart';
+import 'package:myapp/util/safe_text.dart';
 import 'package:provider/provider.dart';
 
 class _SavedBoardCategory {
@@ -1157,9 +1158,11 @@ class _ChatScreenState extends State<ChatScreen>
           (m) => m['role'] == 'user',
       orElse: () => {'content': 'Chat'},
     );
-    final title = (firstUser['content'] ?? 'Chat').length > 40
-        ? '${firstUser['content']!.substring(0, 40)}…'
-        : firstUser['content']!;
+    final title = truncateSafeText(
+      firstUser['content'] ?? 'Chat',
+      40,
+      suffix: '…',
+    );
 
     // Greeting bubble is re-added on load, so skip persisting it here.
     final richMessages = _messages.where((m) => !m.isGreeting).toList();

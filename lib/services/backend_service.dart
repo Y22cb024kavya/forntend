@@ -4,9 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:myapp/config/env.dart';
 import 'package:myapp/services/appwrite_service.dart';
+import 'package:myapp/util/safe_text.dart';
 
-Map<String, dynamic> _parseJsonMap(String payload) =>
-    Map<String, dynamic>.from(jsonDecode(payload) as Map);
+Map<String, dynamic> _parseJsonMap(String payload) => Map<String, dynamic>.from(
+      sanitizeUtf16Deep(jsonDecode(payload) as Map) as Map,
+    );
 
 String _encodeBytes(Uint8List bytes) => base64Encode(bytes);
 
@@ -30,12 +32,10 @@ String _styleChatSnippet(Object? value, [int max = 900]) {
   try {
     final text = value is String ? value : jsonEncode(_jsonSafe(value));
     final flat = text.replaceAll('\n', ' | ');
-    return flat.length <= max ? flat : flat.substring(0, max);
+    return truncateSafeText(flat, max);
   } catch (_) {
     final fallback = value.toString().replaceAll('\n', ' | ');
-    return fallback.length <= max
-        ? fallback
-        : fallback.substring(0, max);
+    return truncateSafeText(fallback, max);
   }
 }
 
@@ -88,8 +88,8 @@ void logNetworkFailure({
   print(
     '👕 AHVI_NET_FAILURE endpoint=$endpoint status=$statusCode '
         'type=$type timeout_ms=${timeout?.inMilliseconds} '
-        'err=${error.toString().replaceAll('\n', ' | ').substring(0, error.toString().length > 200 ? 200 : error.toString().length)} '
-        'body=${body.substring(0, body.length > 200 ? 200 : body.length)}',
+        'err=${truncateSafeText(error.toString().replaceAll('\n', ' | '), 200)} '
+        'body=${truncateSafeText(body, 200)}',
   );
 }
 
@@ -118,7 +118,7 @@ class BackendService {
           .timeout(const Duration(seconds: 30));
       Map<String, dynamic> data;
       try {
-        data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+        data = _parseJsonMap(response.body);
       } catch (_) {
         throw const BackendRequestException('Malformed style board response');
       }
@@ -501,7 +501,7 @@ class BackendService {
           debugPrint(
             'AHVI_BACKEND_PARSE_ERR endpoint=/api/text err=$parseErr '
                 'body_len=${response.body.length} '
-                'body_head=${response.body.substring(0, response.body.length.clamp(0, 400))}',
+                'body_head=${truncateSafeText(response.body, 400)}',
           );
           rethrow;
         }

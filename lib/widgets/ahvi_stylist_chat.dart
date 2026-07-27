@@ -16,6 +16,7 @@ import 'package:myapp/services/backend_service.dart';
 import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
 import 'package:myapp/theme/theme_tokens.dart';
+import 'package:myapp/util/safe_text.dart';
 import 'package:myapp/feature/chat/widgets/blocks/ahvi_block_renderer.dart'
     show
     VisualInspirationCard,
@@ -799,9 +800,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
     final userMessages = _messages.where((m) => m.isUser).toList();
     if (userMessages.isEmpty) return;
     final rawText = userMessages.first.text ?? '';
-    final title = rawText.length > 40
-        ? '${rawText.substring(0, 40)}…'
-        : rawText;
+    final title = truncateSafeText(rawText, 40, suffix: '…');
     final existingIdx = _history.indexWhere((s) => s.id == _currentSessionId);
     final session = _ChatSession(
       id: _currentSessionId!,

@@ -11,9 +11,27 @@ import 'package:myapp/widgets/ahvi_lens_sheet.dart';
 
 import 'package:myapp/services/notification_service.dart';
 
+typedef MediMarkTakenSync = Future<void> Function(
+  String id,
+  int newLeft,
+  String takenAtIso,
+);
+typedef MediDeleteSync = Future<void> Function(String id);
+
 class MediTrackScreen extends StatefulWidget {
   final bool fromHome;
-  const MediTrackScreen({super.key, this.fromHome = false});
+  final bool skipInitialFetch;
+  final List<Map<String, dynamic>> initialMeds;
+  final MediMarkTakenSync? markTakenSync;
+  final MediDeleteSync? deleteSync;
+  const MediTrackScreen({
+    super.key,
+    this.fromHome = false,
+    this.skipInitialFetch = false,
+    this.initialMeds = const [],
+    this.markTakenSync,
+    this.deleteSync,
+  });
 
   @override
   State<MediTrackScreen> createState() => _MediTrackScreenState();
@@ -21,6 +39,16 @@ class MediTrackScreen extends StatefulWidget {
 
 class _MediTrackScreenState extends State<MediTrackScreen>
     with TickerProviderStateMixin {
+  ScaffoldMessengerState? _messenger;
+  AppwriteService? _appwrite;
+  Color _toastBackground = Colors.black;
+  Color _toastText = Colors.white;
+  final Set<String> _markTakenInFlight = {};
+  final Set<String> _deleteInFlight = {};
+  int _fetchGeneration = 0;
+  int _mutationRevision = 0;
+  bool _medSaveInFlight = false;
+  bool _medSheetOpen = false;
   // ── Dynamic color palette from theme tokens ──
   AppThemeTokens get _t => context.themeTokens;
   Color get bg => _t.backgroundPrimary;
@@ -75,6 +103,10 @@ class _MediTrackScreenState extends State<MediTrackScreen>
   @override
   void initState() {
     super.initState();
+    if (widget.initialMeds.isNotEmpty) {
+      meds = widget.initialMeds.map((med) => Map<String, dynamic>.from(med)).toList();
+      _isLoading = false;
+    }
     final now = DateTime.now();
     _calYear = now.year;
     _calMonth = now.month;
@@ -106,7 +138,20 @@ class _MediTrackScreenState extends State<MediTrackScreen>
     AhviNotificationService.instance.unreadCount.addListener(
       _onMediNotificationUnreadChanged,
     );
-    _fetchData();
+    if (!widget.skipInitialFetch) _fetchData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger = ScaffoldMessenger.maybeOf(context);
+    if (!widget.skipInitialFetch ||
+        widget.markTakenSync == null ||
+        widget.deleteSync == null) {
+      _appwrite = Provider.of<AppwriteService>(context, listen: false);
+    }
+    _toastBackground = bg2;
+    _toastText = textColor;
   }
 
   void _onMediNotificationUnreadChanged() {
@@ -123,6 +168,13 @@ class _MediTrackScreenState extends State<MediTrackScreen>
     _shimmerCtrl.dispose();
     _pulseCtrl.dispose();
     _ringCtrl.dispose();
+    _nameCtrl.dispose();
+    _doseCtrl.dispose();
+    _timeCtrl.dispose();
+    _supplyCtrl.dispose();
+    _customCatCtrl.dispose();
+    _messenger = null;
+    _appwrite = null;
     super.dispose();
   }
 
@@ -264,14 +316,19 @@ class _MediTrackScreenState extends State<MediTrackScreen>
     );
   }
   Future<void> _fetchData() async {
+    final generation = ++_fetchGeneration;
+    final mutationAtStart = _mutationRevision;
     try {
-      final appwrite = Provider.of<AppwriteService>(context, listen: false);
+      final appwrite = _appwrite;
+      if (appwrite == null) return;
       // Cache user session upfront so subsequent calls don't fail
       await appwrite.cacheCurrentUser();
       final medsDocs = await appwrite.getMeds();
       final logsDocs = await appwrite.getMedLogs();
 
-      if (mounted) {
+      if (mounted &&
+          generation == _fetchGeneration &&
+          mutationAtStart == _mutationRevision) {
         setState(() {
           meds = medsDocs
               .map(
@@ -310,7 +367,8 @@ class _MediTrackScreenState extends State<MediTrackScreen>
         _syncHomeAnimations();
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (!mounted || generation != _fetchGeneration) return;
+      setState(() => _isLoading = false);
       _showToast(AppLocalizations.t(context, 'medi_failed_load'), '❌');
     }
   }
@@ -332,14 +390,23 @@ class _MediTrackScreenState extends State<MediTrackScreen>
   }
 
   void _markTaken(String id) async {
+    if (!mounted || _markTakenInFlight.contains(id)) return;
     final medIndex = meds.indexWhere((m) => m['id'] == id);
     if (medIndex == -1 || meds[medIndex]['taken']) return;
+    final appwrite = _appwrite;
+    if (widget.markTakenSync == null && appwrite == null) return;
+    _markTakenInFlight.add(id);
 
     final med = meds[medIndex];
     final newLeft = (med['left'] as int) > 0 ? (med['left'] as int) - 1 : 0;
     final now = DateTime.now();
+    final markedMessage = AppLocalizations.t(
+      context,
+      'medi_marked_taken',
+    ).replaceAll('{name}', med['name'] as String);
 
     // Optimistic UI Update
+    _mutationRevision++;
     setState(() {
       meds[medIndex] = {...med, 'taken': true, 'left': newLeft};
       _log.insert(0, {
@@ -351,13 +418,7 @@ class _MediTrackScreenState extends State<MediTrackScreen>
       });
       _animateRing(_computeRingProgress());
     });
-    _showToast(
-      AppLocalizations.t(
-        context,
-        'medi_marked_taken',
-      ).replaceAll('{name}', med['name'] as String),
-      '✅',
-    );
+    _showToast(markedMessage, '✅');
 
     // DB Update. Appwrite's datetime attributes require an ISO 8601
     // string with a timezone designator; toIso8601String() on a local
@@ -365,15 +426,18 @@ class _MediTrackScreenState extends State<MediTrackScreen>
     // Convert to UTC first — that gives a "...Z" suffix Appwrite accepts.
     final nowIso = now.toUtc().toIso8601String();
     try {
-      final appwrite = Provider.of<AppwriteService>(context, listen: false);
-      await appwrite.updateMed(id, {'left': newLeft, 'lastTaken': nowIso});
-      await appwrite.createMedLog({
-        'medId': id,
-        'medName': med['name'],
-        'dose': med['dose'],
-        'time': nowIso,
-        'status': 'taken',
-      });
+      if (widget.markTakenSync != null) {
+        await widget.markTakenSync!(id, newLeft, nowIso);
+      } else {
+        await appwrite!.updateMed(id, {'left': newLeft, 'lastTaken': nowIso});
+        await appwrite.createMedLog({
+          'medId': id,
+          'medName': med['name'],
+          'dose': med['dose'],
+          'time': nowIso,
+          'status': 'taken',
+        });
+      }
     } catch (e) {
       // Surface the raw Appwrite error to the screen so it can be read
       // / screenshotted without adb access. Trimmed to keep the toast
@@ -382,49 +446,51 @@ class _MediTrackScreenState extends State<MediTrackScreen>
       final shown = errText.length > 200
           ? '${errText.substring(0, 200)}…'
           : errText;
-      ScaffoldMessenger.of(context).clearSnackBars();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: bg2,
-          behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          duration: const Duration(seconds: 12),
-          content: Text(
-            'Sync failed: $shown',
-            style: TextStyle(
-              color: textColor,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      );
+      _showToast('Sync failed: $shown', '❌', duration: const Duration(seconds: 12));
+    } finally {
+      _markTakenInFlight.remove(id);
     }
   }
 
   void _deleteMed(String id) async {
+    if (!mounted || _deleteInFlight.contains(id)) return;
+    final appwrite = _appwrite;
+    if (widget.deleteSync == null && appwrite == null) return;
+    final successMessage = AppLocalizations.t(context, 'medi_medicine_removed');
+    final failureMessage = AppLocalizations.t(context, 'medi_remove_failed');
+    _deleteInFlight.add(id);
+    _mutationRevision++;
     setState(() => meds.removeWhere((m) => m['id'] == id));
     _animateRing(_computeRingProgress());
     try {
-      await Provider.of<AppwriteService>(context, listen: false).deleteMed(id);
-      _showToast(AppLocalizations.t(context, 'medi_medicine_removed'), '🗑️');
+      if (widget.deleteSync != null) {
+        await widget.deleteSync!(id);
+      } else {
+        await appwrite!.deleteMed(id);
+      }
+      _showToast(successMessage, '🗑️');
     } catch (e) {
-      _showToast(AppLocalizations.t(context, 'medi_remove_failed'), '❌');
+      _showToast(failureMessage, '❌');
+    } finally {
+      _deleteInFlight.remove(id);
     }
   }
 
-  void _showToast(String message, String icon) {
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
+  void _showToast(
+    String message,
+    String icon, {
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    final messenger = _messenger;
+    if (!mounted || messenger == null || !messenger.mounted) return;
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
       SnackBar(
-        backgroundColor: bg2,
+        backgroundColor: _toastBackground,
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        duration: const Duration(seconds: 3),
+        duration: duration,
         content: Row(
           children: [
             Text(icon, style: const TextStyle(fontSize: 18)),
@@ -433,7 +499,7 @@ class _MediTrackScreenState extends State<MediTrackScreen>
               child: Text(
                 message,
                 style: TextStyle(
-                  color: textColor,
+                  color: _toastText,
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
                 ),
@@ -1064,9 +1130,7 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                           ),
                           if (!taken) ...[
                             const SizedBox(height: 2),
-                            GestureDetector(
-                              onTap: () => _markTaken(id),
-                              child: Container(
+                            Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                   vertical: 3,
@@ -1096,7 +1160,6 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                                     ),
                                   ],
                                 ),
-                              ),
                             ),
                           ],
                         ],
@@ -2548,7 +2611,9 @@ class _MediTrackScreenState extends State<MediTrackScreen>
   String? _selCat;
   bool _isCustomCat = false;
 
-  void _showAddMedSheet({Map<String, dynamic>? editMed}) {
+  Future<void> _showAddMedSheet({Map<String, dynamic>? editMed}) async {
+    if (!mounted || _medSheetOpen) return;
+    _medSheetOpen = true;
     final l = AppLocalizations.t;
     final isEditing = editMed != null;
     if (isEditing) {
@@ -2569,7 +2634,8 @@ class _MediTrackScreenState extends State<MediTrackScreen>
       _customCatCtrl.clear();
     }
 
-    showModalBottomSheet(
+    var sheetSaving = false;
+    await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -2688,6 +2754,7 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                     const SizedBox(height: 10),
                     _PressScaleButton(
                       onTap: () async {
+                        if (sheetSaving || _medSaveInFlight) return;
                         final name = _nameCtrl.text.trim();
                         final dose = _doseCtrl.text.trim();
                         final supply =
@@ -2714,13 +2781,12 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                           return;
                         }
 
-                        final navigator = Navigator.of(context);
-
+                        final appwrite = _appwrite;
+                        if (appwrite == null) return;
+                        sheetSaving = true;
+                        _medSaveInFlight = true;
+                        setSheetState(() {});
                         try {
-                          final appwrite = Provider.of<AppwriteService>(
-                            this.context,
-                            listen: false,
-                          );
                           final resolvedTime = _timeCtrl.text.trim().isEmpty
                               ? '12:00 PM'
                               : _timeCtrl.text.trim();
@@ -2749,7 +2815,7 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                               timeText: resolvedTime,
                             );
 
-                            if (!mounted) return;
+                            if (!mounted || !context.mounted) return;
                             _showToast('Medicine updated', '✅');
                           } else {
                             final created = await appwrite.createMed({
@@ -2771,7 +2837,7 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                               timeText: resolvedTime,
                             );
 
-                            if (!mounted) return;
+                            if (!mounted || !context.mounted) return;
                             _showToast(
                               AppLocalizations.t(
                                 this.context,
@@ -2780,7 +2846,8 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                               '💊',
                             );
                           }
-                          navigator.pop();
+                          if (!mounted || !context.mounted) return;
+                          Navigator.of(context).pop();
 
                           _nameCtrl.clear();
                           _doseCtrl.clear();
@@ -2791,9 +2858,13 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                           _selCat = null;
                           _isCustomCat = false;
 
-                          _fetchData();
+                          if (mounted) _fetchData();
                         } catch (e) {
-                          _showToast('Save failed: $e', '❌');
+                          if (mounted) _showToast('Save failed: $e', '❌');
+                        } finally {
+                          _medSaveInFlight = false;
+                          sheetSaving = false;
+                          if (context.mounted) setSheetState(() {});
                         }
                       },
                       child: Container(
@@ -2822,7 +2893,10 @@ class _MediTrackScreenState extends State<MediTrackScreen>
           },
         );
       },
-    );
+    ).whenComplete(() {
+      _medSaveInFlight = false;
+      _medSheetOpen = false;
+    });
   }
 
   Widget _buildInputLabel(String text) {

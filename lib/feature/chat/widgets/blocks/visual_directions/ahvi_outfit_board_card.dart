@@ -843,23 +843,11 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
     return 'My "$title" look, styled on AHVI.';
   }
 
-  List<ShareBoardItem> _shareBoardItems() {
-    final out = <ShareBoardItem>[];
+  List<StyleBoardItem> _shareBoardItems() {
+    final out = <StyleBoardItem>[];
     for (final item in _saveItems()) {
-      final url = _text(
-        item['board_image_url'] ??
-            item['transparent_image_url'] ??
-            item['cutout_url'] ??
-            item['image_url'] ??
-            item['imageUrl'],
-      ).trim();
-      if (url.isEmpty) continue;
-      out.add(
-        ShareBoardItem(
-          role: _text(item['role'] ?? item['slot']).trim().toLowerCase(),
-          imageUrl: url,
-        ),
-      );
+      final parsed = StyleBoardItem.fromJson(item);
+      if (parsed.displayImageUrl.isNotEmpty) out.add(parsed);
     }
     return out;
   }

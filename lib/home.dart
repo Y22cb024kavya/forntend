@@ -3655,10 +3655,15 @@ class _Screen4State extends State<Screen4> with TickerProviderStateMixin, Widget
                         return Padding(
                           padding: EdgeInsets.only(right: cardGap),
                           child: GestureDetector(
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => r.page),
-                            ),
+                            onTap: () {
+                              if (r.page is MediTrackScreen) {
+                                debugPrint('AHVI_MEDI_NAV source=home_routine');
+                              }
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => r.page),
+                              );
+                            },
                             child: SizedBox(
                               width: cardWidth,
                               height: cardItemHeight,

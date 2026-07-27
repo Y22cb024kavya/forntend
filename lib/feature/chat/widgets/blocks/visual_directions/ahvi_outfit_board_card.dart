@@ -156,6 +156,11 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
       'stable_item_ids_ok=${state.stableItemIdsOk} '
       'positions_ok=${state.positionsOk} '
       'request_carried_items_ok=${state.requestCarriedItemsOk} '
+      'canonical_item_count=${state.items.length} '
+      'items_with_stable_id=${state.items.where((i) => i.hasStableIdentity).length} '
+      'items_with_role=${state.items.where((i) => i.role != BoardItemRole.unknown).length} '
+      'items_with_required_payload=${state.items.where((i) => i.raw.isNotEmpty && i.source != "unknown").length} '
+      'request_carried_source=${state.items.every((i) => i.raw.isNotEmpty) ? "canonical_reconstruction" : "none"} '
       'can_lock=${state.canLock} '
       'can_shuffle=${state.canShuffle} '
       'failed_predicates=${failedPredicates.isEmpty ? "none" : failedPredicates.join(",")}',
@@ -1565,12 +1570,39 @@ StyleBoardData _toStyleBoardData(
         )
         .firstOrNull;
     final canonical = raw == null ? null : StyleBoardItem.fromJson(raw);
+    // Request-carried payload: the persistence-free Shuffle endpoint needs each
+    // current item serialisable. When the raw board_items lookup misses (or the
+    // item carries no per-item source), reconstruct it from the canonical
+    // parsed item. A wardrobe-only board's items ARE wardrobe items, so the
+    // board-level source_policy is the honest per-item source fallback. Never
+    // fabricates IDs: an item without a stable id keeps raw={} and stays
+    // ineligible via requestCarriedItemsOk.
+    final boardPolicy = _text(
+      direction['source_policy'] ?? direction['sourcePolicy'],
+    ).trim().toLowerCase();
+    var source = canonical?.source ?? 'unknown';
+    if (source == 'unknown' && boardPolicy == 'wardrobe') {
+      source = 'wardrobe';
+    }
+    final hasStableId = item.id.trim().isNotEmpty;
+    final carriedRaw = raw ??
+        (hasStableId
+            ? <String, dynamic>{
+                'item_id': item.id,
+                'name': item.name,
+                'slot': role.name,
+                'role': role.name,
+                'category': item.role.name,
+                'image_url': image,
+                'source': source,
+              }
+            : const <String, dynamic>{});
     items.add(
       StyleBoardItem(
         id: item.id,
         slot: canonical?.slot ?? role.name,
         boardRole: canonical?.boardRole ?? '',
-        source: canonical?.source ?? 'unknown',
+        source: source,
         accessoryType: canonical?.accessoryType ?? '',
         name: item.name,
         imageUrl: canonical?.imageUrl ?? image,
@@ -1582,7 +1614,7 @@ StyleBoardData _toStyleBoardData(
         role: role,
         position: canonical?.position,
         isLocked: canonical?.isLocked ?? false,
-        raw: raw ?? const {},
+        raw: carriedRaw,
       ),
     );
   }

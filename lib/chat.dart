@@ -20,6 +20,7 @@ import 'package:myapp/services/appwrite_service.dart';
 import 'package:myapp/services/ahvi_response_parser.dart';
 import 'package:myapp/services/ahvi_speech_service.dart';
 import 'package:myapp/services/backend_service.dart';
+import 'package:myapp/style_board/saved_board_persistence.dart';
 import 'package:myapp/skincare.dart' as skincare_page;
 import 'package:myapp/fitness_page.dart' as fitness_page;
 import 'package:myapp/diet_page.dart' as diet_page;
@@ -2432,6 +2433,13 @@ class _ChatScreenState extends State<ChatScreen>
       _generatedSavedBoardTitle(board, slotted, selectedCategory),
       existingTitles,
     );
+    final savedContent = buildSavedBoardContent(
+      board: board,
+      items: outfitItems,
+      selection: SavedBoardSelection(bucket: selectedCategory.key),
+      title: title,
+      originalOccasion: (board['occasion'] ?? '').toString(),
+    );
 
     final result = await appwrite.saveBoardToCollection(
       occasion: _savedCategoryOccasion(selectedCategory),
@@ -2469,6 +2477,7 @@ class _ChatScreenState extends State<ChatScreen>
         },
       },
       emoji: '✨',
+      content: savedContent,
     );
 
     if (!mounted) return;
@@ -2515,6 +2524,10 @@ class _ChatScreenState extends State<ChatScreen>
           .trim();
       final maskedUrl = (item['masked_url'] ?? item['maskedUrl'] ?? imageUrl)
           .toString();
+      final source =
+          (item['source'] ?? item['item_source'] ?? item['itemSource'] ?? '')
+              .toString()
+              .trim();
 
       items.add({
         if (id.isNotEmpty) 'id': id,
@@ -2528,6 +2541,7 @@ class _ChatScreenState extends State<ChatScreen>
         'masked_url': maskedUrl,
         'url': imageUrl,
         'thumbnailUrl': imageUrl,
+        if (source.isNotEmpty) 'source': source,
       });
     }
     return items;

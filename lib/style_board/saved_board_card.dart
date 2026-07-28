@@ -145,8 +145,18 @@ class SavedBoardCard extends StatelessWidget {
       'tip',
     ]);
     final items = _itemsForBoard(data);
+    final parity = savedBoardReopenParity(data);
+    debugPrint(
+      'AHVI_BOARD_REOPEN_PARITY '
+      'board_id=${parity['board_id']} '
+      'item_count_match=${parity['item_count_match']} '
+      'item_order_match=${parity['item_order_match']} '
+      'source_policy_match=${parity['source_policy_match']} '
+      'image_provenance_match=${parity['image_provenance_match']} '
+      'bucket=${parity['bucket']} '
+      'is_favourite=${parity['is_favourite']}',
+    );
     debugPrint('saved_board.open boardId=$boardId');
-    debugPrint('saved_board.payload keys=${data.keys.toList()}');
     debugPrint('saved_board.items count=${items.length}');
 
     showModalBottomSheet<void>(

@@ -121,8 +121,24 @@ ResolvedWardrobeImage resolveWardrobeImage(
       resolvedMasked != null && originalUrls.contains(resolvedMasked);
   final maskedIsCatalog = _isCatalogObject(resolvedMasked);
   final maskedImageIsCatalog = _isCatalogObject(maskedImage);
+  final frozenField = _clean(raw['selected_field']);
+  final frozenSource = _clean(raw['source_kind']);
+  final frozenUrl = frozenField != null && frozenSource != null
+      ? _clean(raw['image_url'] ?? raw['imageUrl'])
+      : null;
+  final frozenIsCatalog = _isCatalogObject(frozenUrl);
+  final frozenExpected = raw['expected_transparent'] == true;
 
   final candidates = <_Candidate>[
+    if (frozenUrl != null)
+      _Candidate(
+        frozenField!,
+        frozenUrl,
+        frozenIsCatalog ? 'catalog_fallback' : frozenSource!,
+        frozenIsCatalog ? 3 : (frozenExpected ? 0 : 4),
+        frozenIsCatalog ? false : frozenExpected,
+        !frozenIsCatalog && frozenExpected,
+      ),
     if (boardValidated)
       _Candidate(
         'board_image_url',

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'package:myapp/widgets/offline_image.dart';
-import 'package:myapp/util/wardrobe_image_resolver.dart';
 import 'board_layout_engine.dart';
 import 'board_models.dart';
 
@@ -394,35 +393,29 @@ StyleBoardData boardDataFromMap(Map<String, dynamic> board) {
   for (final r in rawItems) {
     if (r is! Map) continue;
     final m = Map<String, dynamic>.from(r);
-    final name =
-        (m['name'] ?? m['label'] ?? m['title'] ?? m['category'] ?? 'Item')
-            .toString();
-    final resolved = resolveWardrobeImage(
-      m,
-      surface: 'style_board_saved',
-      itemId: (m['item_id'] ?? m['id'] ?? m[r'$id'] ?? '').toString(),
-    );
-    final imageUrl = resolved.url ?? '';
-    if (imageUrl.isEmpty) continue;
-    m['_image_should_frame'] = resolved.shouldFrame;
-    m['_image_source_kind'] = resolved.sourceKind;
-    m['_image_expected_transparent'] = resolved.expectedTransparent;
-    final category =
-        (m['category'] ??
-                m['sub_category'] ??
-                m['subcategory'] ??
-                m['type'] ??
-                '')
-            .toString();
-    final id = (m[r'$id'] ?? m['id'] ?? m['item_id'] ?? name).toString();
+    final parsed = StyleBoardItem.fromJson(m);
+    if (parsed.imageUrl.isEmpty) continue;
+    if (parsed.role != BoardItemRole.unknown) {
+      items.add(parsed);
+      continue;
+    }
     items.add(
       StyleBoardItem(
-        id: id,
-        name: name,
-        imageUrl: imageUrl,
-        category: category,
-        role: BoardLayoutEngine.resolveRole(category, name: name),
-        raw: m,
+        id: parsed.id,
+        slot: parsed.slot,
+        boardRole: parsed.boardRole,
+        source: parsed.source,
+        accessoryType: parsed.accessoryType,
+        name: parsed.name,
+        imageUrl: parsed.imageUrl,
+        maskedUrl: parsed.maskedUrl,
+        boardImageUrl: parsed.boardImageUrl,
+        normalizedUrl: parsed.normalizedUrl,
+        category: parsed.category,
+        subCategory: parsed.subCategory,
+        role: BoardLayoutEngine.resolveRole(parsed.category, name: parsed.name),
+        position: parsed.position,
+        raw: parsed.raw,
       ),
     );
   }
@@ -434,6 +427,16 @@ StyleBoardData boardDataFromMap(Map<String, dynamic> board) {
       ? Map<String, dynamic>.from(board['style_metadata'] as Map)
       : const <String, dynamic>{};
   return StyleBoardData(
+    boardId: (board['board_id'] ?? board['boardId'] ?? '').toString(),
+    revision: board['revision'] is num
+        ? (board['revision'] as num).toInt()
+        : int.tryParse((board['revision'] ?? '').toString()) ?? 0,
+    scenario: (board['scenario'] ?? '').toString(),
+    sourcePolicy:
+        (board['source_policy'] ?? board['sourcePolicy'] ?? '').toString(),
+    allowWardrobeFallback:
+        board['allow_wardrobe_fallback'] == true ||
+        board['allowWardrobeFallback'] == true,
     title:
         (board['title'] ?? board['look_name'] ?? board['name'] ?? 'Styled Look')
             .toString(),

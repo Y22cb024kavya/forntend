@@ -162,6 +162,7 @@ void main() {
             required title,
             required itemIds,
             required items,
+            required isFavourite,
           }) async {
             savedItems = items;
             return 'doc-1';
@@ -171,6 +172,8 @@ void main() {
     await tester.tap(find.text('Shuffle'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save look'));
     await tester.pumpAndSettle();
 
     expect(savedItems, isNotNull);

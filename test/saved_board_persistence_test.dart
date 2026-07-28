@@ -1,4 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:myapp/style_board/board_models.dart';
+import 'package:myapp/style_board/board_renderer.dart';
 import 'package:myapp/style_board/saved_board_images.dart';
 import 'package:myapp/style_board/saved_board_persistence.dart';
 
@@ -7,86 +11,411 @@ void main() {
     {
       'item_id': 'bottom-2',
       'role': 'bottom',
+      'source': 'wardrobe',
+      'name': 'Navy trousers',
       'masked_url': 'https://test/wardrobe_bottom-2_cutout_v2.png',
-      'source_kind': 'validated_cutout',
+      'image_status': 'rmbg_complete',
+      'position': {
+        'x': 0.44,
+        'y': 0.38,
+        'width': 0.5,
+        'height': 0.52,
+        'scale': 1.08,
+        'rotation': -0.03,
+        'z': 1,
+      },
     },
     {
       'item_id': 'top-4',
       'role': 'top',
+      'source': 'style_asset',
+      'name': 'White shirt',
       'normalized_url': 'https://test/catalog_top-4.png',
-      'source_kind': 'catalog_fallback',
+      'position': {'x': 0.15, 'y': 0.07, 'width': 0.62, 'height': 0.52, 'z': 2},
     },
   ];
 
-  Map<String, dynamic> liveBoard() => canonicalSavedBoard(
-    direction: const {
-      'board_id': 'board-stable-1',
-      'revision': 3,
-      'source_policy': 'wardrobe',
-      'layout': {'template': 'editorial-2'},
-    },
-    title: 'Office polish',
-    occasion: 'office',
-    outfitDescription: 'Sharp and balanced.',
-    itemIds: const ['bottom-2', 'top-4'],
+  Map<String, dynamic> liveBoard() => {
+    'board_id': 'board-stable-1',
+    'revision': 3,
+    'source_policy': 'wardrobe',
+    'occasion': 'office',
+  };
+
+  SavedBoardContent content({bool favourite = false}) => buildSavedBoardContent(
+    board: liveBoard(),
     items: shuffledItems,
+    selection: SavedBoardSelection(
+      bucket: 'office_fits',
+      isFavourite: favourite,
+    ),
+    title: 'Office polish',
+    originalOccasion: 'office',
   );
 
-  test('legacy payload contains only deployed attributes', () {
-    final payload = savedBoardLegacyPayload(
-      userId: 'user-1',
-      occasion: 'Office',
-      imageUrl: 'https://test/cover.png',
-      emoji: '*',
-      itemIds: const ['bottom-2', 'top-4'],
-      board: liveBoard(),
-    );
+  Map<String, dynamic> payload({bool favourite = false}) =>
+      buildSavedBoardPayload(
+        userId: 'user-1',
+        imageUrl: 'https://test/cover.png',
+        content: content(favourite: favourite),
+      );
 
-    expect(payload.keys.toSet(), savedBoardAcceptedFields);
-    expect(payload, isNot(contains('boardCategory')));
-    expect(payload, isNot(contains('thumbnailUrl')));
-    expect(payload, isNot(contains('board_payload')));
+  group('deployed Appwrite contract', () {
+    test('payload contains exactly the six deployed attributes', () {
+      final data = payload();
+
+      expect(data.keys.toSet(), savedBoardAcceptedFields);
+      expect(data, isNot(contains('outfitDescription')));
+      expect(data, isNot(contains('emoji')));
+      expect(data, isNot(contains('boardCategory')));
+      expect(data, isNot(contains('thumbnailUrl')));
+      expect(data, isNot(contains('board_payload')));
+    });
+
+    test('userId limit is enforced', () {
+      expect(
+        () => buildSavedBoardPayload(
+          userId: 'u' * 53,
+          imageUrl: 'https://test/cover.png',
+          content: content(),
+        ),
+        throwsA(
+          isA<SavedBoardPersistenceException>().having(
+            (error) => error.reason,
+            'reason',
+            'invalid_user_id',
+          ),
+        ),
+      );
+    });
+
+    test('occasion limit and canonical value are enforced', () {
+      final valid = payload();
+      expect(valid['occasion'], 'office_fits');
+      final invalid = SavedBoardContent(
+        bucket: 'x' * 51,
+        isFavourite: false,
+        boardId: 'board-1',
+        itemIds: const ['item-1'],
+        masterGarment: '{}',
+        outfitItems: '[]',
+      );
+      expect(
+        () => buildSavedBoardPayload(
+          userId: 'user-1',
+          imageUrl: 'https://test/cover.png',
+          content: invalid,
+        ),
+        throwsA(isA<SavedBoardPersistenceException>()),
+      );
+    });
+
+    test('imageUrl must be an absolute HTTP or HTTPS URL', () {
+      for (final value in [
+        '',
+        'board-1',
+        'assets/look.png',
+        'file:///look.png',
+      ]) {
+        expect(
+          () => buildSavedBoardPayload(
+            userId: 'user-1',
+            imageUrl: value,
+            content: content(),
+          ),
+          throwsA(isA<SavedBoardPersistenceException>()),
+        );
+      }
+    });
+
+    test('masterGarment and outfitItems limits are enforced', () {
+      final base = content();
+      for (final oversized in [
+        SavedBoardContent(
+          bucket: base.bucket,
+          isFavourite: false,
+          boardId: base.boardId,
+          itemIds: base.itemIds,
+          masterGarment: 'x' * 100001,
+          outfitItems: base.outfitItems,
+        ),
+        SavedBoardContent(
+          bucket: base.bucket,
+          isFavourite: false,
+          boardId: base.boardId,
+          itemIds: base.itemIds,
+          masterGarment: base.masterGarment,
+          outfitItems: 'x' * 10001,
+        ),
+      ]) {
+        expect(
+          () => buildSavedBoardPayload(
+            userId: 'user-1',
+            imageUrl: 'https://test/cover.png',
+            content: oversized,
+          ),
+          throwsA(isA<SavedBoardPersistenceException>()),
+        );
+      }
+    });
   });
 
-  test('legacy reopen reconstructs the current shuffled board exactly', () {
-    final live = liveBoard();
-    final payload = savedBoardLegacyPayload(
-      userId: 'user-1',
-      occasion: 'Office',
-      imageUrl: 'https://test/cover.png',
-      emoji: '*',
-      itemIds: const ['bottom-2', 'top-4'],
-      board: live,
-    );
+  group('category inference', () {
+    for (final entry in {
+      'office': 'office_fits',
+      'work': 'office_fits',
+      'business': 'office_fits',
+      'party': 'party_looks',
+      'cocktail': 'party_looks',
+      'vacation': 'vacation',
+      'beach': 'vacation',
+      'wedding': 'occasion',
+      'festival': 'occasion',
+      'unknown': 'everything_else',
+    }.entries) {
+      test('${entry.key} defaults to ${entry.value}', () {
+        expect(inferSavedBoardBucket({'occasion': entry.key}), entry.value);
+      });
+    }
 
-    final reopened = expandSavedBoardData(payload);
-
-    expect(reopened['board_id'], live['board_id']);
-    expect(reopened['revision'], live['revision']);
-    expect(reopened['source_policy'], 'wardrobe');
-    expect(reopened['layout'], live['layout']);
-    expect(reopened['items'], shuffledItems);
-    expect(reopened['itemIds'], const ['bottom-2', 'top-4']);
-    expect(reopened['outfitDescription'], 'Sharp and balanced.');
+    test('user selection overrides inferred category', () {
+      final selected = buildSavedBoardContent(
+        board: liveBoard(),
+        items: shuffledItems,
+        selection: const SavedBoardSelection(bucket: 'vacation'),
+        title: 'Office polish',
+        originalOccasion: 'office',
+      );
+      expect(selected.bucket, 'vacation');
+    });
   });
 
-  test('image provenance and catalogue fallback survive reopen', () {
-    final payload = savedBoardLegacyPayload(
-      userId: 'user-1',
-      occasion: 'Office',
-      imageUrl: 'https://test/cover.png',
-      emoji: '*',
-      itemIds: const ['bottom-2', 'top-4'],
-      board: liveBoard(),
-    );
-    final reopened = expandSavedBoardData(payload);
-    final items = (reopened['items'] as List).cast<Map<String, dynamic>>();
+  group('canonical persistence and reopen', () {
+    test('current order, metadata, provenance and layout survive', () {
+      final saved = payload(favourite: true);
+      final reopened = expandSavedBoardData(saved);
+      final items = (reopened['items'] as List).cast<Map<String, dynamic>>();
 
-    expect(items.first['source_kind'], 'validated_cutout');
-    expect(items.last['source_kind'], 'catalog_fallback');
-    expect(extractSavedBoardImages(payload), [
-      'https://test/wardrobe_bottom-2_cutout_v2.png',
-      'https://test/catalog_top-4.png',
-    ]);
+      expect(reopened['board_id'], 'board-stable-1');
+      expect(reopened['revision'], 3);
+      expect(reopened['source_policy'], 'wardrobe');
+      expect(reopened['layout_mode'], 'generic');
+      expect(reopened['itemIds'], ['bottom-2', 'top-4']);
+      expect(reopened, isNot(contains('outfitItems')));
+      expect(items.map((item) => item['item_id']), ['bottom-2', 'top-4']);
+      expect(items.map((item) => item['role']), ['bottom', 'top']);
+      expect(items.map((item) => item['source']), ['wardrobe', 'style_asset']);
+      expect(items.first['selected_field'], 'masked_url');
+      expect(items.first['source_kind'], 'masked');
+      expect(items.first['expected_transparent'], isTrue);
+      expect(items.first['position'], {
+        'x': 0.44,
+        'y': 0.38,
+        'width': 0.5,
+        'height': 0.52,
+        'scale': 1.08,
+        'rotation': -0.03,
+        'z': 1,
+      });
+      expect(items.last['selected_field'], 'normalized_url');
+      expect(items.last['source_kind'], 'catalog_fallback');
+      expect(items.last['expected_transparent'], isFalse);
+      expect(reopened['is_favourite'], isTrue);
+    });
+
+    test('style asset policy is preserved as a valid runtime policy', () {
+      final board = liveBoard()..['source_policy'] = 'style_asset';
+      final saved = buildSavedBoardContent(
+        board: board,
+        items: shuffledItems,
+        selection: const SavedBoardSelection(bucket: 'office_fits'),
+        title: 'Office polish',
+        originalOccasion: 'office',
+      );
+
+      expect(jsonDecode(saved.masterGarment)['source_policy'], 'style_asset');
+      expect(
+        expandSavedBoardData(
+          buildSavedBoardPayload(
+            userId: 'user-1',
+            imageUrl: 'https://test/cover.png',
+            content: saved,
+          ),
+        )['source_policy'],
+        'style_asset',
+      );
+    });
+
+    test('boards without a backend id receive a deterministic saved id', () {
+      SavedBoardContent build() => buildSavedBoardContent(
+        board: const {'occasion': 'office'},
+        items: shuffledItems,
+        selection: const SavedBoardSelection(bucket: 'office_fits'),
+        title: 'Office polish',
+        originalOccasion: 'office',
+      );
+
+      final first = build();
+      final second = build();
+      expect(first.boardId, startsWith('saved_'));
+      expect(first.boardId, second.boardId);
+      expect(jsonDecode(first.masterGarment)['source_policy'], isEmpty);
+    });
+
+    test('catalogue stays framed and validated cutout stays transparent', () {
+      final reopened = expandSavedBoardData(payload());
+      final board = boardDataFromMap(reopened);
+      final bottom = board.items.firstWhere((item) => item.id == 'bottom-2');
+      final top = board.items.firstWhere((item) => item.id == 'top-4');
+
+      expect(bottom.role, BoardItemRole.bottom);
+      expect(bottom.shouldFrame, isFalse);
+      expect(bottom.position?.x, 0.44);
+      expect(bottom.position?.scale, 1.08);
+      expect(bottom.position?.rotation, -0.03);
+      expect(board.boardId, 'board-stable-1');
+      expect(board.revision, 3);
+      expect(board.sourcePolicy, 'wardrobe');
+      expect(top.role, BoardItemRole.top);
+      expect(top.shouldFrame, isTrue);
+      expect(extractSavedBoardImages(payload()), [
+        'https://test/wardrobe_bottom-2_cutout_v2.png',
+        'https://test/catalog_top-4.png',
+      ]);
+    });
+  });
+
+  group('Favourites and filters', () {
+    test('Favourite defaults false and survives reopen when enabled', () {
+      expect(expandSavedBoardData(payload())['is_favourite'], isFalse);
+      expect(
+        expandSavedBoardData(payload(favourite: true))['is_favourite'],
+        isTrue,
+      );
+    });
+
+    test('Favourite updates only the encoded master metadata', () {
+      final data = payload();
+      final updated = savedBoardMasterGarmentWithFavourite(data, true);
+      final reopened = expandSavedBoardData({
+        ...data,
+        'masterGarment': updated,
+      });
+
+      expect(reopened['is_favourite'], isTrue);
+      expect(reopened['itemIds'], data['itemIds']);
+    });
+
+    test('legacy Favourite updates use the deployed masterGarment field', () {
+      final legacy = {
+        'occasion': 'Office',
+        'isFavourite': true,
+        'outfitDescription': jsonEncode({
+          'schema': 'ahvi_saved_board_v1',
+          'board': {'board_id': 'old-board', 'items': shuffledItems},
+        }),
+      };
+      final updated = savedBoardMasterGarmentWithFavourite(legacy, true);
+
+      expect(
+        expandSavedBoardData({
+          ...legacy,
+          'masterGarment': updated,
+        })['is_favourite'],
+        isTrue,
+      );
+      final removed = savedBoardMasterGarmentWithFavourite(
+        {...legacy, 'masterGarment': updated},
+        false,
+      );
+      expect(
+        expandSavedBoardData({
+          ...legacy,
+          'masterGarment': removed,
+        })['is_favourite'],
+        isFalse,
+      );
+    });
+
+    test('duplicate item ids are rejected before persistence', () {
+      expect(
+        () => buildSavedBoardContent(
+          board: liveBoard(),
+          items: [shuffledItems.first, shuffledItems.first],
+          selection: const SavedBoardSelection(bucket: 'office_fits'),
+          title: 'Office polish',
+          originalOccasion: 'office',
+        ),
+        throwsA(
+          isA<SavedBoardPersistenceException>().having(
+            (error) => error.reason,
+            'reason',
+            'duplicate_item_ids',
+          ),
+        ),
+      );
+    });
+
+    test('Favourite remains in primary category and appears in Favourites', () {
+      final data = payload(favourite: true);
+      expect(savedBoardMatchesFilter(data, 'all'), isTrue);
+      expect(savedBoardMatchesFilter(data, 'office_fits'), isTrue);
+      expect(savedBoardMatchesFilter(data, 'favourites'), isTrue);
+    });
+
+    test('non-Favourite does not appear in Favourites', () {
+      expect(savedBoardMatchesFilter(payload(), 'favourites'), isFalse);
+    });
+  });
+
+  group('backward compatibility', () {
+    test('old v1 saved documents still open', () {
+      final old = {
+        'occasion': 'Office',
+        'outfitDescription': jsonEncode({
+          'schema': 'ahvi_saved_board_v1',
+          'board': {'board_id': 'old-board', 'items': shuffledItems},
+        }),
+      };
+      final reopened = expandSavedBoardData(old);
+      expect(reopened['board_id'], 'old-board');
+      expect(reopened['bucket'], 'office_fits');
+      expect(reopened['is_favourite'], isFalse);
+    });
+
+    test('legacy occasion values map to canonical buckets', () {
+      expect(canonicalSavedBoardBucket('work'), 'office_fits');
+      expect(canonicalSavedBoardBucket('cocktail'), 'party_looks');
+      expect(canonicalSavedBoardBucket('beach'), 'vacation');
+      expect(canonicalSavedBoardBucket('formal'), 'occasion');
+      expect(canonicalSavedBoardBucket('daily'), 'everything_else');
+    });
+
+    test('provisional shared assets policy reopens as style asset', () {
+      final data = payload();
+      final master =
+          jsonDecode(data['masterGarment'] as String) as Map<String, dynamic>;
+      master['source_policy'] = 'shared_assets';
+
+      expect(
+        expandSavedBoardData({
+          ...data,
+          'masterGarment': jsonEncode(master),
+        })['source_policy'],
+        'style_asset',
+      );
+    });
+
+    test('malformed JSON and missing optional fields fall back safely', () {
+      final malformed = expandSavedBoardData({
+        'occasion': 'unknown',
+        'masterGarment': '{bad',
+        'outfitItems': '[bad',
+        'itemIds': const ['old-1'],
+      });
+      expect(malformed['bucket'], 'everything_else');
+      expect(malformed['is_favourite'], isFalse);
+      expect(extractSavedBoardImages(malformed), isEmpty);
+    });
   });
 }

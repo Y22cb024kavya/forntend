@@ -53,6 +53,7 @@ typedef BoardSaveFn =
       required String title,
       required List<String> itemIds,
       required List<Map<String, dynamic>> items,
+      required bool isFavourite,
     });
 
 class AhviOutfitBoardCard extends StatefulWidget {
@@ -1034,7 +1035,7 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
     }
     candidates.sort((a, b) => a.tier.compareTo(b.tier));
     for (final candidate in candidates) {
-      if (candidate.url != null) return candidate.url!;
+      if (isValidSavedBoardHttpUrl(candidate.url)) return candidate.url!;
     }
     return '';
   }
@@ -1057,29 +1058,120 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
     required String title,
     required List<String> itemIds,
     required List<Map<String, dynamic>> items,
+    required bool isFavourite,
   }) async {
-    final board = canonicalSavedBoard(
-      direction: widget.direction,
-      title: title,
-      occasion: occasion,
-      outfitDescription: outfitDescription,
-      itemIds: itemIds,
+    final content = buildSavedBoardContent(
+      board: widget.direction,
       items: items,
+      selection: SavedBoardSelection(
+        bucket: occasion,
+        isFavourite: isFavourite,
+      ),
+      title: title,
+      originalOccasion: _occasion,
     );
     final doc = await AppwriteService().saveBoardToCollection(
-      occasion: occasion,
-      outfitDescription: outfitDescription,
       imageUrl: imageUrl,
-      title: title,
-      emoji: '✨',
-      extra: {
-        'itemIds': itemIds,
-        'items': items,
-        'outfitItems': items,
-        'canonicalBoard': board,
-      },
+      content: content,
     );
     return doc?.$id;
+  }
+
+  Future<SavedBoardSelection?> _showSaveSheet() {
+    var bucket = inferSavedBoardBucket({
+      ...widget.direction,
+      'occasion': _occasion,
+    });
+    var isFavourite = false;
+    const categories = <(String, String, IconData)>[
+      ('party_looks', 'Party Looks', Icons.celebration_rounded),
+      ('office_fits', 'Office Fits', Icons.work_outline_rounded),
+      ('vacation', 'Vacation', Icons.flight_takeoff_rounded),
+      ('occasion', 'Occasion', Icons.diamond_outlined),
+      ('everything_else', 'Everything Else', Icons.auto_awesome_rounded),
+    ];
+    return showModalBottomSheet<SavedBoardSelection>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final t = sheetContext.themeTokens;
+        return StatefulBuilder(
+          builder: (context, setSheetState) => SafeArea(
+            child: Container(
+              margin: const EdgeInsets.all(12),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              decoration: BoxDecoration(
+                color: t.panel,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: t.cardBorder),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Save this look to',
+                    style: TextStyle(
+                      color: t.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  for (final category in categories)
+                    ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(category.$3, color: t.accent.primary),
+                      title: Text(
+                        category.$2,
+                        style: TextStyle(color: t.textPrimary),
+                      ),
+                      trailing: Icon(
+                        bucket == category.$1
+                            ? Icons.radio_button_checked_rounded
+                            : Icons.radio_button_off_rounded,
+                        color: bucket == category.$1
+                            ? t.accent.primary
+                            : t.mutedText,
+                      ),
+                      onTap: () => setSheetState(() => bucket = category.$1),
+                    ),
+                  const Divider(),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      'Add to Favourites',
+                      style: TextStyle(
+                        color: t.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    value: isFavourite,
+                    onChanged: (value) =>
+                        setSheetState(() => isFavourite = value),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(
+                        SavedBoardSelection(
+                          bucket: bucket,
+                          isFavourite: isFavourite,
+                        ),
+                      ),
+                      child: const Text('Save look'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _toggleSave() async {
@@ -1087,18 +1179,21 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
     debugPrint('AHVI_BOARD_SAVE_TAP');
     // Idempotent: ignore taps while saving or once already saved.
     if (_saving || _saved) return;
+    final selection = await _showSaveSheet();
+    if (selection == null || !mounted) return;
     setState(() => _saving = true);
     debugPrint('AHVI_BOARD_SAVE_START');
     try {
       final items = _saveItems();
       final saver = widget.saveBoardOverride ?? _defaultSaveBoard;
       final docId = await saver(
-        occasion: _occasion,
+        occasion: selection.bucket,
         outfitDescription: _saveExplanation(),
         imageUrl: _saveImageUrl(),
         title: widget.primaryLabel,
         itemIds: _saveItemIds(),
         items: items,
+        isFavourite: selection.isFavourite,
       );
       if (docId == null || docId.isEmpty) {
         throw Exception('appwrite_returned_null_document');
@@ -1109,7 +1204,9 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
       debugPrint(
         'AHVI_BOARD_SAVE_SUCCESS document_id=$docId '
         'board_id=${boardId.isEmpty ? _id : boardId} '
-        'item_count=${items.length}',
+        'item_count=${items.length} '
+        'bucket=${selection.bucket} '
+        'is_favourite=${selection.isFavourite}',
       );
       _sendFeedback('saved');
       // Best-effort local echo so the heart persists on reload. Appwrite is the
@@ -1130,8 +1227,13 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
       _messenger?.showSnackBar(
         const SnackBar(content: Text('Saved to your boards')),
       );
-    } catch (e) {
-      debugPrint('AHVI_BOARD_SAVE_FAILED error=$e');
+    } on SavedBoardPersistenceException catch (e) {
+      debugPrint('AHVI_BOARD_SAVE_FAILED reason=${e.reason}');
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _messenger?.showSnackBar(SnackBar(content: Text(e.userMessage)));
+    } catch (_) {
+      debugPrint('AHVI_BOARD_SAVE_FAILED reason=save_write_failed');
       if (!mounted) return;
       setState(() => _saving = false); // stays unsaved on failure
       _messenger?.showSnackBar(

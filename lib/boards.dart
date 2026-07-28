@@ -1134,11 +1134,8 @@ class _BoardsScreenState extends State<BoardsScreen>
             panelColor: _panel,
             shellColor: _shell,
             onTap: () => _push(
-              OccasionBoard(
-                occasion: 'Favourites',
-                titleKey: 'boards_favourites',
-                subtitleKey: 'boards_favourites_sub',
-                emptyEmoji: '❤️',
+              const everything_else.EverythingElseScreen(
+                initialFilter: 'favourites',
               ),
             ),
           ),

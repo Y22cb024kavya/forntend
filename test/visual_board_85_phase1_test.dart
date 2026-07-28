@@ -217,7 +217,7 @@ Map<String, dynamic> _boardItem(
 final _direction = <String, dynamic>{
   'board_id': 'haldi-board-1',
   'revision': 3,
-  'scenario': 'build_outfit',
+  'scenario': 'recommendation',
   'source_policy': 'wardrobe',
   'direction_name': 'Sunlit Traditional',
   'style_archetype': 'Sunlit Traditional',
@@ -316,7 +316,7 @@ void main() {
     expect(find.textContaining('long report description'), findsNothing);
     expect(find.text('Existing Cream Trousers'), findsNothing);
     expect(find.text('Missing: Ethnic Footwear'), findsNothing);
-    expect(find.text('Shuffle'), findsOneWidget);
+    expect(find.textContaining('Shuffle'), findsNothing);
     expect(find.text('Save'), findsOneWidget);
     expect(find.text('Like'), findsOneWidget);
     expect(find.text('Dislike'), findsOneWidget);
@@ -381,7 +381,7 @@ void main() {
     final sent = <String>[];
     await _pumpBoard(tester, use85Layout: true, onSendMessage: sent.add);
 
-    expect(find.text('Shuffle'), findsOneWidget);
+    expect(find.textContaining('Shuffle'), findsNothing);
     expect(sent, isEmpty);
     expect(find.text('Save'), findsOneWidget);
     expect(find.text('Like'), findsOneWidget);
@@ -452,7 +452,7 @@ void main() {
     );
     expect(tester.takeException(), isNull);
     expect(find.text('Save'), findsOneWidget);
-    expect(find.text('Shuffle'), findsOneWidget);
+    expect(find.textContaining('Shuffle'), findsNothing);
     expect(find.text('Like'), findsOneWidget);
     expect(find.text('Dislike'), findsOneWidget);
     expect(find.text('Share'), findsOneWidget);
@@ -481,7 +481,7 @@ Future<void> _pumpConnectedBoard(
         child: Scaffold(
           body: Center(
             child: AhviOutfitBoardCard(
-              direction: _direction,
+              direction: {..._direction, 'scenario': 'build_outfit'},
               width: 390,
               onSendMessage: (_) {},
               shuffleCall: shuffleCall,

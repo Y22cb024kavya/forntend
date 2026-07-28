@@ -12,19 +12,19 @@ import 'board_models.dart';
 double editorialVisualScaleForRole(BoardItemRole role) {
   switch (role) {
     case BoardItemRole.top:
-      return 1.15;
+      return 1.24;
     case BoardItemRole.bottom:
-      return 1.10;
+      return 1.18;
     case BoardItemRole.dress:
-      return 1.12;
+      return 1.20;
     case BoardItemRole.outerwear:
-      return 1.12;
+      return 1.18;
     case BoardItemRole.footwear:
-      return 1.38; // shoes carry the most transparent padding
+      return 1.48; // shoes carry the most transparent padding
     case BoardItemRole.accessory:
-      return 1.16; // bags / jewellery collapse into accessory
+      return 1.20; // bags / jewellery collapse into accessory
     case BoardItemRole.unknown:
-      return 1.08;
+      return 1.12;
   }
 }
 
@@ -52,6 +52,7 @@ class EditorialBoardItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final resolved = item.resolveImage(surface: 'style_board_render');
     final imageUrl = resolved.url ?? '';
     final shouldFrame = resolved.requiresFrame;
@@ -72,15 +73,17 @@ class EditorialBoardItem extends StatelessWidget {
       angle: rotation,
       child: shouldFrame
           ? Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFFCF5),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0x1F1A1A1A)),
-              ),
+              key: item.hasStableIdentity
+                  ? ValueKey<String>('fallback-${item.itemId}')
+                  : null,
+              padding: const EdgeInsets.all(5),
+              color: colors.surfaceContainerLow,
               child: garment,
             )
           : Stack(
+              key: item.hasStableIdentity
+                  ? ValueKey<String>('cutout-${item.itemId}')
+                  : null,
               fit: StackFit.expand,
               children: [
                 Positioned.fill(

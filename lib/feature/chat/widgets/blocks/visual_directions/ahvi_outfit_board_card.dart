@@ -26,6 +26,38 @@ import 'package:myapp/util/wardrobe_image_resolver.dart';
 
 typedef OutfitBoardMessageSender = void Function(String message);
 
+enum BoardInteractionMode { recommendation, styleThis, buildOutfit }
+
+extension BoardInteractionModeName on BoardInteractionMode {
+  String get wireName => switch (this) {
+    BoardInteractionMode.recommendation => 'recommendation',
+    BoardInteractionMode.styleThis => 'style_this',
+    BoardInteractionMode.buildOutfit => 'build_outfit',
+  };
+
+  bool get supportsMutation => this != BoardInteractionMode.recommendation;
+}
+
+BoardInteractionMode inferBoardInteractionMode(Map<String, dynamic> board) {
+  String normalized(Object? value) =>
+      value?.toString().trim().toLowerCase().replaceAll(
+        RegExp(r'[\s-]+'),
+        '_',
+      ) ??
+      '';
+
+  final value = [
+    board['interaction_mode'],
+    board['interactionMode'],
+    board['scenario'],
+  ].map(normalized).firstWhere((value) => value.isNotEmpty, orElse: () => '');
+  return switch (value) {
+    'style_this' => BoardInteractionMode.styleThis,
+    'build_outfit' => BoardInteractionMode.buildOutfit,
+    _ => BoardInteractionMode.recommendation,
+  };
+}
+
 String _shuffleFailureMessage(String code) => switch (code) {
   'ALL_ITEMS_LOCKED' => 'Unlock an item to shuffle.',
   'NO_REPLACEMENT_FOUND' =>
@@ -98,6 +130,9 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
   // mutation/action controls, so Share captures a clean image.
   final GlobalKey _shareBoundaryKey = GlobalKey();
 
+  BoardInteractionMode get _interactionMode =>
+      inferBoardInteractionMode(widget.direction);
+
   @override
   void initState() {
     super.initState();
@@ -127,10 +162,11 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
     }
     final incoming = _parseBoard(widget);
     final wardrobeChanged = !mapEquals(previousWardrobe, _wardrobeById);
-    final boardChanged = _isMeaningfulBoardUpdate(
-      _initialBoard,
-      incoming.board,
-    );
+    final modeChanged =
+        inferBoardInteractionMode(oldWidget.direction) !=
+        inferBoardInteractionMode(widget.direction);
+    final boardChanged =
+        modeChanged || _isMeaningfulBoardUpdate(_initialBoard, incoming.board);
     if (wardrobeChanged && !boardChanged) {
       _refreshBoardImages(incoming);
       return;
@@ -180,17 +216,44 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
     _initialBoard = parsed.board;
     _pendingBoard = null;
     _pendingImageBoard = null;
+    final lockedItemIds = parsed.board.items
+        .where((item) => item.isLocked && item.hasStableIdentity)
+        .map((item) => item.itemId)
+        .toSet();
+    if (_interactionMode == BoardInteractionMode.styleThis) {
+      final requestedAnchor = _text(
+        widget.direction['originating_item_id'] ??
+            widget.direction['originatingItemId'] ??
+            widget.direction['anchor_item_id'] ??
+            widget.direction['anchorItemId'],
+      );
+      final anchor = parsed.board.items.where((item) {
+        return item.hasStableIdentity && item.itemId == requestedAnchor;
+      }).firstOrNull;
+      final wardrobeAnchor = parsed.board.items.where((item) {
+        return item.hasStableIdentity && item.source == 'wardrobe';
+      }).firstOrNull;
+      final fallbackAnchor = parsed.board.items
+          .where((item) => item.hasStableIdentity)
+          .firstOrNull;
+      final originatingItem = anchor ?? wardrobeAnchor ?? fallbackAnchor;
+      if (originatingItem != null) lockedItemIds.add(originatingItem.itemId);
+    }
+    final stateItems = parsed.board.items
+        .map(
+          (item) => lockedItemIds.contains(item.itemId)
+              ? item.copyWith(isLocked: true)
+              : item,
+        )
+        .toList(growable: false);
     final state = StyleBoardState(
       boardId: parsed.board.boardId,
       revision: parsed.board.revision,
       scenario: parsed.board.scenario,
       sourcePolicy: parsed.board.sourcePolicy,
       allowWardrobeFallback: parsed.board.allowWardrobeFallback,
-      items: parsed.board.items,
-      lockedItemIds: parsed.board.items
-          .where((item) => item.isLocked && item.hasStableIdentity)
-          .map((item) => item.itemId)
-          .toSet(),
+      items: stateItems,
+      lockedItemIds: lockedItemIds,
     );
     final failedPredicates = state.failedContractPredicates;
     debugPrint(
@@ -214,7 +277,20 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
       'can_shuffle=${state.canShuffle} '
       'failed_predicates=${failedPredicates.isEmpty ? "none" : failedPredicates.join(",")}',
     );
-    if (!state.supportsShuffle) {
+    final modeAllowsMutation = _interactionMode.supportsMutation;
+    final controlsEnabled = modeAllowsMutation && state.supportsShuffle;
+    debugPrint(
+      'AHVI_BOARD_INTERACTION_MODE '
+      'board_id=${state.boardId} '
+      'mode=${_interactionMode.wireName} '
+      'lock=$controlsEnabled '
+      'shuffle=$controlsEnabled '
+      'undo=$controlsEnabled '
+      'save=true share=true '
+      'like=${_interactionMode == BoardInteractionMode.recommendation} '
+      'dislike=${_interactionMode == BoardInteractionMode.recommendation}',
+    );
+    if (!controlsEnabled) {
       _controller = null;
       return;
     }
@@ -415,6 +491,8 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
   Widget build(BuildContext context) {
     final board = _currentBoard;
     final renderable = _isRenderableOutfit(board.items);
+    final theme = Theme.of(context);
+    final mode = _interactionMode;
 
     return SizedBox(
       width: widget.width,
@@ -422,13 +500,11 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
       height: widget.width * 5 / 4,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          // Soft off-white canvas so the board reads as one flat-lay surface,
-          // not a stack of product tiles.
-          color: const Color(0xFFFAF9F6),
+          color: theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
+              color: theme.shadowColor.withValues(alpha: 0.07),
               blurRadius: 18,
               offset: const Offset(0, 8),
             ),
@@ -443,24 +519,22 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                   key: _shareBoundaryKey,
                   child: Column(
                     children: [
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: widget.onTapBoard,
-                        child: OutfitContextStrip(model: _model),
-                      ),
+                      _PremiumBoardHeader(mode: mode),
                       Expanded(
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: widget.onTapBoard,
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(4, 2, 4, 4),
+                            padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
                             child: renderable
                                 ? EditorialBoardCanvas(
                                     board: board,
                                     lockedItemIds:
                                         _controller?.state.lockedItemIds ??
                                         const {},
-                                    onToggleLock: _controller?.toggleLock,
+                                    onToggleLock: mode.supportsMutation
+                                        ? _controller?.toggleLock
+                                        : null,
                                   )
                                 : _IncompleteBoardFallback(
                                     title: board.title,
@@ -468,6 +542,11 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                                   ),
                           ),
                         ),
+                      ),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: widget.onTapBoard,
+                        child: OutfitContextStrip(model: _model),
                       ),
                     ],
                   ),
@@ -479,16 +558,49 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                   onShuffle: _shuffleBoard,
                 ),
               OutfitActionBar(
+                interactionMode: mode,
                 direction: _currentDirection,
                 editorialCover: widget.editorialCover,
                 primaryLabel: _model.title,
                 missingName: _model.missingName,
                 onSendMessage: widget.onSendMessage,
-                onShuffle: _controller == null ? null : _shuffleBoard,
                 shareBoundaryKey: _shareBoundaryKey,
                 saveBoardOverride: widget.saveBoardOverride,
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PremiumBoardHeader extends StatelessWidget {
+  final BoardInteractionMode mode;
+
+  const _PremiumBoardHeader({required this.mode});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = switch (mode) {
+      BoardInteractionMode.recommendation => 'AHVI EDIT',
+      BoardInteractionMode.styleThis => 'STYLE THIS',
+      BoardInteractionMode.buildOutfit => 'BUILD OUTFIT',
+    };
+    return SizedBox(
+      height: 30,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.4,
+            ),
           ),
         ),
       ),
@@ -503,17 +615,18 @@ class OutfitCollageGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = context.themeTokens;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     if (items.isEmpty) {
       return DecoratedBox(
         decoration: BoxDecoration(
-          color: t.accent.primary.withValues(alpha: 0.05),
+          color: colors.primary.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(14),
         ),
         child: Center(
           child: Icon(
             Icons.checkroom_rounded,
-            color: t.accent.primary.withValues(alpha: 0.55),
+            color: colors.primary.withValues(alpha: 0.55),
             size: 42,
           ),
         ),
@@ -671,9 +784,10 @@ class OutfitContextStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = context.themeTokens;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 7),
       child: SizedBox(
         width: double.infinity,
         child: Column(
@@ -685,15 +799,14 @@ class OutfitContextStrip extends StatelessWidget {
               textAlign: TextAlign.left,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: t.textPrimary,
-                fontSize: 18,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: colors.onSurface,
                 fontWeight: FontWeight.w700,
                 height: 1.05,
               ),
             ),
             if (model.chips.isNotEmpty || model.wardrobeMatchPct != null) ...[
-              const SizedBox(height: 7),
+              const SizedBox(height: 5),
               Wrap(
                 spacing: 6,
                 runSpacing: 5,
@@ -710,30 +823,28 @@ class OutfitContextStrip extends StatelessWidget {
             // Style reason (why_it_works) — was never rendered, so boards
             // showed no rationale. Show it under the title.
             if (model.intelligenceText.isNotEmpty) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Text(
                 model.intelligenceText,
                 textAlign: TextAlign.left,
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: t.textPrimary,
-                  fontSize: 13,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurface,
                   fontWeight: FontWeight.w500,
                   height: 1.22,
                 ),
               ),
             ],
             if (model.stylingTip.isNotEmpty) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 3),
               Text(
                 model.stylingTip,
                 textAlign: TextAlign.left,
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: t.mutedText,
-                  fontSize: 13,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
                   fontStyle: FontStyle.italic,
                   fontWeight: FontWeight.w500,
                   height: 1.18,
@@ -754,21 +865,22 @@ class _ContextChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = context.themeTokens;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Container(
       constraints: const BoxConstraints(maxWidth: 98),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.76),
-        border: Border.all(color: const Color(0xFFE7E0D8), width: 0.7),
+        color: colors.surfaceContainerLow,
+        border: Border.all(color: colors.outlineVariant, width: 0.7),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: t.mutedText,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: colors.onSurfaceVariant,
           fontSize: 9.5,
           fontWeight: FontWeight.w700,
         ),
@@ -786,13 +898,14 @@ class _WardrobeMatchPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = context.themeTokens;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
       decoration: BoxDecoration(
-        color: t.accent.primary.withValues(alpha: 0.12),
+        color: colors.primaryContainer,
         border: Border.all(
-          color: t.accent.primary.withValues(alpha: 0.45),
+          color: colors.primary.withValues(alpha: 0.35),
           width: 0.7,
         ),
         borderRadius: BorderRadius.circular(6),
@@ -800,12 +913,12 @@ class _WardrobeMatchPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.checkroom_rounded, size: 11, color: t.accent.primary),
+          Icon(Icons.checkroom_rounded, size: 11, color: colors.primary),
           const SizedBox(width: 4),
           Text(
             '$pct% wardrobe match',
-            style: TextStyle(
-              color: t.accent.primary,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colors.onPrimaryContainer,
               fontSize: 9.5,
               fontWeight: FontWeight.w700,
             ),
@@ -832,15 +945,17 @@ class BoardMutationBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = context.themeTokens;
+    final theme = Theme.of(context);
     final state = controller.state;
     final locked = state.lockedItemIds.length;
     return DecoratedBox(
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: t.cardBorder)),
+        border: Border(
+          top: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
       ),
       child: SizedBox(
-        height: 58,
+        height: 52,
         child: Row(
           children: [
             Expanded(
@@ -881,7 +996,7 @@ class BoardMutationBar extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 9.5,
                     fontWeight: FontWeight.w700,
-                    color: t.mutedText,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -894,12 +1009,12 @@ class BoardMutationBar extends StatelessWidget {
 }
 
 class OutfitActionBar extends StatefulWidget {
+  final BoardInteractionMode interactionMode;
   final Map<String, dynamic> direction;
   final Map<String, dynamic> editorialCover;
   final String primaryLabel;
   final String missingName;
   final OutfitBoardMessageSender? onSendMessage;
-  final Future<void> Function()? onShuffle;
   final GlobalKey? shareBoundaryKey;
   // Test seams (production uses the real Appwrite + share_plus paths).
   final BoardSaveFn? saveBoardOverride;
@@ -914,8 +1029,8 @@ class OutfitActionBar extends StatefulWidget {
     required this.editorialCover,
     required this.primaryLabel,
     required this.missingName,
+    this.interactionMode = BoardInteractionMode.recommendation,
     this.onSendMessage,
-    this.onShuffle,
     this.shareBoundaryKey,
     this.saveBoardOverride,
     this.captureOverride,
@@ -1377,8 +1492,7 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
 
   @override
   Widget build(BuildContext context) {
-    final t = context.themeTokens;
-    final canShuffle = widget.onShuffle != null;
+    final theme = Theme.of(context);
     final actions = <Widget>[
       _BoardAction(
         icon: _saved
@@ -1388,28 +1502,24 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
         enabled: !_saving,
         onTap: _toggleSave,
       ),
-      _BoardAction(
-        icon: Icons.shuffle_rounded,
-        label: canShuffle ? 'Shuffle' : 'Shuffle unavailable',
-        enabled: canShuffle,
-        onTap: () => unawaited(widget.onShuffle?.call()),
-      ),
-      _BoardAction(
-        icon: _liked
-            ? Icons.thumb_up_alt_rounded
-            : Icons.thumb_up_off_alt_rounded,
-        label: 'Like',
-        enabled: true,
-        onTap: _toggleLike,
-      ),
-      _BoardAction(
-        icon: _disliked
-            ? Icons.thumb_down_alt_rounded
-            : Icons.thumb_down_off_alt_rounded,
-        label: 'Dislike',
-        enabled: true,
-        onTap: _toggleDislike,
-      ),
+      if (widget.interactionMode == BoardInteractionMode.recommendation) ...[
+        _BoardAction(
+          icon: _liked
+              ? Icons.thumb_up_alt_rounded
+              : Icons.thumb_up_off_alt_rounded,
+          label: 'Like',
+          enabled: true,
+          onTap: _toggleLike,
+        ),
+        _BoardAction(
+          icon: _disliked
+              ? Icons.thumb_down_alt_rounded
+              : Icons.thumb_down_off_alt_rounded,
+          label: 'Dislike',
+          enabled: true,
+          onTap: _toggleDislike,
+        ),
+      ],
       _BoardAction(
         icon: Icons.ios_share_rounded,
         label: 'Share',
@@ -1420,7 +1530,9 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: t.cardBorder)),
+        border: Border(
+          top: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
       ),
       child: SizedBox(
         height: 48,
@@ -1447,8 +1559,10 @@ class _BoardAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = context.themeTokens;
-    final color = enabled ? t.textPrimary : t.mutedText.withValues(alpha: 0.45);
+    final colors = Theme.of(context).colorScheme;
+    final color = enabled
+        ? colors.onSurface
+        : colors.onSurfaceVariant.withValues(alpha: 0.45);
     return InkWell(
       onTap: enabled ? onTap : null,
       child: Column(

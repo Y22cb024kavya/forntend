@@ -84,6 +84,72 @@ void main() {
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
+  test(
+    'interaction mode is explicit and never inferred from source policy',
+    () {
+      expect(
+        inferBoardInteractionMode({'source_policy': 'wardrobe'}),
+        BoardInteractionMode.recommendation,
+      );
+      expect(
+        inferBoardInteractionMode({
+          'interaction_mode': 'style-this',
+          'source_policy': 'wardrobe',
+        }),
+        BoardInteractionMode.styleThis,
+      );
+      expect(
+        inferBoardInteractionMode({
+          'interaction_mode': '',
+          'scenario': 'build_outfit',
+          'source_policy': 'style_asset',
+        }),
+        BoardInteractionMode.buildOutfit,
+      );
+    },
+  );
+
+  testWidgets('recommendation exposes feedback without mutation controls', (
+    tester,
+  ) async {
+    await _pumpCard(
+      tester,
+      board: _board(scenario: 'recommendation'),
+      shuffleCall: (state) async => _success(state),
+    );
+
+    expect(find.byType(BoardMutationBar), findsNothing);
+    expect(find.byIcon(Icons.lock_outline_rounded), findsNothing);
+    expect(find.textContaining('Shuffle'), findsNothing);
+    expect(find.text('Save'), findsOneWidget);
+    expect(find.text('Like'), findsOneWidget);
+    expect(find.text('Dislike'), findsOneWidget);
+    expect(find.text('Share'), findsOneWidget);
+  });
+
+  testWidgets('Style This locks its originating garment by default', (
+    tester,
+  ) async {
+    final board = _board(scenario: 'style_this', sourcePolicy: 'style_asset');
+    final items = (board['board_items'] as List).whereType<Map>();
+    for (final item in items) {
+      item['locked'] = false;
+      if (item['item_id'] != 'anchor') item['source'] = 'style_asset';
+    }
+    await _pumpCard(
+      tester,
+      board: board,
+      shuffleCall: (state) async => _success(state),
+    );
+
+    expect(find.text('1 of 3 items locked'), findsOneWidget);
+    expect(find.byIcon(Icons.lock_rounded), findsOneWidget);
+    expect(find.text('Like'), findsNothing);
+    expect(find.text('Dislike'), findsNothing);
+    expect(find.text('Save'), findsOneWidget);
+    expect(find.text('Share'), findsOneWidget);
+  });
+
   testWidgets('active card locks multiple items and unlocks all locally', (
     tester,
   ) async {
@@ -280,7 +346,7 @@ void main() {
           },
     );
 
-    await tester.tap(find.text('Shuffle'));
+    await tester.tap(find.text('Shuffle unlocked pieces'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
@@ -296,7 +362,7 @@ void main() {
   });
 
   testWidgets(
-    'wardrobe board without positions enables footer durable shuffle only',
+    'wardrobe board without positions keeps durable mutation shuffle',
     (tester) async {
       final board = _board();
       for (final item in (board['board_items'] as List).whereType<Map>()) {
@@ -323,8 +389,8 @@ void main() {
         },
       );
 
-      expect(find.text('Shuffle'), findsOneWidget);
-      await tester.tap(find.text('Shuffle'));
+      expect(find.text('Shuffle unlocked pieces'), findsOneWidget);
+      await tester.tap(find.text('Shuffle unlocked pieces'));
       await tester.pumpAndSettle();
 
       expect(sentMessages, isEmpty);
@@ -333,7 +399,7 @@ void main() {
       expect(request!.sourcePolicy, 'wardrobe');
       expect(request!.lockedItemIds, {'anchor'});
 
-      await tester.tap(find.text('Shuffle'));
+      await tester.tap(find.text('Shuffle unlocked pieces'));
       await tester.pumpAndSettle();
       expect(request!.revision, 2);
       expect(request!.sourcePolicy, 'wardrobe');
@@ -364,7 +430,13 @@ void main() {
       expect(check, contains('can_lock=false'));
       expect(check, contains('can_shuffle=false'));
       expect(check, contains('failed_predicates=source_policy'));
-      expect(find.text('Shuffle unavailable'), findsOneWidget);
+      expect(find.textContaining('Shuffle'), findsNothing);
+      final interaction = messages.singleWhere(
+        (message) => message.startsWith('AHVI_BOARD_INTERACTION_MODE'),
+      );
+      expect(interaction, contains('mode=build_outfit'));
+      expect(interaction, contains('lock=false'));
+      expect(interaction, contains('shuffle=false'));
     } finally {
       debugPrint = previousDebugPrint;
     }
@@ -560,7 +632,7 @@ void main() {
     );
     expect(find.text('Shuffle unlocked pieces'), findsNothing);
     expect(find.text('0 of 3 items locked'), findsNothing);
-    expect(find.text('Shuffle unavailable'), findsOneWidget);
+    expect(find.textContaining('Shuffle'), findsNothing);
   });
 
   testWidgets(

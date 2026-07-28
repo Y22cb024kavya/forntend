@@ -7,6 +7,7 @@ import 'package:appwrite/models.dart';
 import 'package:appwrite/enums.dart';
 import 'package:myapp/config/env.dart';
 import 'package:myapp/services/notification_service.dart';
+import 'package:myapp/style_board/saved_board_persistence.dart';
 import 'package:myapp/util/wardrobe_image_resolver.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -1297,98 +1298,44 @@ class AppwriteService extends ChangeNotifier {
           : <String>[];
       final outfitItems = _savedBoardItemList(extra?['outfitItems']);
       final items = _savedBoardItemList(extra?['items']);
-      final boardPayload = _savedBoardPayload(
-        extra?['board_payload'] ?? extra?['boardPayload'],
-      );
-
       final storageOccasion = _savedBoardOccasionLabel(occasion);
       final categoryLabel = boardCategoryLabel?.trim().isNotEmpty == true
           ? boardCategoryLabel!.trim()
           : storageOccasion;
-      final categoryKey = boardCategory?.trim().isNotEmpty == true
-          ? boardCategory!.trim()
-          : _savedBoardCategoryKey(categoryLabel);
-      final richData = <String, dynamic>{
-        'userId': user.$id,
-        'occasion': storageOccasion,
-        'imageUrl': cleanImageUrl,
-        'itemIds': itemIds,
-        'boardCategory': categoryKey,
-        'boardCategoryLabel': categoryLabel,
-        'title': (title ?? '').trim().isEmpty
-            ? _fallbackSavedBoardTitle(categoryLabel, outfitDescription)
-            : title!.trim(),
-        'prompt': (prompt ?? '').trim(),
-        'outfitDescription': outfitDescription.trim(),
-        'thumbnailUrl': cleanImageUrl,
-        'emoji': (emoji ?? '').trim().isEmpty ? '✨' : emoji!.trim(),
-        // ✅ REMOVED: 'createdAt' - Appwrite manages this as $createdAt
-      };
-      if (outfitItems.isNotEmpty) richData['outfitItems'] = outfitItems;
-      if (items.isNotEmpty) richData['items'] = items;
-      final canonicalPayload = boardPayload.isNotEmpty
-          ? boardPayload
-          : jsonEncode({
-              'title': richData['title'],
-              'occasion': storageOccasion,
-              'items': outfitItems.isNotEmpty ? outfitItems : items,
-            });
-      richData['board_payload'] = canonicalPayload;
-
-      try {
-        return await databases.createDocument(
-          databaseId: Env.appwriteDatabaseId,
-          collectionId: Env.savedBoardsCollection,
-          documentId: ID.unique(),
-          data: richData,
-        );
-      } catch (e) {
-        debugPrint(
-          'Rich saved board write failed, retrying JSON payload schema: $e',
-        );
-      }
-
-      if (outfitItems.isNotEmpty || items.isNotEmpty) {
-        try {
-          return await databases.createDocument(
-            databaseId: Env.appwriteDatabaseId,
-            collectionId: Env.savedBoardsCollection,
-            documentId: ID.unique(),
-            data: {
-              'userId': user.$id,
-              'occasion': storageOccasion,
-              'imageUrl': cleanImageUrl,
-              'thumbnailUrl': cleanImageUrl,
-              'itemIds': itemIds,
-              'boardCategory': categoryKey,
-              'boardCategoryLabel': categoryLabel,
-              'title': richData['title'],
-              'prompt': richData['prompt'],
-              'outfitDescription': richData['outfitDescription'],
-              'emoji': richData['emoji'],
-              // ✅ REMOVED: 'createdAt' - Appwrite manages this as $createdAt
-              'board_payload': canonicalPayload,
-            },
-          );
-        } catch (e) {
-          debugPrint(
-            'JSON saved board write failed, retrying minimal schema: $e',
-          );
-        }
-      }
-
-      return await databases.createDocument(
+      final savedItems = outfitItems.isNotEmpty ? outfitItems : items;
+      final fallbackTitle = (title ?? '').trim().isEmpty
+          ? _fallbackSavedBoardTitle(categoryLabel, outfitDescription)
+          : title!.trim();
+      final suppliedBoard = extra?['canonicalBoard'];
+      final board = suppliedBoard is Map
+          ? Map<String, dynamic>.from(suppliedBoard)
+          : canonicalSavedBoard(
+              direction: const <String, dynamic>{},
+              title: fallbackTitle,
+              occasion: storageOccasion,
+              outfitDescription: outfitDescription.trim(),
+              itemIds: itemIds,
+              items: savedItems,
+            );
+      final data = savedBoardLegacyPayload(
+        userId: user.$id,
+        occasion: storageOccasion,
+        imageUrl: cleanImageUrl,
+        emoji: (emoji ?? '').trim().isEmpty ? '✨' : emoji!.trim(),
+        itemIds: itemIds,
+        board: board,
+      );
+      debugPrint(
+        'AHVI_BOARD_SAVE_SCHEMA mode=legacy '
+        'accepted_fields=${data.keys.join(',')}',
+      );
+      final document = await databases.createDocument(
         databaseId: Env.appwriteDatabaseId,
         collectionId: Env.savedBoardsCollection,
         documentId: ID.unique(),
-        data: {
-          'userId': user.$id,
-          'occasion': storageOccasion,
-          'imageUrl': cleanImageUrl,
-          'itemIds': itemIds,
-          'board_payload': canonicalPayload,
-        },
+        data: data,
       );
+      return document.$id.trim().isEmpty ? null : document;
     } catch (e) {
       debugPrint('Error saving board: $e');
       return null;
@@ -1408,19 +1355,6 @@ class AppwriteService extends ChangeNotifier {
       ).url != null;
     })
         .toList();
-  }
-
-  String _savedBoardPayload(Object? raw) {
-    if (raw is Map) return jsonEncode(Map<String, dynamic>.from(raw));
-    if (raw is String) {
-      final value = raw.trim();
-      if (value.isEmpty) return '';
-      try {
-        final decoded = jsonDecode(value);
-        if (decoded is Map) return jsonEncode(decoded);
-      } catch (_) {}
-    }
-    return '';
   }
 
   String _savedBoardOccasionLabel(String value) {
@@ -1454,21 +1388,6 @@ class AppwriteService extends ChangeNotifier {
         return 'Everything Else';
       default:
         return raw.isEmpty ? 'Everything Else' : raw;
-    }
-  }
-
-  String _savedBoardCategoryKey(String label) {
-    switch (_savedBoardOccasionLabel(label).toLowerCase()) {
-      case 'party':
-        return 'party_looks';
-      case 'office':
-        return 'office_fits';
-      case 'vacation':
-        return 'vacation';
-      case 'occasion':
-        return 'occasion';
-      default:
-        return 'everything_else';
     }
   }
 

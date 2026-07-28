@@ -1,8 +1,10 @@
 import 'dart:convert';
 
 import 'package:myapp/util/wardrobe_image_resolver.dart';
+import 'package:myapp/style_board/saved_board_persistence.dart';
 
 List<String> extractSavedBoardImages(Map<String, dynamic> data) {
+  data = expandSavedBoardData(data);
   final urls = <String>[];
   final seen = <String>{};
 

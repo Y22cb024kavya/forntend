@@ -18,6 +18,7 @@ import 'package:myapp/style_board/style_board_controller.dart';
 import 'package:myapp/style_board/style_board_state.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/style_board/board_models.dart';
+import 'package:myapp/style_board/saved_board_persistence.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/shareable_outfit_board.dart';
 import 'package:myapp/style_board/editorial_board_renderer.dart';
 import 'package:myapp/util/wardrobe_image_resolver.dart';
@@ -1057,6 +1058,14 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
     required List<String> itemIds,
     required List<Map<String, dynamic>> items,
   }) async {
+    final board = canonicalSavedBoard(
+      direction: widget.direction,
+      title: title,
+      occasion: occasion,
+      outfitDescription: outfitDescription,
+      itemIds: itemIds,
+      items: items,
+    );
     final doc = await AppwriteService().saveBoardToCollection(
       occasion: occasion,
       outfitDescription: outfitDescription,
@@ -1067,7 +1076,7 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
         'itemIds': itemIds,
         'items': items,
         'outfitItems': items,
-        'board_payload': {'title': title, 'occasion': occasion, 'items': items},
+        'canonicalBoard': board,
       },
     );
     return doc?.$id;
@@ -1094,7 +1103,14 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
       if (docId == null || docId.isEmpty) {
         throw Exception('appwrite_returned_null_document');
       }
-      debugPrint('AHVI_BOARD_SAVE_SUCCESS board_document_id=$docId');
+      final boardId = _text(
+        widget.direction['board_id'] ?? widget.direction['boardId'],
+      );
+      debugPrint(
+        'AHVI_BOARD_SAVE_SUCCESS document_id=$docId '
+        'board_id=${boardId.isEmpty ? _id : boardId} '
+        'item_count=${items.length}',
+      );
       _sendFeedback('saved');
       // Best-effort local echo so the heart persists on reload. Appwrite is the
       // authoritative store; this is UI state only, not a replacement.

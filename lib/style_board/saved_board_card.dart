@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:myapp/app_localizations.dart';
 import 'package:myapp/services/appwrite_service.dart';
 import 'package:myapp/style_board/saved_board_images.dart';
+import 'package:myapp/style_board/saved_board_persistence.dart';
 import 'package:myapp/style_board/saved_board_thumb.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 
@@ -25,19 +26,24 @@ class SavedBoardCard extends StatelessWidget {
 
   Map<String, dynamic> get _data {
     if (source is appwrite_models.Document) {
-      return Map<String, dynamic>.from(
-        (source as appwrite_models.Document).data,
+      return expandSavedBoardData(
+        Map<String, dynamic>.from((source as appwrite_models.Document).data),
       );
     }
     if (source is Map) {
       final data = (source as Map)['data'];
-      if (data is Map) return Map<String, dynamic>.from(data);
-      return Map<String, dynamic>.from(source as Map);
+      if (data is Map) {
+        return expandSavedBoardData(Map<String, dynamic>.from(data));
+      }
+      return expandSavedBoardData(Map<String, dynamic>.from(source as Map));
     }
     return const {};
   }
 
   List<Map<String, dynamic>> _itemsForBoard(Map<String, dynamic> data) {
+    final savedItems = _savedBoardItems(data);
+    if (savedItems.isNotEmpty) return savedItems;
+
     final ids = <String>[
       ...((data['itemIds'] as List?) ?? const []).map((id) => id.toString()),
       ...((data['item_ids'] as List?) ?? const []).map((id) => id.toString()),
@@ -47,9 +53,6 @@ class SavedBoardCard extends StatelessWidget {
         .whereType<Map<String, dynamic>>()
         .toList();
     if (hydrated.isNotEmpty) return hydrated;
-
-    final savedItems = _savedBoardItems(data);
-    if (savedItems.isNotEmpty) return savedItems;
 
     final extractedImages = extractSavedBoardImages(data);
     if (extractedImages.length >= 2) {

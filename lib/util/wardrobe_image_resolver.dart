@@ -53,6 +53,29 @@ String? _clean(Object? value) {
 String _status(Map<String, dynamic> raw, String snake, String camel) =>
     _clean(raw[snake] ?? raw[camel])?.toLowerCase() ?? '';
 
+bool _objectPathMatches(String? url, RegExp pattern) {
+  if (url == null) return false;
+  final path = Uri.tryParse(url)?.path ?? url.split(RegExp(r'[?#]')).first;
+  try {
+    return pattern.hasMatch(Uri.decodeComponent(path));
+  } on FormatException {
+    return pattern.hasMatch(path);
+  }
+}
+
+bool _isCatalogObject(String? url) => _objectPathMatches(
+  url,
+  RegExp(r'(?:^|/)catalog_[^/]*\.(?:png|jpg)(?:$|/)', caseSensitive: false),
+);
+
+bool _isWardrobeCutoutObject(String? url) => _objectPathMatches(
+  url,
+  RegExp(
+    r'(?:^|/)wardrobe_[^/]+(?:_cutout_v[^/]*)?\.png(?:$|/)',
+    caseSensitive: false,
+  ),
+);
+
 ResolvedWardrobeImage resolveWardrobeImage(
   Map<String, dynamic> raw, {
   String? normalizedUrl,
@@ -93,8 +116,11 @@ ResolvedWardrobeImage resolveWardrobeImage(
   final resolvedMasked = _clean(
     maskedUrl ?? raw['masked_url'] ?? raw['maskedUrl'],
   );
+  final maskedImage = _clean(raw['masked_image_url'] ?? raw['maskedImageUrl']);
   final maskedIsOriginal =
       resolvedMasked != null && originalUrls.contains(resolvedMasked);
+  final maskedIsCatalog = _isCatalogObject(resolvedMasked);
+  final maskedImageIsCatalog = _isCatalogObject(maskedImage);
 
   final candidates = <_Candidate>[
     if (boardValidated)
@@ -117,16 +143,23 @@ ResolvedWardrobeImage resolveWardrobeImage(
         true,
         true,
       ),
-    if (!maskedIsOriginal)
-      _Candidate('masked_url', resolvedMasked, 'masked', 1, true, rmbgReady),
-    if (!maskedIsOriginal)
+    if (!maskedIsOriginal && !maskedIsCatalog)
       _Candidate(
-        'masked_image_url',
-        _clean(raw['masked_image_url'] ?? raw['maskedImageUrl']),
+        'masked_url',
+        resolvedMasked,
         'masked',
         1,
         true,
-        rmbgReady,
+        rmbgReady || _isWardrobeCutoutObject(resolvedMasked),
+      ),
+    if (!maskedIsOriginal && !maskedImageIsCatalog)
+      _Candidate(
+        'masked_image_url',
+        maskedImage,
+        'masked',
+        1,
+        true,
+        rmbgReady || _isWardrobeCutoutObject(maskedImage),
       ),
     _Candidate(
       'rmbg_url',
@@ -191,6 +224,24 @@ ResolvedWardrobeImage resolveWardrobeImage(
       false,
       false,
     ),
+    if (maskedIsCatalog)
+      _Candidate(
+        'masked_url',
+        resolvedMasked,
+        'catalog_fallback',
+        3,
+        false,
+        false,
+      ),
+    if (maskedImageIsCatalog)
+      _Candidate(
+        'masked_image_url',
+        maskedImage,
+        'catalog_fallback',
+        3,
+        false,
+        false,
+      ),
     _Candidate(
       'image_url',
       _clean(imageUrl ?? raw['image_url'] ?? raw['imageUrl']),

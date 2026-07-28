@@ -67,6 +67,49 @@ void main() {
     expect(result.expectedTransparent, isFalse);
   });
 
+  test('catalogue object in masked URL is a framed fallback', () {
+    final result = resolveWardrobeImage({
+      'masked_url':
+          'https://storage.test/buckets/wardrobe/files/catalog_item-1.png/view?project=test',
+    });
+
+    expect(result.field, 'masked_url');
+    expect(result.sourceKind, 'catalog_fallback');
+    expect(result.expectedTransparent, isFalse);
+    expect(result.shouldFrame, isTrue);
+  });
+
+  test('wardrobe object in masked URL remains a cutout', () {
+    final result = resolveWardrobeImage({
+      'masked_url': 'https://storage.test/files/wardrobe_item-1.png',
+    });
+
+    expect(result.sourceKind, 'masked');
+    expect(result.expectedTransparent, isTrue);
+    expect(result.shouldFrame, isFalse);
+  });
+
+  test('versioned wardrobe cutout remains a cutout', () {
+    final result = resolveWardrobeImage({
+      'maskedUrl':
+          'https://storage.test/files/wardrobe_item-1_cutout_v12.png/view',
+    });
+
+    expect(result.sourceKind, 'masked');
+    expect(result.expectedTransparent, isTrue);
+    expect(result.shouldFrame, isFalse);
+  });
+
+  test('normalized catalogue URL remains a framed fallback', () {
+    final result = resolveWardrobeImage({
+      'normalized_url': 'https://storage.test/files/catalog_item-1.jpg',
+    });
+
+    expect(result.sourceKind, 'catalog_fallback');
+    expect(result.expectedTransparent, isFalse);
+    expect(result.shouldFrame, isTrue);
+  });
+
   test('unvalidated catalogue fallback is retained as a framed tile', () {
     final data = boardDataFromMap({
       'items': [

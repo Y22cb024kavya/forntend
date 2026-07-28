@@ -59,6 +59,7 @@ class StyleBoardItem {
       r'$id',
       'itemId',
       'image_id',
+      'imageId',
       'asset_id',
       'wardrobe_item_id',
       'wardrobeItemId',
@@ -114,19 +115,22 @@ class StyleBoardItem {
     );
   }
 
-  ResolvedWardrobeImage resolveImage({String surface = 'style_board'}) =>
-      resolveWardrobeImage(
-        raw,
-        normalizedUrl: normalizedUrl,
-        imageUrl: imageUrl,
-        maskedUrl: maskedUrl,
-        surface: surface,
-        itemId: id,
-      );
+  ResolvedWardrobeImage resolveImage({String surface = 'style_board'}) {
+    final rawImageUrl = _firstText(raw, const ['image_url', 'imageUrl']);
+    return resolveWardrobeImage(
+      raw,
+      normalizedUrl: normalizedUrl,
+      imageUrl: rawImageUrl.isEmpty ? imageUrl : null,
+      maskedUrl: maskedUrl,
+      surface: surface,
+      itemId: id,
+    );
+  }
 
   String get displayImageUrl => resolveImage().url ?? '';
-  bool get shouldFrame =>
-      raw['_image_should_frame'] == true || resolveImage().shouldFrame;
+  bool get shouldFrame => raw['_image_should_frame'] is bool
+      ? raw['_image_should_frame'] as bool
+      : resolveImage().shouldFrame;
   bool get hasValidatedCutout =>
       raw['_image_source_kind'] == 'validated_cutout' ||
       resolveImage().sourceKind == 'validated_cutout';

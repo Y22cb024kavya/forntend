@@ -118,6 +118,117 @@ void main() {
     expect(apiCalls, 0);
   });
 
+  testWidgets(
+    'live board matches wardrobe image by stable id without changing layout',
+    (tester) async {
+      List<Map<String, dynamic>>? savedItems;
+      final board = _board();
+      board['title'] = 'Image audit board';
+      final top = (board['board_items'] as List).first as Map<String, dynamic>;
+      top['board_image_url'] = 'https://example.test/white-board.png';
+      top['image_url'] = 'https://example.test/original.jpg';
+
+      await _pumpCard(
+        tester,
+        board: board,
+        shuffleCall: (state) async => _success(state),
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('lock-shoe-1')));
+      await tester.pump();
+      expect(find.text('2 of 3 items locked'), findsOneWidget);
+      await _pumpCard(
+        tester,
+        board: board,
+        wardrobeById: {
+          'anchor': {
+            r'$id': 'anchor',
+            'normalized_url': 'https://example.test/catalog_anchor.jpg',
+          },
+        },
+        shuffleCall: (state) async => _success(state),
+        saveBoardOverride:
+            ({
+              required occasion,
+              required outfitDescription,
+              required imageUrl,
+              required title,
+              required itemIds,
+              required items,
+              required isFavourite,
+            }) async {
+              savedItems = items;
+              return 'doc-1';
+            },
+      );
+      expect(find.text('2 of 3 items locked'), findsOneWidget);
+
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save look'));
+      await tester.pumpAndSettle();
+
+      final savedTop = savedItems!.firstWhere(
+        (item) => item['item_id'] == 'anchor',
+      );
+      expect(savedTop['image_url'], 'https://example.test/catalog_anchor.jpg');
+      expect(savedTop['selected_field'], 'normalized_url');
+      expect(savedTop['source_kind'], 'catalog_fallback');
+      expect(savedTop['expected_transparent'], isFalse);
+      expect(savedTop['position'], top['position']);
+      expect(savedTop['item_id'], 'anchor');
+    },
+  );
+
+  testWidgets('clearing an explicit wardrobe map removes stale images', (
+    tester,
+  ) async {
+    List<Map<String, dynamic>>? savedItems;
+    final board = _board()..['title'] = 'Cleared wardrobe map regression';
+    await _pumpCard(
+      tester,
+      board: board,
+      wardrobeById: {
+        'anchor': {
+          r'$id': 'anchor',
+          'normalized_url': 'https://example.test/catalog_anchor.jpg',
+        },
+      },
+      shuffleCall: (state) async => _success(state),
+    );
+    await _pumpCard(
+      tester,
+      board: board,
+      shuffleCall: (state) async => _success(state),
+      saveBoardOverride:
+          ({
+            required occasion,
+            required outfitDescription,
+            required imageUrl,
+            required title,
+            required itemIds,
+            required items,
+            required isFavourite,
+          }) async {
+            savedItems = items;
+            return 'doc-1';
+          },
+    );
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save look'));
+    await tester.pumpAndSettle();
+
+    final savedTop = savedItems!.firstWhere(
+      (item) => item['item_id'] == 'anchor',
+    );
+    expect(
+      savedTop['image_url'],
+      isNot('https://example.test/catalog_anchor.jpg'),
+    );
+    expect(savedTop['source_kind'], 'original');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('actual chat parser preserves connected Build Outfit contract', (
     tester,
   ) async {
@@ -494,6 +605,7 @@ Future<void> _pumpCard(
   shuffleCall,
   ValueChanged<String>? onSendMessage,
   BoardSaveFn? saveBoardOverride,
+  Map<String, Map<String, dynamic>> wardrobeById = const {},
 }) async {
   await tester.binding.setSurfaceSize(const Size(430, 900));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -511,6 +623,7 @@ Future<void> _pumpCard(
             onSendMessage: onSendMessage ?? (_) {},
             shuffleCall: shuffleCall,
             saveBoardOverride: saveBoardOverride,
+            wardrobeById: wardrobeById,
           ),
         ),
       ),

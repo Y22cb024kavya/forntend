@@ -205,10 +205,24 @@ class _ItemDetailModal extends StatelessWidget {
                             ),
                             clipBehavior: Clip.antiAlias,
                             child:
-                                item.resolveImage(surface: 'wardrobe_detail').url != null &&
-                                    item.resolveImage(surface: 'wardrobe_detail').url!.isNotEmpty
+                                item
+                                            .resolveImage(
+                                              surface: 'wardrobe_detail',
+                                            )
+                                            .url !=
+                                        null &&
+                                    item
+                                        .resolveImage(
+                                          surface: 'wardrobe_detail',
+                                        )
+                                        .url!
+                                        .isNotEmpty
                                 ? Image.network(
-                                    item.resolveImage(surface: 'wardrobe_detail').url!,
+                                    item
+                                        .resolveImage(
+                                          surface: 'wardrobe_detail',
+                                        )
+                                        .url!,
                                     fit: BoxFit.contain,
                                   )
                                 : const Icon(
@@ -796,6 +810,14 @@ class _ItemDetailModal extends StatelessWidget {
                           'board_items': direction['items'],
                         },
                         width: MediaQuery.sizeOf(ctx).width - 40,
+                        wardrobeById: {
+                          for (final wardrobeItem in allItems)
+                            wardrobeItem.id: {
+                              ...wardrobeItem.raw,
+                              'id': wardrobeItem.id,
+                              r'$id': wardrobeItem.id,
+                            },
+                        },
                       ),
                     ),
                   ),
@@ -818,6 +840,14 @@ class _ItemDetailModal extends StatelessWidget {
                       'board_items': outfit['items'],
                     },
                     width: MediaQuery.sizeOf(ctx).width - 40,
+                    wardrobeById: {
+                      for (final wardrobeItem in allItems)
+                        wardrobeItem.id: {
+                          ...wardrobeItem.raw,
+                          'id': wardrobeItem.id,
+                          r'$id': wardrobeItem.id,
+                        },
+                    },
                   ),
 
                 if (mode == 'build_outfit' &&
@@ -1046,10 +1076,24 @@ class _WorksWellWithCard extends StatelessWidget {
                               height: 32,
                               color: const Color(0xFFEFEFF7),
                               child:
-                                  (p.resolveImage(surface: 'works_well_with').url != null &&
-                                      p.resolveImage(surface: 'works_well_with').url!.isNotEmpty)
+                                  (p
+                                              .resolveImage(
+                                                surface: 'works_well_with',
+                                              )
+                                              .url !=
+                                          null &&
+                                      p
+                                          .resolveImage(
+                                            surface: 'works_well_with',
+                                          )
+                                          .url!
+                                          .isNotEmpty)
                                   ? Image.network(
-                                      p.resolveImage(surface: 'works_well_with').url!,
+                                      p
+                                          .resolveImage(
+                                            surface: 'works_well_with',
+                                          )
+                                          .url!,
                                       fit: BoxFit.contain,
                                     )
                                   : const Icon(
@@ -1691,10 +1735,24 @@ class _AllPairingsSheet extends StatelessWidget {
                               height: 40,
                               color: const Color(0xFFEFEFF7),
                               child:
-                                  (p.resolveImage(surface: 'works_well_with').url != null &&
-                                      p.resolveImage(surface: 'works_well_with').url!.isNotEmpty)
+                                  (p
+                                              .resolveImage(
+                                                surface: 'works_well_with',
+                                              )
+                                              .url !=
+                                          null &&
+                                      p
+                                          .resolveImage(
+                                            surface: 'works_well_with',
+                                          )
+                                          .url!
+                                          .isNotEmpty)
                                   ? Image.network(
-                                      p.resolveImage(surface: 'works_well_with').url!,
+                                      p
+                                          .resolveImage(
+                                            surface: 'works_well_with',
+                                          )
+                                          .url!,
                                       fit: BoxFit.contain,
                                     )
                                   : const Icon(

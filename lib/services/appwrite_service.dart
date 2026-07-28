@@ -35,7 +35,12 @@ class AppwriteService extends ChangeNotifier {
   List<Map<String, dynamic>>? _wardrobeCache;
   DateTime? _wardrobeCacheAt;
   Future<List<Map<String, dynamic>>>? _wardrobeInflight;
+  int _wardrobeGeneration = 0;
+  int _wardrobeScopeGeneration = 0;
   static const Duration _wardrobeTtl = Duration(seconds: 60);
+
+  List<Map<String, dynamic>> get cachedWardrobeItems =>
+      List.unmodifiable(_wardrobeCache ?? const <Map<String, dynamic>>[]);
 
   // Optional write-through to offline cache.
   void Function(List<Map<String, dynamic>>)? _onWardrobeFetched;
@@ -49,10 +54,15 @@ class AppwriteService extends ChangeNotifier {
     _onSavedBoardsFetched = onSavedBoards;
   }
 
-  void invalidateWardrobeCache() {
+  void invalidateWardrobeCache({bool accountScopeChanged = false}) {
+    _wardrobeGeneration++;
+    if (accountScopeChanged) {
+      _wardrobeScopeGeneration++;
+    }
     _wardrobeCache = null;
     _wardrobeCacheAt = null;
     _wardrobeInflight = null;
+    notifyListeners();
   }
 
   AppwriteService._internal() {
@@ -139,7 +149,7 @@ class AppwriteService extends ChangeNotifier {
   void clearUserCache() {
     _cachedUser = null;
     _cachedUserProfileData = null;
-    invalidateWardrobeCache();
+    invalidateWardrobeCache(accountScopeChanged: true);
   }
 
   Future<void> _deleteExistingSessionsForAuthSwitch() async {
@@ -273,7 +283,9 @@ class AppwriteService extends ChangeNotifier {
       // Normalize email
       final normalizedEmail = email.toLowerCase().trim();
 
-      debugPrint('🔐 Verifying OTP for: $normalizedEmail, code: ${otp.substring(0, 2)}***');
+      debugPrint(
+        '🔐 Verifying OTP for: $normalizedEmail, code: ${otp.substring(0, 2)}***',
+      );
 
       // ✅ Retrieve from persistent storage
       final prefs = await SharedPreferences.getInstance();
@@ -289,7 +301,9 @@ class AppwriteService extends ChangeNotifier {
 
       // Validate email consistency
       if (normalizedEmail != savedEmail) {
-        debugPrint("❌ Verify OTP error: email mismatch (got: $normalizedEmail, expected: $savedEmail)");
+        debugPrint(
+          "❌ Verify OTP error: email mismatch (got: $normalizedEmail, expected: $savedEmail)",
+        );
         await _clearOTPState();
         return false;
       }
@@ -299,7 +313,9 @@ class AppwriteService extends ChangeNotifier {
         DateTime.fromMillisecondsSinceEpoch(savedTimestamp),
       );
       if (otpAge > _otpTimeout) {
-        debugPrint("❌ Verify OTP error: OTP expired (${otpAge.inSeconds}s old, max ${_otpTimeout.inSeconds}s)");
+        debugPrint(
+          "❌ Verify OTP error: OTP expired (${otpAge.inSeconds}s old, max ${_otpTimeout.inSeconds}s)",
+        );
         await _clearOTPState();
         return false;
       }
@@ -660,7 +676,9 @@ class AppwriteService extends ChangeNotifier {
     final Map<String, dynamic> cleaned = Map<String, dynamic>.from(data);
 
     if (cleaned.containsKey('skinTone')) {
-      final sanitizedSkinTone = _sanitizeSkinToneForAppwrite(cleaned['skinTone']);
+      final sanitizedSkinTone = _sanitizeSkinToneForAppwrite(
+        cleaned['skinTone'],
+      );
       if (sanitizedSkinTone != null) {
         cleaned['skinTone'] = sanitizedSkinTone;
       } else {
@@ -721,7 +739,9 @@ class AppwriteService extends ChangeNotifier {
         retryWithSkinToneZero = true;
       }
 
-      if (!retryWithSkinToneZero && (fallback.isEmpty || fallback.length == cleaned.length)) rethrow;
+      if (!retryWithSkinToneZero &&
+          (fallback.isEmpty || fallback.length == cleaned.length))
+        rethrow;
 
       debugPrint(
         'AHVI_PROFILE_UPDATE_SCHEMA_RETRY error=${e.message} keys=${fallback.keys.toList()}',
@@ -762,7 +782,9 @@ class AppwriteService extends ChangeNotifier {
         retryWithSkinToneZero = true;
       }
 
-      if (!retryWithSkinToneZero && (fallback.isEmpty || fallback.length == cleaned.length)) rethrow;
+      if (!retryWithSkinToneZero &&
+          (fallback.isEmpty || fallback.length == cleaned.length))
+        rethrow;
 
       debugPrint(
         'AHVI_PROFILE_CREATE_SCHEMA_RETRY error=${e.message} keys=${fallback.keys.toList()}',
@@ -1038,16 +1060,37 @@ class AppwriteService extends ChangeNotifier {
       if (inflight != null) return inflight;
     }
 
+    if (forceRefresh) {
+      _wardrobeGeneration++;
+    }
+
+    final generation = _wardrobeGeneration;
+    final scopeGeneration = _wardrobeScopeGeneration;
     final fetch = _fetchWardrobeItems();
     _wardrobeInflight = fetch;
     try {
       final items = await fetch;
-      _wardrobeCache = items;
-      _wardrobeCacheAt = DateTime.now();
-      _onWardrobeFetched?.call(items);
-      return items;
+      if (generation == _wardrobeGeneration) {
+        _wardrobeCache = items;
+        _wardrobeCacheAt = DateTime.now();
+        _onWardrobeFetched?.call(items);
+        notifyListeners();
+        return items;
+      }
+      if (scopeGeneration != _wardrobeScopeGeneration) {
+        throw StateError('Wardrobe request superseded by account change');
+      }
+      final replacement = _wardrobeInflight;
+      if (replacement != null && !identical(replacement, fetch)) {
+        return replacement;
+      }
+      final current = _wardrobeCache;
+      if (current != null) return current;
+      throw StateError('Wardrobe request superseded by cache invalidation');
     } finally {
-      _wardrobeInflight = null;
+      if (identical(_wardrobeInflight, fetch)) {
+        _wardrobeInflight = null;
+      }
     }
   }
 
@@ -1107,8 +1150,10 @@ class AppwriteService extends ChangeNotifier {
           // without a separate query. Both keys are checked because the
           // field name may vary by collection schema version.
           "isLiked": doc.data['isLiked'] ?? doc.data['isFavourite'] ?? false,
-          "isFavourite": doc.data['isFavourite'] ?? doc.data['isLiked'] ?? false,
-          "imageUrl": doc.data['imageUrl'] ??
+          "isFavourite":
+              doc.data['isFavourite'] ?? doc.data['isLiked'] ?? false,
+          "imageUrl":
+              doc.data['imageUrl'] ??
               doc.data['image_url'] ??
               doc.data['raw_url'],
         };
@@ -1928,7 +1973,9 @@ class _ProfileSyncCircuitBreaker {
   void recordFailure() {
     _failureCount++;
     _failureResetTime = DateTime.now();
-    debugPrint('❌ Profile sync failure recorded ($_failureCount/$_maxConsecutiveFailures)');
+    debugPrint(
+      '❌ Profile sync failure recorded ($_failureCount/$_maxConsecutiveFailures)',
+    );
   }
 
   void recordSuccess() {

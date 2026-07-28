@@ -54,7 +54,17 @@ class SavedBoardThumb extends StatelessWidget {
 
   List<Map<String, dynamic>> _hydrateItems() {
     final savedItems = _savedBoardItems(_data);
-    if (savedItems.isNotEmpty) return savedItems;
+    if (savedItems.isNotEmpty) {
+      return savedItems
+          .map(
+            (item) => resolveStyleBoardItemImage(
+              item,
+              wardrobeById,
+              surface: 'style_board_saved',
+            ),
+          )
+          .toList(growable: false);
+    }
 
     final raw = _data['itemIds'] ?? _data['item_ids'] ?? const [];
     final out = <Map<String, dynamic>>[];
@@ -62,7 +72,15 @@ class SavedBoardThumb extends StatelessWidget {
       for (final id in raw) {
         final key = id.toString();
         final item = wardrobeById[key];
-        if (item != null) out.add(item);
+        if (item != null) {
+          out.add(
+            resolveStyleBoardItemImage(
+              item,
+              wardrobeById,
+              surface: 'style_board_saved',
+            ),
+          );
+        }
       }
     }
     if (out.isNotEmpty) return out;

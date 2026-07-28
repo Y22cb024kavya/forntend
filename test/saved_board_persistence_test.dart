@@ -5,6 +5,7 @@ import 'package:myapp/style_board/board_models.dart';
 import 'package:myapp/style_board/board_renderer.dart';
 import 'package:myapp/style_board/saved_board_images.dart';
 import 'package:myapp/style_board/saved_board_persistence.dart';
+import 'package:myapp/util/wardrobe_image_resolver.dart';
 
 void main() {
   final shuffledItems = <Map<String, dynamic>>[
@@ -283,6 +284,57 @@ void main() {
         'https://test/catalog_top-4.png',
       ]);
     });
+
+    test('saved reopen preserves the live resolver decision and layout', () {
+      final liveItem = resolveStyleBoardItemImage(
+        {
+          'item_id': 'saved-white-1',
+          'role': 'top',
+          'source': 'wardrobe',
+          'name': 'White shirt',
+          'board_image_url': 'https://test/white-board.png',
+          'position': {
+            'x': 0.21,
+            'y': 0.12,
+            'width': 0.55,
+            'height': 0.48,
+            'rotation': 0.02,
+          },
+        },
+        {
+          'saved-white-1': {
+            r'$id': 'saved-white-1',
+            'normalized_url': 'https://test/catalog_saved-white-1.jpg',
+          },
+        },
+        surface: 'style_board_live',
+        emitDiagnostic: false,
+      );
+      final savedContent = buildSavedBoardContent(
+        board: liveBoard(),
+        items: [liveItem],
+        selection: const SavedBoardSelection(bucket: 'office_fits'),
+        title: 'White shirt look',
+        originalOccasion: 'office',
+      );
+      final reopened = expandSavedBoardData(
+        buildSavedBoardPayload(
+          userId: 'user-1',
+          imageUrl: 'https://test/cover.png',
+          content: savedContent,
+        ),
+      );
+      final reopenedItem = (reopened['items'] as List).single as Map;
+      final rendered = boardDataFromMap(reopened).items.single;
+
+      expect(reopenedItem['item_id'], 'saved-white-1');
+      expect(reopenedItem['selected_field'], 'normalized_url');
+      expect(reopenedItem['source_kind'], 'catalog_fallback');
+      expect(reopenedItem['expected_transparent'], isFalse);
+      expect(rendered.shouldFrame, isTrue);
+      expect(rendered.position?.x, 0.21);
+      expect(rendered.position?.rotation, 0.02);
+    });
   });
 
   group('Favourites and filters', () {
@@ -324,10 +376,10 @@ void main() {
         })['is_favourite'],
         isTrue,
       );
-      final removed = savedBoardMasterGarmentWithFavourite(
-        {...legacy, 'masterGarment': updated},
-        false,
-      );
+      final removed = savedBoardMasterGarmentWithFavourite({
+        ...legacy,
+        'masterGarment': updated,
+      }, false);
       expect(
         expandSavedBoardData({
           ...legacy,

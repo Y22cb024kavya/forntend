@@ -11,6 +11,7 @@ import 'package:myapp/style_board/saved_board_images.dart';
 import 'package:myapp/style_board/saved_board_persistence.dart';
 import 'package:myapp/style_board/saved_board_thumb.dart';
 import 'package:myapp/theme/theme_tokens.dart';
+import 'package:myapp/util/wardrobe_image_resolver.dart';
 
 class SavedBoardCard extends StatelessWidget {
   final dynamic source;
@@ -42,7 +43,17 @@ class SavedBoardCard extends StatelessWidget {
 
   List<Map<String, dynamic>> _itemsForBoard(Map<String, dynamic> data) {
     final savedItems = _savedBoardItems(data);
-    if (savedItems.isNotEmpty) return savedItems;
+    if (savedItems.isNotEmpty) {
+      return savedItems
+          .map(
+            (item) => resolveStyleBoardItemImage(
+              item,
+              wardrobeById,
+              surface: 'style_board_saved',
+            ),
+          )
+          .toList(growable: false);
+    }
 
     final ids = <String>[
       ...((data['itemIds'] as List?) ?? const []).map((id) => id.toString()),
@@ -52,7 +63,17 @@ class SavedBoardCard extends StatelessWidget {
         .map((id) => wardrobeById[id])
         .whereType<Map<String, dynamic>>()
         .toList();
-    if (hydrated.isNotEmpty) return hydrated;
+    if (hydrated.isNotEmpty) {
+      return hydrated
+          .map(
+            (item) => resolveStyleBoardItemImage(
+              item,
+              wardrobeById,
+              surface: 'style_board_saved',
+            ),
+          )
+          .toList(growable: false);
+    }
 
     final extractedImages = extractSavedBoardImages(data);
     if (extractedImages.length >= 2) {

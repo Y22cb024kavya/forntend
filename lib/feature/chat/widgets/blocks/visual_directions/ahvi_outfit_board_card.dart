@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -68,6 +69,7 @@ class AhviOutfitBoardCard extends StatefulWidget {
   final VoidCallback? onTapBoard;
   final StyleBoardShuffleCall? shuffleCall;
   final BoardSaveFn? saveBoardOverride;
+  final Map<String, Map<String, dynamic>> wardrobeById;
 
   const AhviOutfitBoardCard({
     super.key,
@@ -78,6 +80,7 @@ class AhviOutfitBoardCard extends StatefulWidget {
     this.onTapBoard,
     this.shuffleCall,
     this.saveBoardOverride,
+    this.wardrobeById = const {},
   });
 
   @override
@@ -87,8 +90,10 @@ class AhviOutfitBoardCard extends StatefulWidget {
 class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
   late OutfitBoardModel _model;
   late StyleBoardData _initialBoard;
+  Map<String, Map<String, dynamic>> _wardrobeById = const {};
   StyleBoardController? _controller;
   StyleBoardData? _pendingBoard;
+  StyleBoardData? _pendingImageBoard;
   // Wraps ONLY the shareable board visual (context strip + collage), never the
   // mutation/action controls, so Share captures a clean image.
   final GlobalKey _shareBoundaryKey = GlobalKey();
@@ -96,14 +101,43 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
   @override
   void initState() {
     super.initState();
+    _wardrobeById = widget.wardrobeById;
     _replaceBoard(_parseBoard(widget));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (widget.wardrobeById.isNotEmpty) return;
+    try {
+      final appwrite = Provider.of<AppwriteService>(context);
+      final next = buildWardrobeImageMap(appwrite.cachedWardrobeItems);
+      if (mapEquals(_wardrobeById, next)) return;
+      _wardrobeById = next;
+      _refreshBoardImages(_parseBoard(widget));
+    } catch (_) {}
   }
 
   @override
   void didUpdateWidget(covariant AhviOutfitBoardCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final previousWardrobe = _wardrobeById;
+    if (widget.wardrobeById.isNotEmpty || oldWidget.wardrobeById.isNotEmpty) {
+      _wardrobeById = widget.wardrobeById;
+    }
     final incoming = _parseBoard(widget);
-    if (!_isMeaningfulBoardUpdate(_initialBoard, incoming.board)) return;
+    final wardrobeChanged = !mapEquals(previousWardrobe, _wardrobeById);
+    final boardChanged = _isMeaningfulBoardUpdate(
+      _initialBoard,
+      incoming.board,
+    );
+    if (wardrobeChanged && !boardChanged) {
+      _refreshBoardImages(incoming);
+      return;
+    }
+    if (!boardChanged) {
+      return;
+    }
     if (_controller?.state.isShuffling == true &&
         incoming.board.boardId == _initialBoard.boardId) {
       _pendingBoard = incoming.board;
@@ -119,7 +153,14 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
       source.direction,
       editorialCover: source.editorialCover,
     );
-    return (model: model, board: _toStyleBoardData(model, source.direction));
+    return (
+      model: model,
+      board: _toStyleBoardData(
+        model,
+        source.direction,
+        wardrobeById: _wardrobeById,
+      ),
+    );
   }
 
   bool _isMeaningfulBoardUpdate(StyleBoardData current, StyleBoardData next) {
@@ -138,6 +179,7 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
     _model = parsed.model;
     _initialBoard = parsed.board;
     _pendingBoard = null;
+    _pendingImageBoard = null;
     final state = StyleBoardState(
       boardId: parsed.board.boardId,
       revision: parsed.board.revision,
@@ -182,13 +224,95 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
     )..addListener(_handleControllerChange);
   }
 
-  Future<StyleBoardShuffleResult> _shuffleThroughApi(StyleBoardState board) {
+  Future<StyleBoardShuffleResult> _shuffleThroughApi(
+    StyleBoardState board,
+  ) async {
     final backend = Provider.of<BackendService>(context, listen: false);
-    return StyleBoardApiService(backend).shuffle(
+    final result = await StyleBoardApiService(backend).shuffle(
       board: board,
       occasion: _initialBoard.occasion,
       styleDirection: _initialBoard.styleArchetype,
     );
+    return StyleBoardShuffleResult(
+      boardId: result.boardId,
+      revision: result.revision,
+      previousRevision: result.previousRevision,
+      lockedItemsPreserved: result.lockedItemsPreserved,
+      changedSlots: result.changedSlots,
+      scenario: result.scenario,
+      sourcePolicy: result.sourcePolicy,
+      items: result.items
+          .map((item) {
+            final resolved = resolveStyleBoardItemImage(
+              item.toContractJson(),
+              _wardrobeById,
+              surface: 'style_board_live',
+            );
+            return StyleBoardItem.fromJson(resolved);
+          })
+          .toList(growable: false),
+    );
+  }
+
+  void _refreshBoardImages(
+    ({OutfitBoardModel model, StyleBoardData board}) parsed,
+  ) {
+    final controller = _controller;
+    if (controller?.state.isShuffling == true) {
+      _pendingImageBoard = parsed.board;
+      return;
+    }
+    final current = controller?.state.items ?? _initialBoard.items;
+    final refreshedById = {
+      for (final item in parsed.board.items) item.itemId: item,
+    };
+    final refreshed = current
+        .map((item) {
+          final image = refreshedById[item.itemId];
+          if (image == null) return item;
+          return StyleBoardItem(
+            id: item.id,
+            slot: item.slot,
+            boardRole: item.boardRole,
+            source: item.source,
+            accessoryType: item.accessoryType,
+            name: item.name,
+            imageUrl: image.imageUrl,
+            maskedUrl: image.maskedUrl,
+            boardImageUrl: image.boardImageUrl,
+            normalizedUrl: image.normalizedUrl,
+            category: item.category,
+            subCategory: item.subCategory,
+            role: item.role,
+            position: item.position,
+            isLocked: item.isLocked,
+            isRegenerating: item.isRegenerating,
+            raw: image.raw,
+          );
+        })
+        .toList(growable: false);
+    _model = parsed.model;
+    _initialBoard = parsed.board;
+    if (controller == null) {
+      _initialBoard = StyleBoardData(
+        boardId: parsed.board.boardId,
+        revision: parsed.board.revision,
+        scenario: parsed.board.scenario,
+        sourcePolicy: parsed.board.sourcePolicy,
+        allowWardrobeFallback: parsed.board.allowWardrobeFallback,
+        title: parsed.board.title,
+        styleArchetype: parsed.board.styleArchetype,
+        boardRole: parsed.board.boardRole,
+        occasion: parsed.board.occasion,
+        whyItWorks: parsed.board.whyItWorks,
+        items: refreshed,
+        story: parsed.board.story,
+        stylingTip: parsed.board.stylingTip,
+      );
+      if (mounted) setState(() {});
+      return;
+    }
+    controller.refreshItemImages(refreshed);
   }
 
   Future<void> _shuffleBoard() async {
@@ -213,6 +337,11 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
   void _handleControllerChange() {
     if (!mounted) return;
     setState(() {});
+    if (_controller?.state.isShuffling == false && _pendingImageBoard != null) {
+      final pending = _pendingImageBoard!;
+      _pendingImageBoard = null;
+      _refreshBoardImages((model: _model, board: pending));
+    }
     if (_controller?.state.isShuffling == false && _pendingBoard != null) {
       final pending = _pendingBoard!;
       _pendingBoard = null;
@@ -1678,8 +1807,9 @@ bool outfitBoardViable(
 
 StyleBoardData _toStyleBoardData(
   OutfitBoardModel model,
-  Map<String, dynamic> direction,
-) {
+  Map<String, dynamic> direction, {
+  Map<String, Map<String, dynamic>> wardrobeById = const {},
+}) {
   final items = <StyleBoardItem>[];
   // Render-adjacent safety net: even if the backend (now family-capped) or the
   // upstream id-keyed dedup let a duplicate through, never paint the same image
@@ -1752,13 +1882,17 @@ StyleBoardData _toStyleBoardData(
     final resolved = resolveWardrobeImage(
       carriedRaw,
       normalizedUrl: canonical?.normalizedUrl,
-      imageUrl: image,
       maskedUrl: canonical?.maskedUrl,
       surface: 'style_board_live',
       itemId: item.id,
+      wardrobeRecord: wardrobeById[item.id],
     );
     final selectedImage = resolved.url ?? image;
     final resolvedRaw = Map<String, dynamic>.from(carriedRaw)
+      ..['image_url'] = selectedImage
+      ..['selected_field'] = resolved.field
+      ..['source_kind'] = resolved.sourceKind
+      ..['expected_transparent'] = resolved.expectedTransparent
       ..['_image_should_frame'] = resolved.shouldFrame
       ..['_image_source_kind'] = resolved.sourceKind
       ..['_image_expected_transparent'] = resolved.expectedTransparent;

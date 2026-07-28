@@ -201,7 +201,7 @@ Map<String, dynamic> _boardItem(
   'slot': slot,
   'role': slot,
   'source': 'wardrobe',
-  'image_url': 'https://example.test/$id.png',
+  'image_url': 'https://example.test/original-$id.jpg',
   'board_image_url': 'https://example.test/$id.png',
   'board_status': 'cutout_ready',
   'position': {
@@ -254,7 +254,8 @@ final _direction = <String, dynamic>{
     ),
   ],
   'why_it_works': 'Warm festive color with a clean traditional silhouette.',
-  'styling_tip': 'Keep accessories minimal so the marigold kurta stays central.',
+  'styling_tip':
+      'Keep accessories minimal so the marigold kurta stays central.',
   'description':
       'This deliberately long report description must not appear on the Phase 1 card.',
   'badge': {'occasion_fit': 'Inspiring', 'wardrobe_match_pct': 88},

@@ -29,12 +29,14 @@ void main() {
   test('masked and processed images beat catalogue and original fallbacks', () {
     final masked = resolveWardrobeImage({
       'masked_url': 'https://test/masked.png',
+      'image_status': 'rmbg_complete',
       'transparent_image_url': 'https://test/processed.png',
       'normalized_url': 'https://test/catalog.png',
       'image_url': 'https://test/original.jpg',
     });
     final processed = resolveWardrobeImage({
       'transparent_image_url': 'https://test/processed.png',
+      'cutout_status': 'ready',
       'normalized_url': 'https://test/catalog.png',
       'image_url': 'https://test/original.jpg',
     });
@@ -45,15 +47,16 @@ void main() {
     expect(processed.sourceKind, 'processed_cutout');
   });
 
-  test('shared style asset provenance validates its board cutout', () {
+  test('style asset source alone does not validate its board image', () {
     final result = resolveWardrobeImage({
       'source': 'style_asset',
       'board_image_url': 'https://test/shared-cutout.png',
       'normalized_url': 'https://test/catalog.png',
     });
 
-    expect(result.sourceKind, 'validated_cutout');
-    expect(result.shouldFrame, isFalse);
+    expect(result.sourceKind, 'catalog_fallback');
+    expect(result.expectedTransparent, isFalse);
+    expect(result.shouldFrame, isTrue);
   });
 
   test('masked URL equal to original is demoted and framed', () {
@@ -79,25 +82,25 @@ void main() {
     expect(result.shouldFrame, isTrue);
   });
 
-  test('wardrobe object in masked URL remains a cutout', () {
+  test('wardrobe filename alone does not prove a cutout', () {
     final result = resolveWardrobeImage({
       'masked_url': 'https://storage.test/files/wardrobe_item-1.png',
     });
 
-    expect(result.sourceKind, 'masked');
-    expect(result.expectedTransparent, isTrue);
-    expect(result.shouldFrame, isFalse);
+    expect(result.sourceKind, 'original');
+    expect(result.expectedTransparent, isFalse);
+    expect(result.shouldFrame, isTrue);
   });
 
-  test('versioned wardrobe cutout remains a cutout', () {
+  test('PNG cutout-style filename alone does not prove transparency', () {
     final result = resolveWardrobeImage({
       'maskedUrl':
           'https://storage.test/files/wardrobe_item-1_cutout_v12.png/view',
     });
 
-    expect(result.sourceKind, 'masked');
-    expect(result.expectedTransparent, isTrue);
-    expect(result.shouldFrame, isFalse);
+    expect(result.sourceKind, 'original');
+    expect(result.expectedTransparent, isFalse);
+    expect(result.shouldFrame, isTrue);
   });
 
   test('normalized catalogue URL remains a framed fallback', () {
@@ -108,6 +111,246 @@ void main() {
     expect(result.sourceKind, 'catalog_fallback');
     expect(result.expectedTransparent, isFalse);
     expect(result.shouldFrame, isTrue);
+  });
+
+  test('board image without validated provenance uses framed catalogue', () {
+    final result = resolveWardrobeImage({
+      'item_id': 'item-board-untrusted',
+      'board_image_url': 'https://test/white-board.png',
+      'normalized_url': 'https://test/catalog-item.jpg',
+      'image_url': 'https://test/original.jpg',
+    });
+
+    expect(result.url, 'https://test/catalog-item.jpg');
+    expect(result.field, 'normalized_url');
+    expect(result.sourceKind, 'catalog_fallback');
+    expect(result.expectedTransparent, isFalse);
+    expect(result.shouldFrame, isTrue);
+  });
+
+  test('validated board cutout remains transparent', () {
+    final result = resolveWardrobeImage({
+      'item_id': 'item-board-validated',
+      'board_status': 'cutout_ready',
+      'board_image_url': 'https://test/validated-board.png',
+      'normalized_url': 'https://test/catalog-item.jpg',
+    });
+
+    expect(result.url, 'https://test/validated-board.png');
+    expect(result.sourceKind, 'validated_cutout');
+    expect(result.expectedTransparent, isTrue);
+    expect(result.shouldFrame, isFalse);
+  });
+
+  test('wardrobe validated mask overrides untrusted board image', () {
+    final result = resolveWardrobeImage(
+      {
+        'item_id': 'item-matched',
+        'board_image_url': 'https://test/untrusted-board.png',
+      },
+      wardrobeRecord: {
+        r'$id': 'item-matched',
+        'image_status': 'rmbg_complete',
+        'masked_url': 'https://test/validated-mask.png',
+        'normalized_url': 'https://test/catalog-item.jpg',
+      },
+    );
+
+    expect(result.url, 'https://test/validated-mask.png');
+    expect(result.field, 'masked_url');
+    expect(result.sourceKind, 'masked');
+    expect(result.expectedTransparent, isTrue);
+    expect(result.shouldFrame, isFalse);
+  });
+
+  test('validated status cannot make an original alias transparent', () {
+    final raw = resolveWardrobeImage({
+      'image_status': 'rmbg_complete',
+      'masked_image_url': 'https://test/original-white.jpg',
+      'image_url': 'https://test/original-white.jpg',
+    });
+    final matched = resolveWardrobeImage(
+      {'item_id': 'same-original'},
+      wardrobeRecord: {
+        r'$id': 'same-original',
+        'image_status': 'rmbg_complete',
+        'masked_url': 'https://test/original-white.jpg',
+        'image_url': 'https://test/original-white.jpg',
+      },
+    );
+
+    for (final result in [raw, matched]) {
+      expect(result.url, 'https://test/original-white.jpg');
+      expect(result.sourceKind, 'original');
+      expect(result.expectedTransparent, isFalse);
+      expect(result.shouldFrame, isTrue);
+    }
+  });
+
+  test('processed fields that alias the original remain framed', () {
+    for (final field in [
+      'board_image_url',
+      'cutout_url',
+      'rmbg_url',
+      'transparent_image_url',
+      'processed_url',
+    ]) {
+      final result = resolveWardrobeImage({
+        'board_status': 'cutout_ready',
+        'cutout_status': 'ready',
+        'image_status': 'rmbg_complete',
+        field: 'https://test/original-white.jpg',
+        'image_url': 'https://test/original-white.jpg',
+      });
+
+      expect(result.sourceKind, 'original', reason: field);
+      expect(result.expectedTransparent, isFalse, reason: field);
+      expect(result.shouldFrame, isTrue, reason: field);
+    }
+  });
+
+  test('processed fields that alias an ordinary catalog URL remain framed', () {
+    for (final field in [
+      'board_image_url',
+      'cutout_url',
+      'masked_url',
+      'rmbg_url',
+      'transparent_image_url',
+      'processed_url',
+    ]) {
+      final result = resolveWardrobeImage({
+        'board_status': 'cutout_ready',
+        'cutout_status': 'ready',
+        'image_status': 'rmbg_complete',
+        field: 'https://test/product-123.png',
+        'normalized_url': 'https://test/product-123.png',
+      });
+
+      expect(result.sourceKind, 'catalog_fallback', reason: field);
+      expect(result.expectedTransparent, isFalse, reason: field);
+      expect(result.shouldFrame, isTrue, reason: field);
+    }
+  });
+
+  test('cross-record catalog aliases remain framed', () {
+    final rawAlias = resolveWardrobeImage(
+      {
+        'item_id': 'raw-alias',
+        'image_status': 'rmbg_complete',
+        'processed_url': 'https://test/wardrobe-product.png',
+      },
+      wardrobeRecord: {
+        r'$id': 'raw-alias',
+        'normalized_url': 'https://test/wardrobe-product.png',
+      },
+    );
+    final wardrobeAlias = resolveWardrobeImage(
+      {
+        'item_id': 'wardrobe-alias',
+        'normalized_url': 'https://test/raw-product.png',
+      },
+      wardrobeRecord: {
+        r'$id': 'wardrobe-alias',
+        'image_status': 'rmbg_complete',
+        'masked_url': 'https://test/raw-product.png',
+      },
+    );
+    final frozenAlias = resolveWardrobeImage(
+      {
+        'item_id': 'frozen-alias',
+        'image_url': 'https://test/frozen-product.png',
+        'selected_field': 'processed_url',
+        'source_kind': 'processed_cutout',
+        'expected_transparent': true,
+      },
+      wardrobeRecord: {
+        r'$id': 'frozen-alias',
+        'normalized_url': 'https://test/frozen-product.png',
+      },
+    );
+
+    for (final result in [rawAlias, wardrobeAlias, frozenAlias]) {
+      expect(result.sourceKind, 'catalog_fallback');
+      expect(result.expectedTransparent, isFalse);
+      expect(result.shouldFrame, isTrue);
+    }
+  });
+
+  test('cross-record original aliases remain framed across signed URLs', () {
+    final result = resolveWardrobeImage(
+      {
+        'item_id': 'cross-original',
+        'image_url': 'https://storage.test/files/product.png?token=old',
+      },
+      wardrobeRecord: {
+        r'$id': 'cross-original',
+        'image_status': 'rmbg_complete',
+        'masked_url': 'https://storage.test/files/product.png?token=new',
+      },
+    );
+
+    expect(result.sourceKind, 'original');
+    expect(result.expectedTransparent, isFalse);
+    expect(result.shouldFrame, isTrue);
+  });
+
+  test('wardrobe map indexes every stable id alias', () {
+    final record = <String, dynamic>{
+      r'$id': 'document-id',
+      'item_id': 'backend-item-id',
+      'imageId': 'image-id',
+    };
+    final map = buildWardrobeImageMap([record]);
+
+    expect(map['document-id'], same(record));
+    expect(map['backend-item-id'], same(record));
+    expect(map['image-id'], same(record));
+  });
+
+  test('catalog object inside board image remains framed', () {
+    final result = resolveWardrobeImage({
+      'item_id': 'item-catalog-board',
+      'board_image_url': 'https://test/files/catalog_item-7.png/view',
+    });
+
+    expect(result.field, 'board_image_url');
+    expect(result.sourceKind, 'catalog_fallback');
+    expect(result.expectedTransparent, isFalse);
+    expect(result.shouldFrame, isTrue);
+  });
+
+  test('share reparse preserves resolution, stable id, and layout', () {
+    final hydrated = resolveStyleBoardItemImage(
+      {
+        'item_id': 'item-share',
+        'role': 'top',
+        'name': 'Share shirt',
+        'board_image_url': 'https://test/untrusted-board.png',
+        'normalized_url': 'https://test/stale-catalog.jpg',
+        'position': {
+          'x': 0.1,
+          'y': 0.2,
+          'width': 0.5,
+          'height': 0.4,
+          'rotation': -0.02,
+        },
+      },
+      {
+        'item-share': {
+          r'$id': 'item-share',
+          'normalized_url': 'https://test/catalog-share.jpg',
+        },
+      },
+      surface: 'style_board_live',
+      emitDiagnostic: false,
+    );
+    final shareItem = StyleBoardItem.fromJson(hydrated);
+
+    expect(shareItem.itemId, 'item-share');
+    expect(shareItem.imageUrl, 'https://test/catalog-share.jpg');
+    expect(shareItem.shouldFrame, isTrue);
+    expect(shareItem.position?.x, 0.1);
+    expect(shareItem.position?.rotation, -0.02);
   });
 
   test('unvalidated catalogue fallback is retained as a framed tile', () {
@@ -138,6 +381,8 @@ void main() {
     });
 
     expect(item.imageUrl, 'https://test/board.png');
+    expect(item.resolveImage().sourceKind, 'validated_cutout');
+    expect(item.resolveImage().url, 'https://test/board.png');
     expect(item.shouldFrame, isFalse);
     expect(item.toContractJson(), isNot(contains('_image_should_frame')));
   });
@@ -172,11 +417,20 @@ void main() {
       debugPrint = previous;
     }
 
-    expect(messages.single, contains('AHVI_WARDROBE_IMAGE_RESOLVE'));
-    expect(messages.single, contains('item_id=item-4'));
-    expect(messages.single, contains('surface=wardrobe_grid'));
-    expect(messages.single, contains('selected_field=masked_url'));
-    expect(messages.single, isNot(contains('secret.test')));
-    expect(messages.single, isNot(contains('token=')));
+    final compare = messages.singleWhere(
+      (message) => message.startsWith('AHVI_IMAGE_FIELD_COMPARE'),
+    );
+    final resolve = messages.singleWhere(
+      (message) => message.startsWith('AHVI_WARDROBE_IMAGE_RESOLVE'),
+    );
+    expect(compare, contains('item_id=item-4'));
+    expect(compare, matches(RegExp(r'masked_url_fp=[0-9a-f]{8}')));
+    expect(compare, contains('selected_field=masked_url'));
+    expect(resolve, contains('surface=wardrobe_grid'));
+    expect(
+      messages.every((message) => !message.contains('secret.test')),
+      isTrue,
+    );
+    expect(messages.every((message) => !message.contains('token=')), isTrue);
   });
 }

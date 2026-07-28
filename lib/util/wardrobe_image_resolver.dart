@@ -20,6 +20,7 @@ class ResolvedWardrobeImage {
   });
 
   bool get usedMasked => sourceKind == 'masked';
+  bool get requiresFrame => shouldFrame;
 }
 
 class _Candidate {
@@ -138,6 +139,20 @@ ResolvedWardrobeImage resolveWardrobeImage(
   final wardrobeCutoutReady = wardrobeCutoutStatus == 'ready';
   final wardrobeBoardReady = wardrobeBoardStatus == 'cutout_ready';
   final wardrobeRmbgReady = wardrobeImageStatus == 'rmbg_complete';
+  final source =
+      (_clean(raw['source'] ?? raw['item_source'] ?? raw['itemSource']) ?? '')
+          .toLowerCase();
+  final isStyleAsset = const {
+    'style_asset',
+    'style_assets',
+    'shared_asset',
+    'shared_assets',
+    'asset',
+    'asset_library',
+    'curated',
+    'style-library',
+    'style_library',
+  }.contains(source);
   final originalUrls = <String>{
     ...[
       imageUrl,
@@ -176,6 +191,25 @@ ResolvedWardrobeImage resolveWardrobeImage(
   );
   final processedImage = _clean(raw['processed_url'] ?? raw['processedUrl']);
   final wardrobeRmbgImage = _clean(wardrobe['rmbg_url'] ?? wardrobe['rmbgUrl']);
+  final assetCutoutImage = _clean(
+    raw['asset_cutout_url'] ?? raw['assetCutoutUrl'] ?? raw['cutout_url'],
+  );
+  final assetMaskedImage = _clean(
+    raw['asset_masked_url'] ??
+        raw['assetMaskedUrl'] ??
+        raw['transparent_url'] ??
+        raw['transparentUrl'] ??
+        raw['transparent_image_url'] ??
+        raw['transparentImageUrl'],
+  );
+  final assetProcessedImage = _clean(
+    raw['processed_asset_url'] ??
+        raw['processedAssetUrl'] ??
+        raw['processed_image_url'] ??
+        raw['processedImageUrl'] ??
+        raw['processed_url'] ??
+        raw['processedUrl'],
+  );
   final wardrobeOriginalUrls = <String>{
     ...[
       wardrobe['image_url'],
@@ -272,6 +306,8 @@ ResolvedWardrobeImage resolveWardrobeImage(
       frozenExpected &&
       const {
         'validated_cutout',
+        'legacy_masked_cutout',
+        'style_asset_cutout',
         'masked',
         'processed_cutout',
       }.contains(frozenSource);
@@ -279,41 +315,84 @@ ResolvedWardrobeImage resolveWardrobeImage(
   String fallbackKind(String? url) =>
       _isCatalogObject(url) ? 'catalog_fallback' : 'original';
   int fallbackTier(String? url) => _isCatalogObject(url) ? 3 : 4;
+  int frozenTier(String source) => switch (source) {
+    'validated_cutout' || 'style_asset_cutout' => 0,
+    'legacy_masked_cutout' || 'masked' => 1,
+    'processed_cutout' => 2,
+    'catalog_fallback' || 'style_asset_processed' => 3,
+    _ => 4,
+  };
 
   final candidates = <_Candidate>[
     if (frozenUrl != null &&
-        frozenValidated &&
-        !isCatalogAlias(frozenUrl) &&
-        !isFrozenOriginalAlias(frozenUrl))
+        (!frozenValidated ||
+            (!isCatalogAlias(frozenUrl) && !isFrozenOriginalAlias(frozenUrl))))
       _Candidate(
         frozenField!,
         frozenUrl,
         frozenIsCatalog ? 'catalog_fallback' : frozenSource!,
-        frozenIsCatalog ? 3 : (frozenField == 'board_image_url' ? 0 : 1),
-        !frozenIsCatalog,
-        !frozenIsCatalog,
+        frozenIsCatalog ? 3 : frozenTier(frozenSource!),
+        frozenIsCatalog ? false : frozenExpected,
+        frozenIsCatalog ? false : frozenValidated,
       ),
-    if (boardReady && rawCutoutIsSafe(boardImage))
+    if (isStyleAsset && rawCutoutIsSafe(assetCutoutImage))
       _Candidate(
-        'board_image_url',
-        boardImage,
-        'validated_cutout',
+        raw['asset_cutout_url'] != null ? 'asset_cutout_url' : 'cutout_url',
+        assetCutoutImage,
+        'style_asset_cutout',
         0,
         true,
         true,
       ),
-    if (wardrobeBoardReady && wardrobeCutoutIsSafe(wardrobeBoardImage))
+    if (isStyleAsset && rawCutoutIsSafe(assetMaskedImage))
       _Candidate(
-        'board_image_url',
-        wardrobeBoardImage,
-        'validated_cutout',
-        0,
+        raw['asset_masked_url'] != null
+            ? 'asset_masked_url'
+            : 'transparent_url',
+        assetMaskedImage,
+        'style_asset_cutout',
+        1,
         true,
         true,
       ),
-    if (cutoutReady && rawCutoutIsSafe(cutoutImage))
+    if (isStyleAsset && assetProcessedImage != null)
+      _Candidate(
+        'processed_asset_url',
+        assetProcessedImage,
+        'style_asset_processed',
+        3,
+        false,
+        false,
+      ),
+    if (isStyleAsset)
+      _Candidate(
+        'normalized_url',
+        _clean(
+          normalizedUrl ??
+              raw['normalized_url'] ??
+              raw['normalizedUrl'] ??
+              raw['normalized_image_url'] ??
+              raw['normalizedImageUrl'],
+        ),
+        'catalog_fallback',
+        3,
+        false,
+        false,
+      ),
+    if (isStyleAsset)
+      _Candidate(
+        'image_url',
+        _clean(imageUrl ?? raw['image_url'] ?? raw['imageUrl'] ?? raw['url']),
+        'style_asset_original',
+        4,
+        false,
+        false,
+      ),
+    if (!isStyleAsset && cutoutReady && rawCutoutIsSafe(cutoutImage))
       _Candidate('cutout_url', cutoutImage, 'validated_cutout', 0, true, true),
-    if (wardrobeCutoutReady && wardrobeCutoutIsSafe(wardrobeCutoutImage))
+    if (!isStyleAsset &&
+        wardrobeCutoutReady &&
+        wardrobeCutoutIsSafe(wardrobeCutoutImage))
       _Candidate(
         'cutout_url',
         wardrobeCutoutImage,
@@ -322,34 +401,118 @@ ResolvedWardrobeImage resolveWardrobeImage(
         true,
         true,
       ),
-    if (wardrobeRmbgReady &&
+    if (!isStyleAsset &&
+        wardrobeRmbgReady &&
+        wardrobeCutoutIsSafe(wardrobeMasked))
+      _Candidate(
+        'masked_url',
+        wardrobeMasked,
+        'validated_cutout',
+        0,
+        true,
+        true,
+      ),
+    if (!isStyleAsset && rmbgReady && rawCutoutIsSafe(resolvedMasked))
+      _Candidate(
+        'masked_url',
+        resolvedMasked,
+        'validated_cutout',
+        0,
+        true,
+        true,
+      ),
+    if (!isStyleAsset && wardrobeCutoutIsSafe(wardrobeMasked))
+      _Candidate(
+        'masked_url',
+        wardrobeMasked,
+        'legacy_masked_cutout',
+        1,
+        true,
+        true,
+      ),
+    if (!isStyleAsset && rawCutoutIsSafe(resolvedMasked))
+      _Candidate(
+        'masked_url',
+        resolvedMasked,
+        'legacy_masked_cutout',
+        1,
+        true,
+        true,
+      ),
+    if (!isStyleAsset && boardReady && rawCutoutIsSafe(boardImage))
+      _Candidate(
+        'board_image_url',
+        boardImage,
+        'validated_cutout',
+        0,
+        true,
+        true,
+      ),
+    if (!isStyleAsset &&
+        wardrobeBoardReady &&
+        wardrobeCutoutIsSafe(wardrobeBoardImage))
+      _Candidate(
+        'board_image_url',
+        wardrobeBoardImage,
+        'validated_cutout',
+        0,
+        true,
+        true,
+      ),
+    if (!isStyleAsset &&
+        wardrobeRmbgReady &&
         !wardrobeMaskedIsOriginal &&
         !isCatalogAlias(wardrobeMasked) &&
         !wardrobeMaskedIsCatalog)
-      _Candidate('masked_url', wardrobeMasked, 'masked', 1, true, true),
-    if (wardrobeRmbgReady &&
+      _Candidate(
+        'masked_url',
+        wardrobeMasked,
+        'validated_cutout',
+        0,
+        true,
+        true,
+      ),
+    if (!isStyleAsset &&
+        wardrobeRmbgReady &&
         !wardrobeMaskedImageIsOriginal &&
         !isCatalogAlias(wardrobeMaskedImage) &&
         !wardrobeMaskedImageIsCatalog)
       _Candidate(
         'masked_image_url',
         wardrobeMaskedImage,
-        'masked',
-        1,
+        'validated_cutout',
+        0,
         true,
         true,
       ),
-    if (rmbgReady &&
+    if (!isStyleAsset &&
+        rmbgReady &&
         !maskedIsOriginal &&
         !isCatalogAlias(resolvedMasked) &&
         !maskedIsCatalog)
-      _Candidate('masked_url', resolvedMasked, 'masked', 1, true, true),
-    if (rmbgReady &&
+      _Candidate(
+        'masked_url',
+        resolvedMasked,
+        'validated_cutout',
+        0,
+        true,
+        true,
+      ),
+    if (!isStyleAsset &&
+        rmbgReady &&
         !maskedImageIsOriginal &&
         !isCatalogAlias(maskedImage) &&
         !maskedImageIsCatalog)
-      _Candidate('masked_image_url', maskedImage, 'masked', 1, true, true),
-    if (boardReady &&
+      _Candidate(
+        'masked_image_url',
+        maskedImage,
+        'validated_cutout',
+        0,
+        true,
+        true,
+      ),
+    if (!isStyleAsset &&
+        boardReady &&
         rawCutoutIsSafe(
           _clean(raw['image_url'] ?? raw['imageUrl'] ?? imageUrl),
         ))
@@ -361,18 +524,11 @@ ResolvedWardrobeImage resolveWardrobeImage(
         true,
         true,
       ),
-    if (frozenUrl != null && !frozenValidated)
-      _Candidate(
-        frozenField!,
-        frozenUrl,
-        fallbackKind(frozenUrl),
-        fallbackTier(frozenUrl),
-        false,
-        false,
-      ),
-    if (rmbgReady && rawCutoutIsSafe(rmbgImage))
+    if (!isStyleAsset && rmbgReady && rawCutoutIsSafe(rmbgImage))
       _Candidate('rmbg_url', rmbgImage, 'processed_cutout', 2, true, true),
-    if (wardrobeRmbgReady && wardrobeCutoutIsSafe(wardrobeRmbgImage))
+    if (!isStyleAsset &&
+        wardrobeRmbgReady &&
+        wardrobeCutoutIsSafe(wardrobeRmbgImage))
       _Candidate(
         'rmbg_url',
         wardrobeRmbgImage,
@@ -381,7 +537,9 @@ ResolvedWardrobeImage resolveWardrobeImage(
         true,
         true,
       ),
-    if ((boardReady || cutoutReady) && rawCutoutIsSafe(transparentImage))
+    if (!isStyleAsset &&
+        (boardReady || cutoutReady) &&
+        rawCutoutIsSafe(transparentImage))
       _Candidate(
         'transparent_image_url',
         transparentImage,
@@ -390,7 +548,7 @@ ResolvedWardrobeImage resolveWardrobeImage(
         true,
         true,
       ),
-    if (rmbgReady && rawCutoutIsSafe(processedImage))
+    if (!isStyleAsset && rmbgReady && rawCutoutIsSafe(processedImage))
       _Candidate(
         'processed_url',
         processedImage,
@@ -399,33 +557,35 @@ ResolvedWardrobeImage resolveWardrobeImage(
         true,
         true,
       ),
-    _Candidate(
-      'normalized_url',
-      _clean(
-        wardrobe['normalized_url'] ??
-            wardrobe['normalizedUrl'] ??
-            wardrobe['normalized_image_url'] ??
-            wardrobe['normalizedImageUrl'],
+    if (!isStyleAsset)
+      _Candidate(
+        'normalized_url',
+        _clean(
+          wardrobe['normalized_url'] ??
+              wardrobe['normalizedUrl'] ??
+              wardrobe['normalized_image_url'] ??
+              wardrobe['normalizedImageUrl'],
+        ),
+        'catalog_fallback',
+        3,
+        false,
+        false,
       ),
-      'catalog_fallback',
-      3,
-      false,
-      false,
-    ),
-    _Candidate(
-      'normalized_url',
-      _clean(
-        normalizedUrl ??
-            raw['normalized_url'] ??
-            raw['normalizedUrl'] ??
-            raw['normalized_image_url'] ??
-            raw['normalizedImageUrl'],
+    if (!isStyleAsset)
+      _Candidate(
+        'normalized_url',
+        _clean(
+          normalizedUrl ??
+              raw['normalized_url'] ??
+              raw['normalizedUrl'] ??
+              raw['normalized_image_url'] ??
+              raw['normalizedImageUrl'],
+        ),
+        'catalog_fallback',
+        3,
+        false,
+        false,
       ),
-      'catalog_fallback',
-      3,
-      false,
-      false,
-    ),
     _Candidate(
       'catalog_image_url',
       _clean(raw['catalog_image_url'] ?? raw['catalogImageUrl']),
@@ -589,6 +749,22 @@ ResolvedWardrobeImage resolveWardrobeImage(
       Object? compared(String snake, String camel) =>
           raw[snake] ?? raw[camel] ?? wardrobe[snake] ?? wardrobe[camel];
       debugPrint(
+        'AHVI_IMAGE_SELECTION_DECISION '
+        'item_id=$diagnosticId '
+        'surface=$surface '
+        'source=${isStyleAsset ? "style_asset" : "wardrobe"} '
+        'selected_field=${result.field} '
+        'reason=${switch (result.sourceKind) {
+          "validated_cutout" => "validated_cutout",
+          "legacy_masked_cutout" => "legacy_masked",
+          "style_asset_cutout" => "asset_cutout",
+          "catalog_fallback" => "catalog_fallback",
+          _ => "original",
+        }} '
+        'expected_transparent=${result.expectedTransparent} '
+        'requires_frame=${result.requiresFrame}',
+      );
+      debugPrint(
         'AHVI_IMAGE_FIELD_COMPARE '
         'item_id=$diagnosticId '
         'board_image_url_fp=${fingerprint(compared('board_image_url', 'boardImageUrl'))} '
@@ -626,8 +802,13 @@ Map<String, dynamic> resolveStyleBoardItemImage(
     emitDiagnostic: emitDiagnostic,
     wardrobeRecord: id.isEmpty ? null : wardrobeById[id],
   );
+  final originalImage = _clean(item['image_url'] ?? item['imageUrl']);
   return <String, dynamic>{
     ...item,
+    if (originalImage != null &&
+        originalImage != result.url &&
+        _clean(item['original_image_url'] ?? item['originalImageUrl']) == null)
+      'original_image_url': originalImage,
     if (result.url != null) 'image_url': result.url,
     'selected_field': result.field,
     'source_kind': result.sourceKind,

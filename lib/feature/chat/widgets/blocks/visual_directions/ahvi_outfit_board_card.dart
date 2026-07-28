@@ -281,6 +281,8 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
             maskedUrl: image.maskedUrl,
             boardImageUrl: image.boardImageUrl,
             normalizedUrl: image.normalizedUrl,
+            assetCutoutUrl: image.assetCutoutUrl,
+            assetMaskedUrl: image.assetMaskedUrl,
             category: item.category,
             subCategory: item.subCategory,
             role: item.role,
@@ -1811,16 +1813,14 @@ StyleBoardData _toStyleBoardData(
   Map<String, Map<String, dynamic>> wardrobeById = const {},
 }) {
   final items = <StyleBoardItem>[];
-  // Render-adjacent safety net: even if the backend (now family-capped) or the
-  // upstream id-keyed dedup let a duplicate through, never paint the same image
-  // or the same normalized name twice on the collage.
-  final seenImages = <String>{};
-  final seenNames = <String>{};
-  for (final item in model.imageItems) {
+  final seenIds = <String>{};
+  final rawItems = <Map<String, dynamic>>[
+    ..._maps(direction['board_items'] ?? direction['boardItems']),
+    ..._maps(direction['items'] ?? direction['pieces']),
+    ..._maps(direction['composition_items']),
+  ];
+  for (final item in model.items) {
     final image = (item.imageUrl ?? '').trim();
-    final normName = item.name.trim().toLowerCase();
-    if (image.isNotEmpty && !seenImages.add(image)) continue;
-    if (normName.isNotEmpty && !seenNames.add(normName)) continue;
     var role = _mapItemRole(item.role);
     if (role == BoardItemRole.top &&
         RegExp(
@@ -1829,11 +1829,6 @@ StyleBoardData _toStyleBoardData(
         ).hasMatch(item.name.toLowerCase())) {
       role = BoardItemRole.dress;
     }
-    final rawItems = <Map<String, dynamic>>[
-      ..._maps(direction['board_items'] ?? direction['boardItems']),
-      ..._maps(direction['items'] ?? direction['pieces']),
-      ..._maps(direction['composition_items']),
-    ];
     final raw = rawItems
         .where(
           (candidate) =>
@@ -1862,23 +1857,33 @@ StyleBoardData _toStyleBoardData(
       direction['source_policy'] ?? direction['sourcePolicy'],
     ).trim().toLowerCase();
     var source = canonical?.source ?? 'unknown';
-    if (source == 'unknown' && boardPolicy == 'wardrobe') {
-      source = 'wardrobe';
+    if (source == 'unknown' &&
+        {'wardrobe', 'style_asset'}.contains(boardPolicy)) {
+      source = boardPolicy;
     }
     final hasStableId = item.id.trim().isNotEmpty;
-    final carriedRaw =
-        raw ??
-        (hasStableId
-            ? <String, dynamic>{
-                'item_id': item.id,
-                'name': item.name,
-                'slot': role.name,
-                'role': role.name,
-                'category': item.role.name,
-                'image_url': image,
-                'source': source,
-              }
-            : const <String, dynamic>{});
+    final carriedRaw = Map<String, dynamic>.from(
+      raw ??
+          (hasStableId
+              ? <String, dynamic>{
+                  'item_id': item.id,
+                  'name': item.name,
+                  'slot': role.name,
+                  'role': role.name,
+                  'category': item.role.name,
+                  'image_url': image,
+                  'source': source,
+                }
+              : const <String, dynamic>{}),
+    );
+    if (source != 'unknown' &&
+        _text(
+          carriedRaw['source'] ??
+              carriedRaw['item_source'] ??
+              carriedRaw['itemSource'],
+        ).isEmpty) {
+      carriedRaw['source'] = source;
+    }
     final resolved = resolveWardrobeImage(
       carriedRaw,
       normalizedUrl: canonical?.normalizedUrl,
@@ -1888,7 +1893,16 @@ StyleBoardData _toStyleBoardData(
       wardrobeRecord: wardrobeById[item.id],
     );
     final selectedImage = resolved.url ?? image;
+    if (selectedImage.isEmpty) continue;
+    if (item.id.isNotEmpty && !seenIds.add(item.id)) continue;
+    final originalImage = _text(
+      carriedRaw['image_url'] ?? carriedRaw['imageUrl'],
+    );
     final resolvedRaw = Map<String, dynamic>.from(carriedRaw)
+      ..addAll({
+        if (originalImage.isNotEmpty && originalImage != selectedImage)
+          'original_image_url': originalImage,
+      })
       ..['image_url'] = selectedImage
       ..['selected_field'] = resolved.field
       ..['source_kind'] = resolved.sourceKind
@@ -1908,6 +1922,8 @@ StyleBoardData _toStyleBoardData(
         maskedUrl: canonical?.maskedUrl ?? '',
         boardImageUrl: canonical?.boardImageUrl ?? image,
         normalizedUrl: canonical?.normalizedUrl ?? '',
+        assetCutoutUrl: canonical?.assetCutoutUrl ?? '',
+        assetMaskedUrl: canonical?.assetMaskedUrl ?? '',
         category: canonical?.category ?? item.role.name,
         subCategory: canonical?.subCategory ?? '',
         role: role,
@@ -1918,7 +1934,7 @@ StyleBoardData _toStyleBoardData(
     );
   }
   final rendered = _enforceSlots(items);
-  final totalInput = model.imageItems.length;
+  final totalInput = model.items.length;
   final totalRendered = rendered.length;
   debugPrint(
     'AHVI_BOARD_RENDER_ASSET_SELECTION '

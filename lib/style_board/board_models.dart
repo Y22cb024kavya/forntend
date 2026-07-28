@@ -24,6 +24,8 @@ class StyleBoardItem {
   final String maskedUrl;
   final String boardImageUrl;
   final String normalizedUrl;
+  final String assetCutoutUrl;
+  final String assetMaskedUrl;
   final String category;
   final String subCategory;
   final BoardItemRole role;
@@ -43,6 +45,8 @@ class StyleBoardItem {
     this.maskedUrl = '',
     this.boardImageUrl = '',
     this.normalizedUrl = '',
+    this.assetCutoutUrl = '',
+    this.assetMaskedUrl = '',
     required this.category,
     this.subCategory = '',
     required this.role,
@@ -108,6 +112,14 @@ class StyleBoardItem {
         'normalized_url',
         'normalizedUrl',
       ]),
+      assetCutoutUrl: _firstText(json, const [
+        'asset_cutout_url',
+        'assetCutoutUrl',
+      ]),
+      assetMaskedUrl: _firstText(json, const [
+        'asset_masked_url',
+        'assetMaskedUrl',
+      ]),
       role: role,
       position: BoardPosition.fromItemJson(json),
       isLocked: json['locked'] == true || json['is_locked'] == true,
@@ -154,6 +166,8 @@ class StyleBoardItem {
         maskedUrl: maskedUrl,
         boardImageUrl: boardImageUrl,
         normalizedUrl: normalizedUrl,
+        assetCutoutUrl: assetCutoutUrl,
+        assetMaskedUrl: assetMaskedUrl,
         category: category,
         subCategory: subCategory,
         role: role,
@@ -179,6 +193,8 @@ class StyleBoardItem {
       'masked_url': maskedUrl,
       'board_image_url': boardImageUrl,
       'normalized_url': normalizedUrl,
+      'asset_cutout_url': assetCutoutUrl,
+      'asset_masked_url': assetMaskedUrl,
       'locked': isLocked,
     });
     if (position != null) value['position'] = position!.toJson();
@@ -276,6 +292,9 @@ String _canonicalSource(dynamic value) =>
     switch (value?.toString().trim().toLowerCase()) {
       'wardrobe' || 'user_wardrobe' || 'uploaded' || 'closet' => 'wardrobe',
       'style_asset' ||
+      'style_assets' ||
+      'shared_asset' ||
+      'shared_assets' ||
       'asset' ||
       'asset_library' ||
       'curated' ||

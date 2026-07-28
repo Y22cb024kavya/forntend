@@ -52,9 +52,11 @@ class EditorialBoardItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shouldFrame = item.shouldFrame;
+    final resolved = item.resolveImage(surface: 'style_board_render');
+    final imageUrl = resolved.url ?? '';
+    final shouldFrame = resolved.requiresFrame;
     final garment = Image.network(
-      item.imageUrl,
+      imageUrl,
       fit: BoxFit.contain,
       alignment: Alignment.center,
       filterQuality: FilterQuality.high,
@@ -87,7 +89,7 @@ class EditorialBoardItem extends StatelessWidget {
                     child: ImageFiltered(
                       imageFilter: ui.ImageFilter.blur(sigmaX: 7, sigmaY: 7),
                       child: Image.network(
-                        item.imageUrl,
+                        imageUrl,
                         fit: BoxFit.contain,
                         alignment: Alignment.center,
                         color: Colors.black.withValues(alpha: 0.22),

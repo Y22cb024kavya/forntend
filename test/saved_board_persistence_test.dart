@@ -207,7 +207,7 @@ void main() {
       expect(items.map((item) => item['role']), ['bottom', 'top']);
       expect(items.map((item) => item['source']), ['wardrobe', 'style_asset']);
       expect(items.first['selected_field'], 'masked_url');
-      expect(items.first['source_kind'], 'masked');
+      expect(items.first['source_kind'], 'validated_cutout');
       expect(items.first['expected_transparent'], isTrue);
       expect(items.first['position'], {
         'x': 0.44,
@@ -334,6 +334,15 @@ void main() {
       expect(rendered.shouldFrame, isTrue);
       expect(rendered.position?.x, 0.21);
       expect(rendered.position?.rotation, 0.02);
+
+      final parity = savedBoardReopenParity(
+        reopened,
+        renderedItems: [rendered.toContractJson()],
+      );
+      expect(parity['item_count_match'], isTrue);
+      expect(parity['item_order_match'], isTrue);
+      expect(parity['source_policy_match'], isTrue);
+      expect(parity['image_provenance_match'], isTrue);
     });
   });
 

@@ -8,7 +8,7 @@ import 'package:myapp/util/wardrobe_image_resolver.dart';
 void main() {
   setUp(resetWardrobeImageDiagnosticCache);
 
-  test('validated board and cutout fields win over every fallback', () {
+  test('validated wardrobe cutout wins over board and every fallback', () {
     final board = resolveWardrobeImage({
       'item_id': 'item-1',
       'board_status': 'cutout_ready',
@@ -20,7 +20,7 @@ void main() {
       'image_url': 'https://test/original.jpg',
     });
 
-    expect(board.url, 'https://test/board.png');
+    expect(board.url, 'https://test/cutout.png');
     expect(board.sourceKind, 'validated_cutout');
     expect(board.validated, isTrue);
     expect(board.shouldFrame, isFalse);
@@ -42,7 +42,7 @@ void main() {
     });
 
     expect(masked.url, 'https://test/masked.png');
-    expect(masked.sourceKind, 'masked');
+    expect(masked.sourceKind, 'validated_cutout');
     expect(processed.url, 'https://test/processed.png');
     expect(processed.sourceKind, 'processed_cutout');
   });
@@ -82,25 +82,25 @@ void main() {
     expect(result.shouldFrame, isTrue);
   });
 
-  test('wardrobe filename alone does not prove a cutout', () {
+  test('safe distinct legacy masked field remains an unframed cutout', () {
     final result = resolveWardrobeImage({
       'masked_url': 'https://storage.test/files/wardrobe_item-1.png',
     });
 
-    expect(result.sourceKind, 'original');
-    expect(result.expectedTransparent, isFalse);
-    expect(result.shouldFrame, isTrue);
+    expect(result.sourceKind, 'legacy_masked_cutout');
+    expect(result.expectedTransparent, isTrue);
+    expect(result.shouldFrame, isFalse);
   });
 
-  test('PNG cutout-style filename alone does not prove transparency', () {
+  test('legacy masked camel alias remains an unframed cutout', () {
     final result = resolveWardrobeImage({
       'maskedUrl':
           'https://storage.test/files/wardrobe_item-1_cutout_v12.png/view',
     });
 
-    expect(result.sourceKind, 'original');
-    expect(result.expectedTransparent, isFalse);
-    expect(result.shouldFrame, isTrue);
+    expect(result.sourceKind, 'legacy_masked_cutout');
+    expect(result.expectedTransparent, isTrue);
+    expect(result.shouldFrame, isFalse);
   });
 
   test('normalized catalogue URL remains a framed fallback', () {
@@ -158,7 +158,7 @@ void main() {
 
     expect(result.url, 'https://test/validated-mask.png');
     expect(result.field, 'masked_url');
-    expect(result.sourceKind, 'masked');
+    expect(result.sourceKind, 'validated_cutout');
     expect(result.expectedTransparent, isTrue);
     expect(result.shouldFrame, isFalse);
   });
@@ -294,6 +294,33 @@ void main() {
     expect(result.shouldFrame, isTrue);
   });
 
+  test('asset cutout beats raw style asset image', () {
+    final result = resolveWardrobeImage({
+      'item_id': 'asset-1',
+      'source': 'style_asset',
+      'asset_cutout_url': 'https://test/asset-cutout.png',
+      'image_url': 'https://test/asset-raw.jpg',
+    });
+
+    expect(result.url, 'https://test/asset-cutout.png');
+    expect(result.field, 'asset_cutout_url');
+    expect(result.sourceKind, 'style_asset_cutout');
+    expect(result.expectedTransparent, isTrue);
+    expect(result.requiresFrame, isFalse);
+  });
+
+  test('asset cutout that aliases raw image remains framed', () {
+    final result = resolveWardrobeImage({
+      'source': 'style_asset',
+      'asset_cutout_url': 'https://test/asset.jpg',
+      'image_url': 'https://test/asset.jpg',
+    });
+
+    expect(result.sourceKind, 'style_asset_original');
+    expect(result.expectedTransparent, isFalse);
+    expect(result.requiresFrame, isTrue);
+  });
+
   test('wardrobe map indexes every stable id alias', () {
     final record = <String, dynamic>{
       r'$id': 'document-id',
@@ -353,6 +380,43 @@ void main() {
     expect(shareItem.position?.rotation, -0.02);
   });
 
+  test('all board surfaces preserve the same selected image decision', () {
+    final raw = <String, dynamic>{
+      'item_id': 'surface-item',
+      'role': 'top',
+      'source': 'style_asset',
+      'asset_cutout_url': 'https://test/surface-cutout.png',
+      'image_url': 'https://test/surface-original.jpg',
+    };
+    Map<String, dynamic> current = raw;
+    final decisions = <String>[];
+    for (final surface in [
+      'style_board_live',
+      'style_board_saved',
+      'style_board_reopened',
+      'style_board_share',
+      'style_this',
+      'build_outfit',
+      'style_board_cover',
+      'style_board_shuffle',
+    ]) {
+      current = resolveStyleBoardItemImage(
+        current,
+        const {},
+        surface: surface,
+        emitDiagnostic: false,
+      );
+      decisions.add(
+        '${current['image_url']}|${current['source_kind']}|'
+        '${current['expected_transparent']}',
+      );
+    }
+
+    expect(decisions.toSet(), hasLength(1));
+    expect(current['item_id'], 'surface-item');
+    expect(current['source_kind'], 'style_asset_cutout');
+  });
+
   test('unvalidated catalogue fallback is retained as a framed tile', () {
     final data = boardDataFromMap({
       'items': [
@@ -385,6 +449,30 @@ void main() {
     expect(item.resolveImage().url, 'https://test/board.png');
     expect(item.shouldFrame, isFalse);
     expect(item.toContractJson(), isNot(contains('_image_should_frame')));
+  });
+
+  test('canonical reconstruction retains every style asset candidate', () {
+    final item = StyleBoardItem.fromJson({
+      'item_id': 'asset-canonical',
+      'name': 'Asset top',
+      'role': 'top',
+      'source': 'style_asset',
+      'asset_cutout_url': 'https://test/asset-cutout.png',
+      'asset_masked_url': 'https://test/asset-mask.png',
+      'board_image_url': 'https://test/asset-board.jpg',
+      'normalized_url': 'https://test/asset-catalog.jpg',
+      'masked_url': 'https://test/legacy-mask.png',
+      'image_url': 'https://test/asset-original.jpg',
+    });
+    final contract = item.toContractJson();
+
+    expect(contract['asset_cutout_url'], 'https://test/asset-cutout.png');
+    expect(contract['asset_masked_url'], 'https://test/asset-mask.png');
+    expect(contract['board_image_url'], 'https://test/asset-board.jpg');
+    expect(contract['normalized_url'], 'https://test/asset-catalog.jpg');
+    expect(contract['masked_url'], 'https://test/legacy-mask.png');
+    expect(contract['image_url'], 'https://test/asset-cutout.png');
+    expect(item.itemId, 'asset-canonical');
   });
 
   test('saved-board extraction uses the shared cutout-first policy', () {
@@ -427,6 +515,12 @@ void main() {
     expect(compare, matches(RegExp(r'masked_url_fp=[0-9a-f]{8}')));
     expect(compare, contains('selected_field=masked_url'));
     expect(resolve, contains('surface=wardrobe_grid'));
+    expect(
+      messages.singleWhere(
+        (message) => message.startsWith('AHVI_IMAGE_SELECTION_DECISION'),
+      ),
+      contains('requires_frame=false'),
+    );
     expect(
       messages.every((message) => !message.contains('secret.test')),
       isTrue,

@@ -125,19 +125,18 @@ class SavedBoardCard extends StatelessWidget {
     if (snakePayload is Map) addItems(snakePayload['items']);
     final camelPayload = payload(data['boardPayload']);
     if (camelPayload is Map) addItems(camelPayload['items']);
-    return out.where((item) {
-      final url =
-          (item['imageUrl'] ??
-                  item['image_url'] ??
-                  item['masked_url'] ??
-                  item['maskedUrl'] ??
-                  item['url'] ??
-                  item['thumbnailUrl'])
-              ?.toString()
-              .trim() ??
-          '';
-      return url.isNotEmpty;
-    }).toList();
+    return out
+        .where(
+          (item) =>
+              resolveWardrobeImage(
+                item,
+                surface: 'style_board_saved',
+                itemId: wardrobeItemStableId(item),
+                emitDiagnostic: false,
+              ).url !=
+              null,
+        )
+        .toList();
   }
 
   void _openDetails(BuildContext context, Map<String, dynamic> data) {
@@ -166,7 +165,7 @@ class SavedBoardCard extends StatelessWidget {
       'tip',
     ]);
     final items = _itemsForBoard(data);
-    final parity = savedBoardReopenParity(data);
+    final parity = savedBoardReopenParity(data, renderedItems: items);
     debugPrint(
       'AHVI_BOARD_REOPEN_PARITY '
       'board_id=${parity['board_id']} '

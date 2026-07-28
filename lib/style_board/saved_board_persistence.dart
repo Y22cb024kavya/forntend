@@ -251,6 +251,9 @@ Map<String, dynamic> buildSavedBoardPayload({
 Map<String, dynamic> expandSavedBoardData(Map<String, dynamic> data) {
   final master = _decodeMap(data['masterGarment']);
   if (master?['schema'] == _savedBoardV2Schema) {
+    if (data['outfitItems'] == null && data['items'] is Iterable) {
+      return Map<String, dynamic>.from(data);
+    }
     final rawItems = _decodeList(data['outfitItems']);
     final byId = <String, Map<String, dynamic>>{};
     for (final raw in rawItems) {
@@ -267,6 +270,22 @@ Map<String, dynamic> expandSavedBoardData(Map<String, dynamic> data) {
         'selected_field': _text(item['selected_field']),
         'source_kind': _text(item['source_kind']),
         'expected_transparent': item['expected_transparent'] == true,
+        for (final key in const [
+          'slot',
+          'board_role',
+          'category',
+          'sub_category',
+          'masked_url',
+          'normalized_url',
+          'board_image_url',
+          'asset_cutout_url',
+          'asset_masked_url',
+          'original_image_url',
+          'board_status',
+          'cutout_status',
+          'image_status',
+        ])
+          if (_text(item[key]).isNotEmpty) key: _text(item[key]),
       };
       if (_hasCompactPosition(item)) {
         expanded['position'] = {
@@ -347,7 +366,10 @@ bool savedBoardMatchesFilter(Map<String, dynamic> data, String filter) {
       filter;
 }
 
-Map<String, dynamic> savedBoardReopenParity(Map<String, dynamic> data) {
+Map<String, dynamic> savedBoardReopenParity(
+  Map<String, dynamic> data, {
+  Iterable<Map<String, dynamic>>? renderedItems,
+}) {
   final expanded = expandSavedBoardData(data);
   final ids = (expanded['itemIds'] is Iterable)
       ? (expanded['itemIds'] as Iterable).map((id) => id.toString()).toList()
@@ -358,20 +380,42 @@ Map<String, dynamic> savedBoardReopenParity(Map<String, dynamic> data) {
   final itemIds = items
       .map((item) => _text(item['item_id'] ?? item['id']))
       .toList();
+  final rendered = renderedItems?.toList(growable: false);
   final provenanceOk = items.every(
     (item) =>
         _text(item['selected_field']).isNotEmpty &&
         _text(item['source_kind']).isNotEmpty &&
         item['expected_transparent'] is bool,
   );
+  final renderedIds = rendered
+      ?.map((item) => _text(item['item_id'] ?? item['id']))
+      .toList(growable: false);
+  final renderedProvenanceOk =
+      rendered == null ||
+      (rendered.length == items.length &&
+          List.generate(items.length, (index) {
+            final stored = items[index];
+            final actual = rendered[index];
+            return _text(stored['image_url']) == _text(actual['image_url']) &&
+                _text(stored['selected_field']) ==
+                    _text(actual['selected_field']) &&
+                _text(stored['source_kind']) == _text(actual['source_kind']) &&
+                stored['expected_transparent'] ==
+                    actual['expected_transparent'];
+          }).every((matches) => matches));
   return {
     'board_id': _text(expanded['board_id'] ?? expanded['boardId']),
-    'item_count_match': ids.isEmpty || ids.length == items.length,
-    'item_order_match': ids.isEmpty || _listEquals(ids, itemIds),
+    'item_count_match':
+        (ids.isEmpty || ids.length == items.length) &&
+        (rendered == null || rendered.length == items.length),
+    'item_order_match':
+        (ids.isEmpty || _listEquals(ids, itemIds)) &&
+        (renderedIds == null || _listEquals(itemIds, renderedIds)),
     'source_policy_match': _text(
       expanded['source_policy'] ?? expanded['sourcePolicy'],
     ).isNotEmpty,
-    'image_provenance_match': items.isEmpty || provenanceOk,
+    'image_provenance_match':
+        items.isEmpty || (provenanceOk && renderedProvenanceOk),
     'bucket': canonicalSavedBoardBucket(
       expanded['bucket'] ?? expanded['occasion'],
     ),
@@ -421,6 +465,22 @@ Map<String, dynamic> _compactItem(Map<String, dynamic> raw) {
     'selected_field': resolved.field,
     'source_kind': resolved.sourceKind,
     'expected_transparent': resolved.expectedTransparent,
+    for (final key in const [
+      'slot',
+      'board_role',
+      'category',
+      'sub_category',
+      'masked_url',
+      'normalized_url',
+      'board_image_url',
+      'asset_cutout_url',
+      'asset_masked_url',
+      'original_image_url',
+      'board_status',
+      'cutout_status',
+      'image_status',
+    ])
+      if (_text(raw[key]).isNotEmpty) key: _text(raw[key]),
   };
   final position = raw['position'] is Map
       ? Map<String, dynamic>.from(raw['position'] as Map)

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:myapp/util/wardrobe_image_resolver.dart';
 
 enum BoardItemRole {
   top,
@@ -64,6 +65,16 @@ class StyleBoardItem {
     ]);
     final slot = _firstText(json, const ['slot', 'role']);
     final role = boardItemRoleFromText(slot);
+    final resolved = resolveWardrobeImage(
+      json,
+      surface: 'style_board_parse',
+      itemId: itemId,
+      emitDiagnostic: false,
+    );
+    final raw = Map<String, dynamic>.from(json)
+      ..['_image_should_frame'] = resolved.shouldFrame
+      ..['_image_source_kind'] = resolved.sourceKind
+      ..['_image_expected_transparent'] = resolved.expectedTransparent;
     return StyleBoardItem(
       id: itemId,
       slot: slot.toLowerCase(),
@@ -86,7 +97,7 @@ class StyleBoardItem {
         'subCategory',
         'subcategory',
       ]),
-      imageUrl: _firstText(json, const ['image_url', 'imageUrl']),
+      imageUrl: resolved.url ?? '',
       maskedUrl: _firstText(json, const ['masked_url', 'maskedUrl']),
       boardImageUrl: _firstText(json, const [
         'board_image_url',
@@ -99,16 +110,26 @@ class StyleBoardItem {
       role: role,
       position: BoardPosition.fromItemJson(json),
       isLocked: json['locked'] == true || json['is_locked'] == true,
-      raw: Map<String, dynamic>.from(json),
+      raw: raw,
     );
   }
 
-  String get displayImageUrl {
-    for (final value in [boardImageUrl, normalizedUrl, maskedUrl, imageUrl]) {
-      if (value.trim().isNotEmpty) return value.trim();
-    }
-    return '';
-  }
+  ResolvedWardrobeImage resolveImage({String surface = 'style_board'}) =>
+      resolveWardrobeImage(
+        raw,
+        normalizedUrl: normalizedUrl,
+        imageUrl: imageUrl,
+        maskedUrl: maskedUrl,
+        surface: surface,
+        itemId: id,
+      );
+
+  String get displayImageUrl => resolveImage().url ?? '';
+  bool get shouldFrame =>
+      raw['_image_should_frame'] == true || resolveImage().shouldFrame;
+  bool get hasValidatedCutout =>
+      raw['_image_source_kind'] == 'validated_cutout' ||
+      resolveImage().sourceKind == 'validated_cutout';
 
   bool get hasStableIdentity => id.trim().isNotEmpty;
   bool get isLockable =>
@@ -157,6 +178,9 @@ class StyleBoardItem {
       'locked': isLocked,
     });
     if (position != null) value['position'] = position!.toJson();
+    value.remove('_image_should_frame');
+    value.remove('_image_source_kind');
+    value.remove('_image_expected_transparent');
     value.removeWhere((_, item) => item == null || item == '');
     return value;
   }

@@ -52,6 +52,7 @@ class EditorialBoardItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final shouldFrame = item.shouldFrame;
     final garment = Image.network(
       item.imageUrl,
       fit: BoxFit.contain,
@@ -67,32 +68,38 @@ class EditorialBoardItem extends StatelessWidget {
     );
     final content = Transform.rotate(
       angle: rotation,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Soft drop-shadow so a light/white cutout (white trousers, white
-          // sneakers, off-white shirt) stays visible on the off-white board
-          // canvas. The bare Image had zero separation and vanished into the
-          // background, making the board look empty.
-          Positioned.fill(
-            child: Transform.translate(
-              offset: const Offset(0, 4),
-              child: ImageFiltered(
-                imageFilter: ui.ImageFilter.blur(sigmaX: 7, sigmaY: 7),
-                child: Image.network(
-                  item.imageUrl,
-                  fit: BoxFit.contain,
-                  alignment: Alignment.center,
-                  color: Colors.black.withValues(alpha: 0.22),
-                  colorBlendMode: BlendMode.srcIn,
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                ),
+      child: shouldFrame
+          ? Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFCF5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0x1F1A1A1A)),
               ),
+              child: garment,
+            )
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fill(
+                  child: Transform.translate(
+                    offset: const Offset(0, 4),
+                    child: ImageFiltered(
+                      imageFilter: ui.ImageFilter.blur(sigmaX: 7, sigmaY: 7),
+                      child: Image.network(
+                        item.imageUrl,
+                        fit: BoxFit.contain,
+                        alignment: Alignment.center,
+                        color: Colors.black.withValues(alpha: 0.22),
+                        colorBlendMode: BlendMode.srcIn,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ),
+                garment,
+              ],
             ),
-          ),
-          garment,
-        ],
-      ),
     );
     // Per-role visual zoom (paint-only): enlarges the visible cutout inside its
     // existing box. Layout size is unchanged, so the box, lock button and card
@@ -102,7 +109,7 @@ class EditorialBoardItem extends StatelessWidget {
       key: item.hasStableIdentity
           ? ValueKey<String>('vscale-${item.itemId}')
           : null,
-      scale: editorialVisualScaleForRole(item.role),
+      scale: shouldFrame ? 1 : editorialVisualScaleForRole(item.role),
       alignment: editorialAlignmentForRole(item.role),
       filterQuality: FilterQuality.high,
       child: content,

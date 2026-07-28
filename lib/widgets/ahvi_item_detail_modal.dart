@@ -205,10 +205,10 @@ class _ItemDetailModal extends StatelessWidget {
                             ),
                             clipBehavior: Clip.antiAlias,
                             child:
-                                item.displayUrl != null &&
-                                    item.displayUrl!.isNotEmpty
+                                item.resolveImage(surface: 'wardrobe_detail').url != null &&
+                                    item.resolveImage(surface: 'wardrobe_detail').url!.isNotEmpty
                                 ? Image.network(
-                                    item.displayUrl!,
+                                    item.resolveImage(surface: 'wardrobe_detail').url!,
                                     fit: BoxFit.contain,
                                   )
                                 : const Icon(
@@ -1046,10 +1046,10 @@ class _WorksWellWithCard extends StatelessWidget {
                               height: 32,
                               color: const Color(0xFFEFEFF7),
                               child:
-                                  (p.displayUrl != null &&
-                                      p.displayUrl!.isNotEmpty)
+                                  (p.resolveImage(surface: 'works_well_with').url != null &&
+                                      p.resolveImage(surface: 'works_well_with').url!.isNotEmpty)
                                   ? Image.network(
-                                      p.displayUrl!,
+                                      p.resolveImage(surface: 'works_well_with').url!,
                                       fit: BoxFit.contain,
                                     )
                                   : const Icon(
@@ -1691,10 +1691,10 @@ class _AllPairingsSheet extends StatelessWidget {
                               height: 40,
                               color: const Color(0xFFEFEFF7),
                               child:
-                                  (p.displayUrl != null &&
-                                      p.displayUrl!.isNotEmpty)
+                                  (p.resolveImage(surface: 'works_well_with').url != null &&
+                                      p.resolveImage(surface: 'works_well_with').url!.isNotEmpty)
                                   ? Image.network(
-                                      p.displayUrl!,
+                                      p.resolveImage(surface: 'works_well_with').url!,
                                       fit: BoxFit.contain,
                                     )
                                   : const Icon(

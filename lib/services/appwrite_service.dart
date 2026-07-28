@@ -7,6 +7,7 @@ import 'package:appwrite/models.dart';
 import 'package:appwrite/enums.dart';
 import 'package:myapp/config/env.dart';
 import 'package:myapp/services/notification_service.dart';
+import 'package:myapp/util/wardrobe_image_resolver.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppwriteService extends ChangeNotifier {
@@ -1088,6 +1089,7 @@ class AppwriteService extends ChangeNotifier {
 
       return result.documents.map<Map<String, dynamic>>((doc) {
         return <String, dynamic>{
+          ...doc.data,
           "id": doc.$id,
           r"$id": doc.$id,
           "name": doc.data['name'],
@@ -1096,11 +1098,7 @@ class AppwriteService extends ChangeNotifier {
           "color_code": doc.data['color_code'],
           "pattern": doc.data['pattern'],
           "occasions": doc.data['occasions'],
-          "image_url":
-          doc.data['normalized_url'] ??
-              doc.data['masked_url'] ??
-              doc.data['image_url'] ??
-              doc.data['raw_url'],
+          "image_url": doc.data['image_url'] ?? doc.data['raw_url'],
           "masked_url": doc.data['masked_url'],
           "normalized_url": doc.data['normalized_url'],
           "raw_url": doc.data['raw_url'],
@@ -1111,8 +1109,6 @@ class AppwriteService extends ChangeNotifier {
           "isLiked": doc.data['isLiked'] ?? doc.data['isFavourite'] ?? false,
           "isFavourite": doc.data['isFavourite'] ?? doc.data['isLiked'] ?? false,
           "imageUrl": doc.data['imageUrl'] ??
-              doc.data['normalized_url'] ??
-              doc.data['masked_url'] ??
               doc.data['image_url'] ??
               doc.data['raw_url'],
         };
@@ -1405,17 +1401,11 @@ class AppwriteService extends ChangeNotifier {
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
         .where((item) {
-      final url =
-          (item['imageUrl'] ??
-              item['image_url'] ??
-              item['masked_url'] ??
-              item['maskedUrl'] ??
-              item['url'] ??
-              item['thumbnailUrl'])
-              ?.toString()
-              .trim() ??
-              '';
-      return url.isNotEmpty;
+      return resolveWardrobeImage(
+        item,
+        surface: 'style_board_saved',
+        itemId: (item['item_id'] ?? item['id'] ?? item[r'$id'] ?? '').toString(),
+      ).url != null;
     })
         .toList();
   }

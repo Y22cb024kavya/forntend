@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:myapp/util/wardrobe_image_resolver.dart';
+
 List<String> extractSavedBoardImages(Map<String, dynamic> data) {
   final urls = <String>[];
   final seen = <String>{};
@@ -14,22 +16,12 @@ List<String> extractSavedBoardImages(Map<String, dynamic> data) {
   void readItem(Object? raw) {
     if (raw is! Map) return;
     final item = Map<String, dynamic>.from(raw);
-    for (final key in const [
-      'normalized_url',
-      'normalizedUrl',
-      'masked_url',
-      'maskedUrl',
-      'imageUrl',
-      'image_url',
-      'url',
-      'thumbnailUrl',
-    ]) {
-      final value = item[key]?.toString().trim() ?? '';
-      if (value.isNotEmpty) {
-        addUrl(value);
-        return;
-      }
-    }
+    final resolved = resolveWardrobeImage(
+      item,
+      surface: 'style_board_saved',
+      itemId: (item['item_id'] ?? item['id'] ?? item[r'$id'] ?? '').toString(),
+    );
+    addUrl(resolved.url);
   }
 
   void readItems(Object? raw) {

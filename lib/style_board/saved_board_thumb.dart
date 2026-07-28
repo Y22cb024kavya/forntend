@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:appwrite/models.dart' as appwrite_models;
 
 import 'package:myapp/widgets/offline_image.dart';
+import 'package:myapp/util/wardrobe_image_resolver.dart';
 import 'saved_board_images.dart';
 import 'board_renderer.dart';
 import 'editorial_board_renderer.dart';
@@ -111,19 +112,18 @@ class SavedBoardThumb extends StatelessWidget {
     if (snakePayload is Map) addItems(snakePayload['items']);
     final camelPayload = payload(data['boardPayload']);
     if (camelPayload is Map) addItems(camelPayload['items']);
-    return out.where((item) {
-      final url =
-          (item['imageUrl'] ??
-                  item['image_url'] ??
-                  item['masked_url'] ??
-                  item['maskedUrl'] ??
-                  item['url'] ??
-                  item['thumbnailUrl'])
-              ?.toString()
-              .trim() ??
-          '';
-      return url.isNotEmpty;
-    }).toList();
+    return out
+        .where(
+          (item) =>
+              resolveWardrobeImage(
+                item,
+                surface: 'style_board_saved',
+                itemId: (item['item_id'] ?? item['id'] ?? item[r'$id'] ?? '')
+                    .toString(),
+              ).url !=
+              null,
+        )
+        .toList();
   }
 
   @override

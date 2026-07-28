@@ -20,6 +20,7 @@ import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/style_board/board_models.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/shareable_outfit_board.dart';
 import 'package:myapp/style_board/editorial_board_renderer.dart';
+import 'package:myapp/util/wardrobe_image_resolver.dart';
 
 typedef OutfitBoardMessageSender = void Function(String message);
 
@@ -1009,22 +1010,32 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
   }
 
   String _saveImageUrl() {
-    String pick(dynamic v) => _text(v);
-    // Prefer an explicit board/cover image, else the first item's image.
-    final candidates = <String>[
-      pick(widget.direction['image_url']),
-      pick(widget.direction['imageUrl']),
-      pick(widget.direction['board_image_url']),
-      pick(widget.editorialCover['image_url']),
-      pick(widget.editorialCover['imageUrl']),
+    final candidates = <ResolvedWardrobeImage>[
+      resolveWardrobeImage(
+        widget.direction,
+        surface: 'style_board_cover',
+        itemId: _id,
+      ),
+      resolveWardrobeImage(
+        widget.editorialCover,
+        surface: 'style_board_cover',
+        itemId: _id,
+      ),
     ];
     for (final item in _saveItems()) {
-      candidates.add(pick(item['image_url']));
-      candidates.add(pick(item['imageUrl']));
-      candidates.add(pick(item['normalized_url']));
-      candidates.add(pick(item['cutout_url']));
+      candidates.add(
+        resolveWardrobeImage(
+          item,
+          surface: 'style_board_cover',
+          itemId: _text(item['item_id'] ?? item['id'] ?? item[r'$id']),
+        ),
+      );
     }
-    return candidates.firstWhere((u) => u.isNotEmpty, orElse: () => '');
+    candidates.sort((a, b) => a.tier.compareTo(b.tier));
+    for (final candidate in candidates) {
+      if (candidate.url != null) return candidate.url!;
+    }
+    return '';
   }
 
   String _saveExplanation() {
@@ -1620,6 +1631,19 @@ StyleBoardData _toStyleBoardData(
                 'source': source,
               }
             : const <String, dynamic>{});
+    final resolved = resolveWardrobeImage(
+      carriedRaw,
+      normalizedUrl: canonical?.normalizedUrl,
+      imageUrl: image,
+      maskedUrl: canonical?.maskedUrl,
+      surface: 'style_board_live',
+      itemId: item.id,
+    );
+    final selectedImage = resolved.url ?? image;
+    final resolvedRaw = Map<String, dynamic>.from(carriedRaw)
+      ..['_image_should_frame'] = resolved.shouldFrame
+      ..['_image_source_kind'] = resolved.sourceKind
+      ..['_image_expected_transparent'] = resolved.expectedTransparent;
     items.add(
       StyleBoardItem(
         id: item.id,
@@ -1628,7 +1652,7 @@ StyleBoardData _toStyleBoardData(
         source: source,
         accessoryType: canonical?.accessoryType ?? '',
         name: item.name,
-        imageUrl: canonical?.imageUrl ?? image,
+        imageUrl: selectedImage,
         maskedUrl: canonical?.maskedUrl ?? '',
         boardImageUrl: canonical?.boardImageUrl ?? image,
         normalizedUrl: canonical?.normalizedUrl ?? '',
@@ -1637,7 +1661,7 @@ StyleBoardData _toStyleBoardData(
         role: role,
         position: canonical?.position,
         isLocked: canonical?.isLocked ?? false,
-        raw: carriedRaw,
+        raw: resolvedRaw,
       ),
     );
   }
@@ -1698,6 +1722,17 @@ List<StyleBoardItem> _enforceSlots(List<StyleBoardItem> items) {
     final cap = caps[it.role] ?? 0;
     final n = counts[it.role] ?? 0;
     if (cap == 0 || n >= cap) {
+      final replaceAt = kept.indexWhere(
+        (current) =>
+            current.role == it.role &&
+            !current.isLocked &&
+            !current.hasValidatedCutout &&
+            it.hasValidatedCutout,
+      );
+      if (replaceAt >= 0) {
+        kept[replaceAt] = it;
+        continue;
+      }
       dropped++;
       continue;
     }
@@ -1909,70 +1944,16 @@ List<Map<String, dynamic>> _maps(dynamic value) {
       .toList(growable: false);
 }
 
-/// Returns the first valid transparent-PNG URL for a board item, or null.
-///
-/// Priority:
-///   1. board_image_url / transparent_image_url (explicit transparent fields)
-///   2. cutout_url if cutout_status == ready
-///   3. image_url if board_status == cutout_ready (backend already resolved it)
-///
-/// Never falls back to normalized/catalog product tile URLs.
+/// Selects the strongest available image and records whether it needs framing.
 String? _transparentUrlFor(
   Map<String, dynamic> item, {
   String? itemId,
   String? itemName,
   String? role,
 }) {
-  for (final key in const <String>[
-    'board_image_url',
-    'boardImageUrl',
-    'transparent_image_url',
-    'transparentImageUrl',
-  ]) {
-    final v = item[key]?.toString().trim() ?? '';
-    if (v.isNotEmpty) return v;
-  }
-  final cutoutStatus = (item['cutout_status'] ?? item['cutoutStatus'] ?? '')
-      .toString()
-      .toLowerCase()
-      .trim();
-  final cutoutUrl = (item['cutout_url'] ?? item['cutoutUrl'] ?? '')
-      .toString()
-      .trim();
-  if (cutoutUrl.isNotEmpty && cutoutStatus == 'ready') return cutoutUrl;
-
-  // board_status == "cutout_ready" means the backend's resolver already picked
-  // a transparent PNG and placed it in image_url. Trust the backend signal.
-  final boardStatus = (item['board_status'] ?? item['boardStatus'] ?? '')
-      .toString()
-      .toLowerCase()
-      .trim();
-  if (boardStatus == 'cutout_ready') {
-    final imageUrl = (item['image_url'] ?? item['imageUrl'] ?? '')
-        .toString()
-        .trim();
-    if (imageUrl.isNotEmpty) return imageUrl;
-  }
-
-  final source = (item['source'] ?? '').toString().trim();
-  final imageUrl = (item['image_url'] ?? item['imageUrl'] ?? '')
-      .toString()
-      .trim();
-  if ((itemId ?? '').trim().isNotEmpty &&
-      source.isNotEmpty &&
-      imageUrl.isNotEmpty) {
-    return imageUrl;
-  }
-
-  debugPrint(
-    'AHVI_BOARD_ASSET_SKIPPED_NON_TRANSPARENT '
-    'item_id=${itemId ?? ""} '
-    'role=${role ?? ""} '
-    'name=${itemName ?? ""} '
-    'attempted_url_fields=[board_image_url,transparent_image_url,cutout_url,image_url(board_status=cutout_ready)] '
-    'cutout_status=$cutoutStatus '
-    'board_status=$boardStatus '
-    'reason=no_transparent_png_available',
-  );
-  return null;
+  return resolveWardrobeImage(
+    item,
+    surface: 'style_board_live',
+    itemId: itemId ?? '',
+  ).url;
 }

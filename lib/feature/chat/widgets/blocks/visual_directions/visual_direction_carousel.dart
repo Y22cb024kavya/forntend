@@ -30,6 +30,7 @@ class VisualDirectionCarousel extends StatelessWidget {
   /// loader self-disables when there are no directions to gate.
   final bool curationReveal;
   final bool? use85Layout;
+  final Map<String, Map<String, dynamic>> wardrobeById;
 
   const VisualDirectionCarousel({
     super.key,
@@ -39,6 +40,7 @@ class VisualDirectionCarousel extends StatelessWidget {
     this.onSendMessage,
     this.curationReveal = true,
     this.use85Layout,
+    this.wardrobeById = const {},
   });
 
   @override
@@ -97,6 +99,7 @@ class VisualDirectionCarousel extends StatelessWidget {
                         width: width,
                         onSendMessage: onSendMessage,
                         editorialCover: editorialCover,
+                        wardrobeById: wardrobeById,
                         onTapBoard: () => _openBoardDetail(
                           cardContext,
                           direction: direction,

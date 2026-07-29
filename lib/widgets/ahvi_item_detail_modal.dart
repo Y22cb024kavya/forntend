@@ -25,9 +25,11 @@ import 'package:myapp/style_board/board_models.dart';
 import 'package:myapp/style_board/board_layout_engine.dart';
 import 'package:myapp/util/wardrobe_image_resolver.dart';
 import 'package:myapp/app_localizations.dart'; // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ Localization
-import 'style_boards.dart'; // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ STYLE BOARDS INTEGRATION (consolidated, same folder)
 import 'pairing_engine.dart';
+import 'package:myapp/feature/chat/models/ahvi_response_block.dart';
+import 'package:myapp/feature/chat/services/ahvi_block_response_parser.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
+import 'package:myapp/feature/chat/widgets/blocks/visual_directions/visual_direction_carousel.dart';
 import 'build_outfit_screen.dart'; // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ BUILD OUTFIT SCREEN
 
 // ============================================================
@@ -35,6 +37,14 @@ import 'build_outfit_screen.dart'; // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚�
 // ============================================================
 const Color _kSuccessColor = Color(0xFF34C759);
 const Color _kDangerColor = Color(0xFFA32D2D);
+
+typedef StyleWardrobeItemCall =
+    Future<Map<String, dynamic>?> Function({
+      required String itemId,
+      required String scenario,
+      Map<String, dynamic>? anchorItem,
+      String? occasion,
+    });
 
 // ============================================================
 // PUBLIC ENTRY POINT
@@ -52,6 +62,7 @@ Future<void> showItemDetailModal(
   VoidCallback? onViewWearHistory,
   VoidCallback? onSetWearReminder,
   VoidCallback? onSetCareReminder,
+  StyleWardrobeItemCall? styleWardrobeItemCall,
 }) {
   return showDialog<void>(
     context: context,
@@ -69,6 +80,7 @@ Future<void> showItemDetailModal(
       onViewWearHistory: onViewWearHistory,
       onSetWearReminder: onSetWearReminder,
       onSetCareReminder: onSetCareReminder,
+      styleWardrobeItemCall: styleWardrobeItemCall,
     ),
   );
 }
@@ -88,6 +100,7 @@ class _ItemDetailModal extends StatelessWidget {
   final VoidCallback? onViewWearHistory;
   final VoidCallback? onSetWearReminder;
   final VoidCallback? onSetCareReminder;
+  final StyleWardrobeItemCall? styleWardrobeItemCall;
 
   const _ItemDetailModal({
     required this.item,
@@ -101,6 +114,7 @@ class _ItemDetailModal extends StatelessWidget {
     this.onViewWearHistory,
     this.onSetWearReminder,
     this.onSetCareReminder,
+    this.styleWardrobeItemCall,
   });
 
   @override
@@ -317,7 +331,11 @@ class _ItemDetailModal extends StatelessWidget {
                             child: _PrimaryStyleThisButton(
                               item: item,
                               t: t,
-                              onTap: () => _onStyleThis(context, item),
+                              onTap: () => _runStyleCta(
+                                context,
+                                item,
+                                mode: 'style_this',
+                              ),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -408,27 +426,6 @@ class _ItemDetailModal extends StatelessWidget {
   // BUILD OUTFIT -> 1 practical outfit anchored on this item.
   // Both show a loading spinner, then a result sheet, and never dead-end.
   // ============================================================
-  void _onStyleThis(BuildContext context, WardrobeItem item) {
-    // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ STYLE BOARDS INTEGRATION
-    // Open style boards bottom sheet instead of chat
-    showStyleBoardsSheet(
-      context,
-      selectedItem: item,
-      allItems: allItems,
-      onStyleSelected: () {
-        debugPrint('Style applied for: ${item.name}');
-        // Optional: Add additional logic here
-        // - Show success message
-        // - Update recommendations
-        // - Navigate to outfit builder
-      },
-      onItemReplaced: () {
-        debugPrint('Item replaced in style board');
-        // Handle replacement logic if needed
-      },
-    );
-  }
-
   void _onBuildOutfit(BuildContext context, WardrobeItem item) {
     Navigator.of(
       context,
@@ -449,8 +446,6 @@ class _ItemDetailModal extends StatelessWidget {
   }) async {
     final rootNav = Navigator.of(context, rootNavigator: true);
     final BuildContext appContext = rootNav.context;
-    rootNav.pop(); // close the item-detail dialog
-
     await _performStyleRequest(appContext, item, mode: mode);
   }
 
@@ -485,22 +480,39 @@ class _ItemDetailModal extends StatelessWidget {
     try {
       // Timeout so a slow backend can never strand the user behind the
       // barrierDismissible:false spinner (ANR / frozen-screen class).
-      result = await BackendService()
-          .styleWardrobeItem(
-            itemId: item.id,
-            scenario: mode,
-            anchorItem: {
-              'item_id': item.id,
-              'name': item.name,
-              'category': item.cat,
-              if (item.displayUrl != null) 'image_url': item.displayUrl,
-              // Display/context hint only: this modal renders the user's own
-              // wardrobe records. The backend re-verifies the item against
-              // the authenticated wardrobe and remains the trust boundary.
-              'source': 'wardrobe',
-            },
-          )
-          .timeout(const Duration(seconds: 15));
+      final resolvedImage = item.resolveImage(surface: 'style_this_request');
+      final request =
+          styleWardrobeItemCall ?? BackendService().styleWardrobeItem;
+      debugPrint(
+        'AHVI_STYLE_THIS_REQUEST anchor_item_id=${item.id} '
+        'scenario=$mode source_policy=wardrobe',
+      );
+      result = await request(
+        itemId: item.id,
+        scenario: mode,
+        anchorItem: {
+          ...item.raw,
+          'item_id': item.id,
+          'id': item.id,
+          'name': item.name,
+          'category': item.cat,
+          'role': item.cat,
+          if (item.imageUrl != null) 'image_url': item.imageUrl,
+          if (item.maskedUrl != null) 'masked_url': item.maskedUrl,
+          if (item.normalizedUrl != null) 'normalized_url': item.normalizedUrl,
+          if (resolvedImage.url != null)
+            'resolved_image_url': resolvedImage.url,
+          'resolved_image_field': resolvedImage.field,
+          'image_source_kind': resolvedImage.sourceKind,
+          'expected_transparent': resolvedImage.expectedTransparent,
+          'source': 'wardrobe',
+          'source_policy': 'wardrobe',
+          'scenario': mode,
+          'interaction_mode': mode,
+          'locked': true,
+          'anchor': true,
+        },
+      ).timeout(const Duration(seconds: 15));
     } on TimeoutException {
       timedOut = true;
       debugPrint('AHVI_MODAL_GUARD timeout flow=styleCta');
@@ -514,12 +526,35 @@ class _ItemDetailModal extends StatelessWidget {
 
     if (!appContext.mounted) return;
     if (timedOut) {
-      ScaffoldMessenger.maybeOf(appContext)?.showSnackBar(
-        SnackBar(
-          content: Text(
-            AppLocalizations.t(appContext, 'item_detail_timeout_message'),
-          ),
-        ),
+      _showStyleRequestFailure(
+        appContext,
+        item: item,
+        message: AppLocalizations.t(appContext, 'item_detail_timeout_message'),
+        failedFields: const ['timeout'],
+      );
+      return;
+    }
+
+    if (mode == 'style_this') {
+      final directions = _canonicalStyleThisDirections(result, item.id);
+      if (result?['success'] != true || directions.isEmpty) {
+        final failedFields = _styleThisContractFailures(result, item.id);
+        _showStyleRequestFailure(
+          appContext,
+          item: item,
+          message: 'AHVI could not style this item. Please retry.',
+          failedFields: failedFields,
+        );
+        return;
+      }
+
+      if (rootNav.canPop()) rootNav.pop(); // close item detail after success
+      _showStyleResultSheet(
+        appContext,
+        mode: mode,
+        item: item,
+        result: result,
+        visualDirections: directions,
       );
       return;
     }
@@ -537,6 +572,120 @@ class _ItemDetailModal extends StatelessWidget {
     }
 
     _showStyleResultSheet(appContext, mode: mode, item: item, result: result);
+  }
+
+  List<Map<String, dynamic>> _canonicalStyleThisDirections(
+    Map<String, dynamic>? result,
+    String anchorItemId,
+  ) {
+    if (result == null) return const [];
+    final parsed = parseAhviResponse(result);
+    AhviResponseBlock? visualDirectionsBlock;
+    for (final block in parsed.blocks) {
+      if (block.type == AhviBlockType.visualDirections) {
+        visualDirectionsBlock = block;
+        break;
+      }
+    }
+    final rawDirections = _asMapList(visualDirectionsBlock?.data['directions']);
+    final directions = rawDirections
+        .map((direction) {
+          final interactionMode = (direction['interaction_mode'] ?? '')
+              .toString()
+              .trim();
+          return <String, dynamic>{
+            ...direction,
+            if (interactionMode.isEmpty) 'interaction_mode': 'style_this',
+            'originating_item_id': anchorItemId,
+          };
+        })
+        .toList(growable: false);
+    if (directions.isEmpty ||
+        directions.any(
+          (direction) =>
+              _directionContractFailures(direction, anchorItemId).isNotEmpty,
+        )) {
+      return const [];
+    }
+    return directions;
+  }
+
+  List<String> _styleThisContractFailures(
+    Map<String, dynamic>? result,
+    String anchorItemId,
+  ) {
+    if (result == null) return const ['response'];
+    if (result['success'] != true) return const ['success'];
+    final parsed = parseAhviResponse(result);
+    final failures = <String>[];
+    var foundDirections = false;
+    for (final block in parsed.blocks) {
+      if (block.type != AhviBlockType.visualDirections) continue;
+      final directions = _asMapList(block.data['directions']);
+      foundDirections = directions.isNotEmpty;
+      for (final direction in directions) {
+        failures.addAll(_directionContractFailures(direction, anchorItemId));
+      }
+    }
+    if (!foundDirections) failures.add('visual_directions');
+    return failures.toSet().toList(growable: false);
+  }
+
+  List<String> _directionContractFailures(
+    Map<String, dynamic> direction,
+    String anchorItemId,
+  ) {
+    final failures = <String>[];
+    final boardId = (direction['board_id'] ?? '').toString().trim();
+    final revision = direction['revision'];
+    final sourcePolicy = (direction['source_policy'] ?? '').toString().trim();
+    final scenario = (direction['scenario'] ?? '').toString().trim();
+    final interactionMode = (direction['interaction_mode'] ?? 'style_this')
+        .toString()
+        .trim();
+    final items = _asMapList(
+      direction['board_items'] ?? direction['boardItems'],
+    );
+    String itemId(Map<String, dynamic> item) =>
+        (item['item_id'] ?? item['id'] ?? item[r'$id'] ?? '').toString().trim();
+
+    if (boardId.isEmpty || boardId.toLowerCase().startsWith('outfit_card_')) {
+      failures.add('board_id');
+    }
+    if (revision is! num || revision < 1) failures.add('revision');
+    if (sourcePolicy != 'wardrobe') failures.add('source_policy');
+    if (scenario != 'style_this') failures.add('scenario');
+    if (interactionMode != 'style_this') failures.add('interaction_mode');
+    if (items.isEmpty || items.any((item) => itemId(item).isEmpty)) {
+      failures.add('stable_item_ids');
+    }
+    if (!items.any((item) => itemId(item) == anchorItemId)) {
+      failures.add('anchor_item_id');
+    }
+    return failures;
+  }
+
+  void _showStyleRequestFailure(
+    BuildContext appContext, {
+    required WardrobeItem item,
+    required String message,
+    required List<String> failedFields,
+  }) {
+    debugPrint(
+      'AHVI_STYLE_THIS_CONTRACT_FAILED anchor_item_id=${item.id} '
+      'failed_fields=${failedFields.isEmpty ? "unknown" : failedFields.join(",")}',
+    );
+    ScaffoldMessenger.maybeOf(appContext)?.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: SnackBarAction(
+          label: 'Retry',
+          onPressed: () => unawaited(
+            _performStyleRequest(appContext, item, mode: 'style_this'),
+          ),
+        ),
+      ),
+    );
   }
 
   // ============================================================
@@ -717,11 +866,12 @@ class _ItemDetailModal extends StatelessWidget {
     required String mode,
     required WardrobeItem item,
     required Map<String, dynamic>? result,
+    List<Map<String, dynamic>> visualDirections = const [],
   }) {
     final bool ok = result != null && result['success'] == true;
     final String? message = result?['message']?.toString();
     final List<Map<String, dynamic>> directions = mode == 'style_this'
-        ? _asMapList(result?['style_directions'])
+        ? visualDirections
         : <Map<String, dynamic>>[];
     final Map<String, dynamic>? outfit =
         (mode == 'build_outfit' && result?['outfit'] is Map)
@@ -801,34 +951,18 @@ class _ItemDetailModal extends StatelessWidget {
                     colors: colors,
                   ),
                 if (mode == 'style_this' && hasStyleBoardContract)
-                  ...directions.map(
-                    (direction) => Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: AhviOutfitBoardCard(
-                        direction: <String, dynamic>{
-                          ...direction,
-                          'direction_name': direction['title'],
-                          'board_items': direction['items'],
+                  VisualDirectionCarousel(
+                    directions: directions,
+                    cardWidth: MediaQuery.sizeOf(ctx).width - 40,
+                    curationReveal: false,
+                    wardrobeById: buildWardrobeImageMap([
+                      for (final wardrobeItem in allItems)
+                        {
+                          ...wardrobeItem.raw,
+                          'id': wardrobeItem.id,
+                          r'$id': wardrobeItem.id,
                         },
-                        width: MediaQuery.sizeOf(ctx).width - 40,
-                        wardrobeById: buildWardrobeImageMap([
-                          for (final wardrobeItem in allItems)
-                            {
-                              ...wardrobeItem.raw,
-                              'id': wardrobeItem.id,
-                              r'$id': wardrobeItem.id,
-                            },
-                        ]),
-                      ),
-                    ),
-                  ),
-
-                if (mode == 'style_this' && !hasStyleBoardContract)
-                  ...directions.map(
-                    (direction) => _StyleDirectionCard(
-                      direction: direction,
-                      colors: colors,
-                    ),
+                    ]),
                   ),
 
                 if (mode == 'build_outfit' &&

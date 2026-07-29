@@ -220,8 +220,11 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
         .where((item) => item.isLocked && item.hasStableIdentity)
         .map((item) => item.itemId)
         .toSet();
+    StyleBoardItem? originatingItem;
+    var requestedAnchor = '';
     if (_interactionMode == BoardInteractionMode.styleThis) {
-      final requestedAnchor = _text(
+      lockedItemIds.clear();
+      requestedAnchor = _text(
         widget.direction['originating_item_id'] ??
             widget.direction['originatingItemId'] ??
             widget.direction['anchor_item_id'] ??
@@ -236,12 +239,16 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
       final fallbackAnchor = parsed.board.items
           .where((item) => item.hasStableIdentity)
           .firstOrNull;
-      final originatingItem = anchor ?? wardrobeAnchor ?? fallbackAnchor;
+      originatingItem = requestedAnchor.isNotEmpty
+          ? anchor
+          : wardrobeAnchor ?? fallbackAnchor;
       if (originatingItem != null) lockedItemIds.add(originatingItem.itemId);
     }
     final stateItems = parsed.board.items
         .map(
-          (item) => lockedItemIds.contains(item.itemId)
+          (item) => _interactionMode == BoardInteractionMode.styleThis
+              ? item.copyWith(isLocked: lockedItemIds.contains(item.itemId))
+              : lockedItemIds.contains(item.itemId)
               ? item.copyWith(isLocked: true)
               : item,
         )
@@ -255,6 +262,22 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
       items: stateItems,
       lockedItemIds: lockedItemIds,
     );
+    if (_interactionMode == BoardInteractionMode.styleThis) {
+      final initialLockedIds = state.lockedItemIds.toList()..sort();
+      final anchorItemId = requestedAnchor.isNotEmpty
+          ? requestedAnchor
+          : originatingItem?.itemId ?? '';
+      final supportingLockedCount = state.items.where((item) {
+        return item.itemId != anchorItemId &&
+            state.lockedItemIds.contains(item.itemId);
+      }).length;
+      debugPrint(
+        'AHVI_STYLE_THIS_ANCHOR anchor_item_id=$anchorItemId '
+        'anchor_present=${originatingItem != null} '
+        'initial_locked_ids=${initialLockedIds.join(",")} '
+        'supporting_locked_count=$supportingLockedCount',
+      );
+    }
     final failedPredicates = state.failedContractPredicates;
     debugPrint(
       'AHVI_BOARD_CONTRACT_CHECK '

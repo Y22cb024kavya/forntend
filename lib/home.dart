@@ -28,6 +28,7 @@ import 'package:myapp/fitness_page.dart';
 import 'package:myapp/diet_page.dart';
 import 'package:myapp/skincare.dart';
 import 'package:myapp/home_card_summary_provider.dart';
+import 'package:myapp/widgets/home_routine_carousel.dart';
 // skincare & medicine state now merged into HomeCardSummaryProvider
 import 'package:myapp/medi_tracker.dart';
 
@@ -1141,12 +1142,8 @@ class _Screen4State extends State<Screen4>
   String _runningMemory = "";
   final ScrollController _overlayScrollCtrl = ScrollController();
 
-  // 🆕 Routine progress tracker + cards row now scroll together horizontally.
-  // Two separate controllers (each row is its own SingleChildScrollView) kept
-  // in sync via listeners in initState — see _syncRoutineScroll().
-  final ScrollController _routineCardsScrollCtrl = ScrollController();
-  final ScrollController _routineProgressScrollCtrl = ScrollController();
-  bool _isSyncingRoutineScroll = false;
+  // Home five-card daily-summary carousel. The PageController lives inside
+  // HomeRoutineCarousel (self-managed lifecycle), so nothing to hold here.
 
   List<String> _responseTags = [];
   bool _tagsRevealed = false;
@@ -1257,21 +1254,6 @@ class _Screen4State extends State<Screen4>
     // Keyboard height track చేయడానికి FocusNode listener
     _chatFocusNode.addListener(_onChatFocusChange);
     WidgetsBinding.instance.addObserver(this);
-
-    // 🆕 Keep the routine progress tracker and routine cards scrolling
-    // together — dragging either one moves the other by the same offset.
-    _routineCardsScrollCtrl.addListener(
-      () => _syncRoutineScroll(
-        _routineCardsScrollCtrl,
-        _routineProgressScrollCtrl,
-      ),
-    );
-    _routineProgressScrollCtrl.addListener(
-      () => _syncRoutineScroll(
-        _routineProgressScrollCtrl,
-        _routineCardsScrollCtrl,
-      ),
-    );
 
     _aurora1Ctrl = AnimationController(
       vsync: this,
@@ -1644,8 +1626,6 @@ class _Screen4State extends State<Screen4>
       }
     }
     _overlayScrollCtrl.dispose();
-    _routineCardsScrollCtrl.dispose();
-    _routineProgressScrollCtrl.dispose();
     super.dispose();
   }
 
@@ -3694,45 +3674,10 @@ class _Screen4State extends State<Screen4>
 
   // ── Routine cards section: Wear / Move / Eat / Care / Medicine ───────────
 
-  /// Mirrors [from]'s current scroll offset onto [to], guarded by a flag so
-  /// the two listeners don't ping-pong each other infinitely.
-  void _syncRoutineScroll(ScrollController from, ScrollController to) {
-    if (_isSyncingRoutineScroll) return;
-    if (!from.hasClients || !to.hasClients) return;
-    final target = from.offset.clamp(0.0, to.position.maxScrollExtent);
-    if ((to.offset - target).abs() < 0.5) return;
-    _isSyncingRoutineScroll = true;
-    to.jumpTo(target);
-    _isSyncingRoutineScroll = false;
-  }
-
   Widget _buildRoutineCardsSection() {
-    final summary = context.watch<HomeCardSummaryProvider>();
-    // 🆕 Watching these causes the Care & Medicine cards to repaint
-    // automatically whenever SkincareScreen or MediTrackScreen push updates.
-    // All five cards repaint from the single merged HomeCardSummaryProvider.
-    final screenW = MediaQuery.of(context).size.width;
-
-    // ── ROUTINE CARD SIZING — stable across all screen sizes ─────────────────
-    // Use a very gentle scale factor so cards never shrink dramatically on
-    // smaller phones. The clamp floor is the "standard" phone target size,
-    // meaning cards look correct even on a 320dp device; they only grow
-    // slightly on larger phones (480dp+).
-    final routineScale = (screenW / 390.0).clamp(0.92, 1.25);
-    // Card width: each card fills a sensible fixed width — not too narrow,
-    // not too wide. 5 cards fit at ~86dp each with 4px gap on a 360dp screen.
-    // We intentionally avoid going below 88dp so the label+icon+status always
-    // have room to render without clipping.
-    final cardWidth = (88.0 * routineScale).clamp(88.0, 120.0);
-    // 🆕 Shared gap used by BOTH the cards row and the progress tracker row,
-    // so each progress segment's width lines up with its card underneath.
-    final cardGap = screenW < 360 ? 3.0 : 4.0;
-    final iconBubbleSize = (36.0 * routineScale).clamp(34.0, 46.0);
-    final iconSize = (17.0 * routineScale).clamp(16.0, 22.0);
-    final labelFontSize = (12.5 * routineScale).clamp(12.0, 16.0);
-    final descFontSize = (10.5 * routineScale).clamp(10.0, 13.0);
-    final statusFontSize = (9.5 * routineScale).clamp(9.0, 12.0);
-    final cardPadding = (9.0 * routineScale).clamp(8.0, 12.0);
+    // Repaint all five cards whenever the merged summary provider notifies
+    // (Care/Medicine/etc push updates through it).
+    context.watch<HomeCardSummaryProvider>();
 
     // 🆕 DYNAMIC DATA FROM PROVIDERS & SERVICES
     // Each routine syncs with real app data
@@ -3804,6 +3749,44 @@ class _Screen4State extends State<Screen4>
           ),
         ];
 
+    final palette = HomeRoutinePalette(
+      accent: _accent,
+      border: _border,
+      cardColor: _bgSecondary.withOpacity(0.7),
+      textHeading: _textHeading,
+      textMuted: _textMuted,
+      onAccent: _onAccent,
+    );
+
+    final cards = <HomeRoutineCardData>[
+      for (int i = 0; i < routines.length; i++)
+        () {
+          final r = routines[i];
+          final overdue =
+              r.page is MediTrackScreen && r.status.toLowerCase().contains('overdue');
+          return HomeRoutineCardData(
+            icon: r.icon,
+            color: r.color,
+            label: r.label,
+            primary: r.desc,
+            context: r.status,
+            stateLabel: '',
+            cta: r.label,
+            done: r.done,
+            overdue: overdue,
+            onOpen: () {
+              if (r.page is MediTrackScreen) {
+                debugPrint('AHVI_MEDI_NAV source=home_routine');
+              }
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => r.page),
+              );
+            },
+          );
+        }(),
+    ];
+
     return Container(
       decoration: BoxDecoration(
         color: _surface,
@@ -3817,267 +3800,12 @@ class _Screen4State extends State<Screen4>
           ),
         ],
       ),
-      // Fill the parent Expanded widget completely so cards stretch to use
-      // the guaranteed routineMinH space allocated in the layout above.
       width: double.infinity,
       height: double.infinity,
-      padding: const EdgeInsets.fromLTRB(0, 3, 0, 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.max,
-        children: [
-          // Progress dots row
-          // 🆕 FIX: connector lines were showing as tiny disconnected dashes
-          // instead of continuous lines. Root cause: the previous version
-          // alternated bubble-slots (width: cardWidth) with connector-slots
-          // (width: cardGap, only ~3-4px) as SEPARATE Row children — so the
-          // visible line only covered the 3-4px gap between cards, while the
-          // much larger empty space around each centered bubble (inside its
-          // own cardWidth slot) had no line at all, reading as "○ - ○ - ○".
-          //
-          // Fix: switched to a Stack where each connector is positioned
-          // explicitly to run from one bubble's exact center to the next
-          // bubble's exact center (a span of cardWidth + cardGap, always
-          // constant) — regardless of how much of that span is "card" vs
-          // "gap". This also still scrolls horizontally like the routine
-          // cards row below it, using the same per-card width/gap and the
-          // same horizontal padding so every bubble lines up above its card.
-          // The two rows' scroll controllers stay in sync (see
-          // _syncRoutineScroll) so dragging either one scrolls both.
-          Builder(
-            builder: (context) {
-              // Constant footprint of one card + its trailing gap — matches
-              // the cards row's Padding(right: cardGap) around each card.
-              final slot = cardWidth + cardGap;
-              final totalWidth = routines.length * slot;
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                controller: _routineProgressScrollCtrl,
-                padding: EdgeInsets.symmetric(
-                  horizontal: screenW < 360 ? 4 : 6,
-                  vertical: 0,
-                ),
-                physics: const BouncingScrollPhysics(),
-                child: SizedBox(
-                  width: totalWidth,
-                  height: 22,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      // Connector lines drawn first so bubbles paint on top.
-                      for (int i = 0; i < routines.length - 1; i++)
-                        Positioned(
-                          left: i * slot + cardWidth / 2,
-                          top:
-                              10.25, // vertically centers a 1.5px line in a 22px-tall row
-                          width: slot,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 220),
-                            curve: Curves.easeOut,
-                            height: 1.5,
-                            // 🆕 Dynamic: fills with accent once THIS routine
-                            // is done, so the line visually tracks real
-                            // completion progress instead of staying static.
-                            color: routines[i].done ? _accent : _border,
-                          ),
-                        ),
-                      // Bubbles, each centered above its card below.
-                      for (int i = 0; i < routines.length; i++)
-                        Positioned(
-                          left: i * slot + cardWidth / 2 - 11,
-                          top: 0,
-                          child: Container(
-                            width: 22,
-                            height: 22,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              // 🔧 FIX: was Colors.transparent, which let the
-                              // connector line show through the hollow center
-                              // of un-done bubbles (looked like the line was
-                              // cutting into the circle). Filling with the
-                              // card surface color makes the bubble opaque so
-                              // the line visually stops at its border instead.
-                              color: routines[i].done ? _accent : _surface,
-                              border: Border.all(
-                                color: routines[i].done ? _accent : _border,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: routines[i].done
-                                ? Icon(
-                                    Icons.check_rounded,
-                                    size: 12,
-                                    color: _onAccent,
-                                  )
-                                : null,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-
-          // ✏️ Gap between progress and routine items: 2px (near-touching, not touching)
-          const SizedBox(height: 2),
-
-          // ✅ FIXED: SingleChildScrollView + Row instead of ListView + FittedBox
-          // 🆕 FIX: previously the outer SizedBox(height: routineH) only grew
-          // invisible whitespace around these cards — the cards themselves
-          // were sized purely by their own (fixed) intrinsic content height,
-          // so changing routineH had zero visible effect. Wrapping in a
-          // LayoutBuilder gives us the *actual* available height here, which
-          // we now apply directly to each card's SizedBox — so the visible
-          // card boxes genuinely resize with routineH.
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, cardsConstraints) {
-                // The parent Expanded now guarantees routineMinH=118px of space.
-                // Cards fill whatever they receive; the 90px floor is a
-                // last-resort guard in case constraints are unexpectedly tight.
-                final cardItemHeight = cardsConstraints.maxHeight.clamp(
-                  90.0,
-                  double.infinity,
-                );
-                return SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  controller: _routineCardsScrollCtrl,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: screenW < 360 ? 4 : 6,
-                    vertical: 0,
-                  ),
-                  physics: const BouncingScrollPhysics(),
-                  clipBehavior: Clip.antiAlias,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: List.generate(routines.length, (i) {
-                      final r = routines[i];
-                      return Padding(
-                        padding: EdgeInsets.only(right: cardGap),
-                        child: GestureDetector(
-                          onTap: () {
-                            if (r.page is MediTrackScreen) {
-                              debugPrint('AHVI_MEDI_NAV source=home_routine');
-                            }
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => r.page),
-                            );
-                          },
-                          child: SizedBox(
-                            width: cardWidth,
-                            height: cardItemHeight,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: _bgSecondary.withOpacity(0.7),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: r.done
-                                      ? _accent.withOpacity(0.25)
-                                      : _border.withOpacity(0.5),
-                                  width: 1,
-                                ),
-                              ),
-                              // ✏️ Top inset trimmed by 5px so the card sits closer
-                              // to the tracker line above; other sides unchanged.
-                              padding: EdgeInsets.fromLTRB(
-                                cardPadding,
-                                cardPadding - 6,
-                                cardPadding,
-                                cardPadding,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.max,
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  // Icon bubble
-                                  Container(
-                                    width: iconBubbleSize,
-                                    height: iconBubbleSize,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: r.color.withOpacity(0.15),
-                                    ),
-                                    child: Icon(
-                                      r.icon,
-                                      size: iconSize,
-                                      color: r.color,
-                                    ),
-                                  ),
-                                  SizedBox(height: cardPadding * 0.5),
-                                  // Label
-                                  Text(
-                                    r.label,
-                                    style: TextStyle(
-                                      color: _textHeading,
-                                      fontSize: labelFontSize,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  SizedBox(height: cardPadding * 0.3),
-                                  // Description - responsive text filling available space
-                                  Expanded(
-                                    child: Text(
-                                      r.desc,
-                                      style: TextStyle(
-                                        color: _textMuted,
-                                        fontSize: descFontSize,
-                                        fontWeight: FontWeight.w400,
-                                        height: 1.3,
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      softWrap: true,
-                                    ),
-                                  ),
-                                  SizedBox(height: cardPadding * 0.3),
-                                  // Status
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        r.done
-                                            ? Icons.check_circle_rounded
-                                            : Icons.access_time_rounded,
-                                        size: descFontSize - 0.5,
-                                        color: r.done ? _accent : _textMuted,
-                                      ),
-                                      SizedBox(width: screenW < 360 ? 1 : 2),
-                                      Flexible(
-                                        child: Text(
-                                          r.status,
-                                          style: TextStyle(
-                                            color: r.done
-                                                ? _accent
-                                                : _textMuted,
-                                            fontSize: statusFontSize,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      child: HomeRoutineCarousel(
+        cards: cards,
+        palette: palette,
       ),
     );
   }

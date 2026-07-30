@@ -203,6 +203,27 @@ void main() {
     expect(dir['shuffle_available'], isTrue);
   });
 
+  test('anchor carries its catalog image (resolved_image_url) as normalized_url',
+      () {
+    // Backend echoes the request anchor_item: raw image_url + the resolved
+    // catalog under resolved_image_url. The board anchor must surface the
+    // catalog so it renders clean, not the raw crop.
+    final resp = _styleThisResponse(
+      anchor: {
+        'item_id': 'anchor-1',
+        'name': 'Pink Shirt',
+        'category': 'top',
+        'image_url': 'https://example.test/raw_anchor-1.png',
+        'resolved_image_url': 'https://example.test/catalog_anchor-1.png',
+      },
+    );
+    final dir = _directionsOf(parseAhviResponse(resp)).single;
+    final anchor = (dir['board_items'] as List)
+        .cast<Map>()
+        .firstWhere((e) => e['item_id'] == 'anchor-1');
+    expect(anchor['normalized_url'], 'https://example.test/catalog_anchor-1.png');
+  });
+
   test('no directions of either kind → no visualDirections block', () {
     final parsed = parseAhviResponse({'success': true, 'message_text': 'hi'});
     expect(_hasVisualDirections(parsed), isFalse);

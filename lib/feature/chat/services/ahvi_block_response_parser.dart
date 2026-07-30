@@ -336,6 +336,11 @@ Map<String, dynamic> _anchorItemMap(
         m['resolved_image_url'] ??
         m['normalized_url'] ??
         m['masked_url'],
+    // Carry the anchor's catalog image so the board shows it (image_url is the
+    // raw crop the backend styled from). Without this the board anchor falls
+    // back to its raw/masked cutout while every other piece shows catalog.
+    'normalized_url':
+        m['normalized_url'] ?? m['normalizedUrl'] ?? m['resolved_image_url'],
     'role': m['role'] ?? m['category'],
     'owned': true,
   };
@@ -374,9 +379,21 @@ Map<String, dynamic> _styleDirectionToCanonical(
   );
   final hasAnchor =
       anchorId.isNotEmpty && items.any((it) => _itemId(it) == anchorId);
+  final anchorCatalog = anchorItem['normalized_url'] ??
+      anchorItem['normalizedUrl'] ??
+      anchorItem['resolved_image_url'];
+  // Merge the anchor's catalog image onto its board item so the board renders
+  // the catalog, not the raw crop: the backend's direction items carry the
+  // anchor without its normalized/catalog url.
+  Map<String, dynamic> withAnchorCatalog(Map<String, dynamic> it) {
+    if (anchorCatalog == null || _itemId(it) != anchorId) return it;
+    if (it['normalized_url'] != null || it['normalizedUrl'] != null) return it;
+    return {...it, 'normalized_url': anchorCatalog};
+  }
+
   final boardItems = (!hasAnchor && anchorItem.isNotEmpty)
       ? <Map<String, dynamic>>[anchorItem, ...items]
-      : items;
+      : items.map(withAnchorCatalog).toList();
 
   final existingBoardId = (direction['board_id'] ?? '').toString().trim();
   final boardId = (existingBoardId.isNotEmpty &&

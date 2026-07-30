@@ -14,6 +14,7 @@ import 'package:mime/mime.dart';
 import 'package:myapp/app_localizations.dart';
 import 'package:myapp/feature/chat/services/ahvi_processing_message.dart';
 import 'package:myapp/feature/chat/widgets/ahvi_processing_bubble.dart';
+import 'package:myapp/models/calendar_actions.dart';
 import 'package:myapp/services/backend_service.dart';
 import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
@@ -1320,10 +1321,17 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           ? 'style'
           : widget.moduleContext;
       final isPlanPackRequest = _isPlanPackRequest(trimmed);
+      // Typed "prep tomorrow" / "plan my day" reuse the tile's structured
+      // Calendar action (packing stays on planner). Frontend-only.
+      final calendarAction =
+          isPlanPackRequest ? null : calendarPhraseAction(trimmed);
+      final sendDomain = calendarAction != null
+          ? 'calendar'
+          : canonicalModuleChatDomain(widget.moduleContext,
+              plannerRequest: isPlanPackRequest);
       debugPrint(
         'AHVI_MODULE_SEND module=${widget.moduleContext} '
-        'domain=${canonicalModuleChatDomain(widget.moduleContext, plannerRequest: isPlanPackRequest)} '
-        'planPack=$isPlanPackRequest',
+        'domain=$sendDomain planPack=$isPlanPackRequest',
       );
       final isClosestStyleAction =
           styleModules.contains(widget.moduleContext) &&
@@ -1363,7 +1371,17 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
               },
             }
           : widget.contextData;
-      final response = styleModules.contains(widget.moduleContext) &&
+      final calendarReq = calendarAction == null
+          ? null
+          : calendarActionRequest(calendarAction, occasion: '');
+      final response = calendarReq != null
+          ? await backend.sendModuleChat(
+              domain: 'calendar',
+              message: calendarReq.message,
+              context: calendarReq.context,
+              chatHistory: List<Map<String, String>>.from(_chatHistory),
+            )
+          : styleModules.contains(widget.moduleContext) &&
               !isPlanPackRequest
           ? await backend.sendChatQuery(
         query,

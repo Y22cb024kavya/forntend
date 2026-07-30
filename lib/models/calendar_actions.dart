@@ -48,6 +48,31 @@ class CalendarActionRequest {
   final Map<String, dynamic> context;
 }
 
+/// Narrow free-text → structured Calendar action resolver. Exact-match only
+/// (normalized) so a typed "prep tomorrow" reuses the same action the tile
+/// sends. Deliberately NOT a `contains('plan')` check — that would swallow
+/// "plan outfits for Goa" / "plan my meals". Returns null → leave routing
+/// to the caller (packing/planner/style).
+CalendarQuickAction? calendarPhraseAction(String text) {
+  final t = text.trim().toLowerCase();
+  const tomorrowPrep = {
+    'prep tomorrow',
+    'prepare tomorrow',
+    'prep me for tomorrow',
+    'prepare me for tomorrow',
+    'plan for tomorrow',
+  };
+  const planDayPhrases = {
+    'plan my day',
+    'plan today',
+    'plan my day today',
+    'organize my day',
+  };
+  if (tomorrowPrep.contains(t)) return CalendarQuickAction.prepTomorrow;
+  if (planDayPhrases.contains(t)) return CalendarQuickAction.planDay;
+  return null;
+}
+
 CalendarActionRequest calendarActionRequest(
   CalendarQuickAction action, {
   required String occasion,

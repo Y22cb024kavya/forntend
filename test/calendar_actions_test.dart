@@ -184,4 +184,50 @@ void main() {
     expect(ok, contains('raw_count=2 parsed_count=1 skipped_count=1'));
     expect(ok, isNot(contains('Hidden from diagnostics')));
   });
+
+  group('calendarPhraseAction — typed free text → structured Calendar action', () {
+    test('tomorrow-prep phrases resolve to prepTomorrow', () {
+      for (final p in const [
+        'prep tomorrow',
+        'Prepare tomorrow',
+        'prep me for tomorrow',
+        'prepare me for tomorrow',
+        'plan for tomorrow',
+      ]) {
+        final action = calendarPhraseAction(p);
+        expect(action, CalendarQuickAction.prepTomorrow, reason: p);
+        final req = calendarActionRequest(action!, occasion: '');
+        expect(req.message, 'Prep for tomorrow');
+        expect(req.context['calendar_action'], 'calendar_prep_tomorrow');
+        expect(req.context['requested_plan_type'], 'tomorrow_prep');
+      }
+    });
+
+    test('plan-day phrases resolve to planDay', () {
+      for (final p in const [
+        'plan my day',
+        'plan today',
+        'plan my day today',
+        'organize my day',
+      ]) {
+        final action = calendarPhraseAction(p);
+        expect(action, CalendarQuickAction.planDay, reason: p);
+        final req = calendarActionRequest(action!, occasion: '');
+        expect(req.message, 'Plan my day');
+        expect(req.context['calendar_action'], 'calendar_plan_day');
+        expect(req.context['requested_plan_type'], 'day_plan');
+      }
+    });
+
+    test('packing and unrelated plan/prep phrases are NOT captured', () {
+      for (final p in const [
+        'pack for a carry-on trip',
+        'plan outfits for Goa',
+        'plan my meals',
+        'plan a workout',
+      ]) {
+        expect(calendarPhraseAction(p), isNull, reason: p);
+      }
+    });
+  });
 }

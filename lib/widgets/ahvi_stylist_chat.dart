@@ -2138,16 +2138,59 @@ class _StyleBoardPayload {
         outfits: [],
       );
     }
-    final data = response['data'] is Map
-        ? Map<String, dynamic>.from(response['data'] as Map)
-        : <String, dynamic>{};
+    final selection = selectStyleBoardAlias(response);
+    final selectedPath = selection.path;
+    final selectedBoards = selection.boards;
+    if (selectedBoards.isNotEmpty) {
+      debugPrint(
+        'AHVI_STYLE_BOARD_PARSE path=$selectedPath '
+        'input_board_count=${selectedBoards.length}',
+      );
+    }
     return _StyleBoardPayload(
-      cards: _mapList(response['cards']),
-      renderedBoards: _mapList(data['rendered_boards']),
-      outfits: _mapList(data['outfits']),
+      cards: selectedPath == 'style_boards' ||
+              selectedPath == 'data.style_boards' ||
+              selectedPath == 'cards' ||
+              selectedPath == 'data.cards'
+          ? selectedBoards
+          : const [],
+      renderedBoards: selectedPath == 'data.rendered_boards' ||
+              selectedPath == 'rendered_boards'
+          ? selectedBoards
+          : const [],
+      outfits: selectedPath == 'data.outfits' || selectedPath == 'outfits'
+          ? selectedBoards
+          : const [],
       boardId: response['board_ids']?.toString(),
     );
   }
+}
+
+@visibleForTesting
+({String path, List<Map<String, dynamic>> boards}) selectStyleBoardAlias(
+  Map<String, dynamic> response,
+) {
+  final data = response['data'] is Map
+      ? Map<String, dynamic>.from(response['data'] as Map)
+      : <String, dynamic>{};
+  final candidates = <({String path, Object? value})>[
+    (path: 'data.rendered_boards', value: data['rendered_boards']),
+    (path: 'rendered_boards', value: response['rendered_boards']),
+    (path: 'style_boards', value: response['style_boards']),
+    (path: 'data.style_boards', value: data['style_boards']),
+    (path: 'cards', value: response['cards']),
+    (path: 'data.cards', value: data['cards']),
+    (path: 'data.outfits', value: data['outfits']),
+    (path: 'outfits', value: response['outfits']),
+  ];
+
+  for (final candidate in candidates) {
+    final boards = _mapList(candidate.value);
+    if (boards.isNotEmpty) {
+      return (path: candidate.path, boards: boards);
+    }
+  }
+  return (path: '', boards: const []);
 }
 
 class _VisualDirectionPayload {
@@ -2188,6 +2231,17 @@ class _VisualDirectionPayload {
           .toList(),
     );
   }
+}
+
+@visibleForTesting
+String styleResponseRendererKindForTesting(Map<String, dynamic> response) {
+  if (_VisualDirectionPayload.fromResponse(response).hasDirections) {
+    return 'visual_directions';
+  }
+  if (_StyleBoardPayload.fromResponse(response).hasBoards) {
+    return 'style_boards';
+  }
+  return 'text';
 }
 
 bool _isModuleResponse(Map<String, dynamic> response) {
@@ -2932,6 +2986,11 @@ class _StyleBoardViewModel {
   static List<_StyleBoardViewModel> fromPayload(_StyleBoardPayload payload) {
     final boards = <_StyleBoardViewModel>[];
     final seen = <String>{};
+    final parsedCount = payload.renderedBoards.length +
+        payload.cards.length +
+        payload.outfits.length;
+    var privateWearFiltered = 0;
+    var duplicateFiltered = 0;
 
     List<Map<String, dynamic>> mergedBoardItems(Map<String, dynamic> source) {
       final merged = <Map<String, dynamic>>[];
@@ -2997,12 +3056,14 @@ class _StyleBoardViewModel {
 
     void addBoard(_StyleBoardViewModel board) {
       if (_styleBoardContainsPrivateWear(board)) {
-        debugPrint('AHVI suppressed private-wear style board: ${board.title}');
+        privateWearFiltered++;
         return;
       }
       final signature = boardSignature(board.title, board.items);
       if (signature.isEmpty || seen.add(signature)) {
         boards.add(board);
+      } else {
+        duplicateFiltered++;
       }
     }
 
@@ -3116,6 +3177,17 @@ class _StyleBoardViewModel {
           ),
         );
       }
+    }
+
+    if (parsedCount > 0) {
+      final filteredCount = parsedCount - boards.length;
+      debugPrint(
+        'AHVI_STYLE_BOARD_RENDER parsed_count=$parsedCount '
+        'converted_view_model_count=${boards.length} '
+        'filtered_count=$filteredCount '
+        'filter_reasons=private_wear:$privateWearFiltered,'
+        'duplicate:$duplicateFiltered',
+      );
     }
 
     return boards;

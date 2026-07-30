@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/services/backend_service.dart';
 
 void main() {
-  test('Prep uses the plan backend domain', () {
-    expect(canonicalModuleChatDomain(' prepare '), 'plan');
+  test('Prep uses the planner backend domain', () {
+    expect(canonicalModuleChatDomain(' prepare '), 'planner');
   });
 
   test('packing requests use the planner backend domain', () {

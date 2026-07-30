@@ -12,6 +12,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:mime/mime.dart';
 import 'package:myapp/app_localizations.dart';
+import 'package:myapp/feature/chat/services/ahvi_processing_message.dart';
+import 'package:myapp/feature/chat/widgets/ahvi_processing_bubble.dart';
 import 'package:myapp/services/backend_service.dart';
 import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
@@ -741,6 +743,26 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
   String? _currentSessionId;
 
   AhviModuleConfig get _config => _configFor(widget.moduleContext);
+
+  /// Context-aware processing copy for this sheet's module.
+  String get _typingMessage {
+    switch (widget.moduleContext.toLowerCase().trim()) {
+      case 'wardrobe':
+        return ahviProcessingMessage(AhviProcessingContext.wardrobe);
+      case 'style':
+      case 'daily_wear':
+        return ahviProcessingMessage(
+          AhviProcessingContext.styleRecommendation,
+        );
+      case 'prepare':
+      case 'plan':
+      case 'planner':
+      case 'calendar':
+        return ahviProcessingMessage(AhviProcessingContext.calendar);
+      default:
+        return ahviProcessingMessage(AhviProcessingContext.general);
+    }
+  }
 
   @override
   void initState() {
@@ -1829,7 +1851,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
                       ..._messages.map(
                             (msg) => _Bubble(msg: msg, onPrompt: _sendMessage),
                       ),
-                      if (_typing) _TypingBubble(color: t.accent.secondary),
+                      if (_typing) _TypingBubble(message: _typingMessage),
                     ],
                   ),
                 ),
@@ -4687,74 +4709,19 @@ class _WebSearchSheetState extends State<_WebSearchSheet> {
   }
 }
 
-class _TypingBubble extends StatefulWidget {
-  final Color color;
-
-  const _TypingBubble({required this.color});
-
-  @override
-  State<_TypingBubble> createState() => _TypingBubbleState();
-}
-
-class _TypingBubbleState extends State<_TypingBubble>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+/// Chat-facing wrapper — delegates to the shared branded [AhviProcessingBubble].
+class _TypingBubble extends StatelessWidget {
+  final String message;
+  const _TypingBubble({String? message})
+      : message = message ?? 'AHVI is thinking';
 
   @override
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: context.themeTokens.panel,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: context.themeTokens.cardBorder),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (_, _) {
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(3, (i) {
-                final p = ((_controller.value + i * 0.2) % 1.0);
-                final o = 0.35 + (0.65 * (1 - (p - 0.5).abs() * 2));
-                return Container(
-                  width: 6,
-                  height: 6,
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: widget.color.withValues(alpha: o),
-                  ),
-                );
-              }),
-            );
-          },
-        ),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: AhviProcessingBubble(message: message),
       ),
     );
   }

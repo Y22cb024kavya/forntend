@@ -4,6 +4,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:myapp/app_localizations.dart';
+import 'package:myapp/feature/chat/services/ahvi_processing_message.dart';
+import 'package:myapp/feature/chat/widgets/ahvi_processing_bubble.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -3166,7 +3168,11 @@ class _DailyWearScreenState extends State<DailyWearScreen>
         }
 
         if (_isTyping && i == _messages.length) {
-          return const _TypingBubble();
+          return _TypingBubble(
+            message: ahviProcessingMessage(
+              AhviProcessingContext.styleRecommendation,
+            ),
+          );
         }
         final m = _messages[i];
         return _ChatBubble(
@@ -3990,104 +3996,15 @@ class _ChatBubble extends StatelessWidget {
   }
 }
 
-class _TypingBubble extends StatefulWidget {
-  const _TypingBubble();
-  @override
-  State<_TypingBubble> createState() => _TypingBubbleState();
-}
-
-class _TypingBubbleState extends State<_TypingBubble>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat();
-  }
+/// Chat-facing wrapper — delegates to the shared branded [AhviProcessingBubble].
+class _TypingBubble extends StatelessWidget {
+  final String message;
+  const _TypingBubble({String? message})
+      : message = message ?? 'AHVI is thinking';
 
   @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.themeTokens;
-    return Row(
-      children: [
-        CircleAvatar(
-          radius: 15,
-          backgroundColor: t.accent.primary,
-          child: Icon(Icons.auto_awesome_rounded, size: 14),
-        ),
-        const SizedBox(width: 9),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          decoration: BoxDecoration(
-            color: t.panel,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: t.cardBorder),
-          ),
-          child: Row(
-            children: List.generate(
-              3,
-                  (i) => _BounceDot(controller: _ctrl, delay: i * 0.18),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _BounceDot extends StatelessWidget {
-  final AnimationController controller;
-  final double delay;
-  const _BounceDot({required this.controller, required this.delay});
-  @override
-  Widget build(BuildContext context) {
-    final t = context.themeTokens;
-    final anim =
-    TweenSequence([
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 0, end: -6),
-        weight: 30,
-      ),
-      TweenSequenceItem(
-        tween: Tween<double>(begin: -6, end: 0),
-        weight: 30,
-      ),
-      TweenSequenceItem(tween: ConstantTween(0.0), weight: 40),
-    ]).animate(
-      CurvedAnimation(
-        parent: controller,
-        curve: Interval(
-          delay,
-          (delay + 0.5).clamp(0, 1.0),
-          curve: Curves.easeInOut,
-        ),
-      ),
-    );
-    return AnimatedBuilder(
-      animation: anim,
-      builder: (_, _) => Transform.translate(
-        offset: Offset(0, anim.value),
-        child: Container(
-          width: 7,
-          height: 7,
-          margin: const EdgeInsets.symmetric(horizontal: 2.5),
-          decoration: BoxDecoration(
-            color: t.accent.primary.withValues(alpha: 0.55),
-            shape: BoxShape.circle,
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      AhviProcessingBubble(message: message);
 }
 
 class _RichChatText extends StatelessWidget {

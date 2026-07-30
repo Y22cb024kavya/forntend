@@ -28,6 +28,8 @@ import 'package:myapp/app_localizations.dart'; // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â
 import 'pairing_engine.dart';
 import 'package:myapp/feature/chat/models/ahvi_response_block.dart';
 import 'package:myapp/feature/chat/services/ahvi_block_response_parser.dart';
+import 'package:myapp/feature/chat/services/ahvi_processing_message.dart';
+import 'package:myapp/feature/chat/widgets/ahvi_processing_bubble.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/visual_direction_carousel.dart';
 import 'build_outfit_screen.dart'; // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ BUILD OUTFIT SCREEN
@@ -470,8 +472,16 @@ class _ItemDetailModal extends StatelessWidget {
     showDialog<void>(
       context: appContext,
       barrierDismissible: false,
-      builder: (_) =>
-          const Center(child: CircularProgressIndicator(color: Colors.white)),
+      builder: (_) => Center(
+        child: AhviProcessingBubble(
+          message: mode == 'style_this'
+              ? ahviProcessingMessage(
+                  AhviProcessingContext.styleThis,
+                  itemName: item.name,
+                )
+              : ahviProcessingMessage(AhviProcessingContext.buildOutfit),
+        ),
+      ),
     );
 
     debugPrint('AHVI_MODAL_GUARD start flow=styleCta mode=$mode');
@@ -542,7 +552,7 @@ class _ItemDetailModal extends StatelessWidget {
         _showStyleRequestFailure(
           appContext,
           item: item,
-          message: 'AHVI could not style this item. Please retry.',
+          message: 'AHVI couldn’t complete that.',
           failedFields: failedFields,
         );
         return;

@@ -47,6 +47,25 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
     defaultValue: true,
   );
   var visualDirections = _extractVisualDirections(response, data);
+  // Style This ships its boards under top-level `style_directions` (not
+  // `visual_directions`). Adapt them into the canonical visualDirections shape
+  // so parseAhviResponse → AhviBlockRenderer → VisualDirectionCarousel →
+  // AhviOutfitBoardCard renders them exactly like normal directions. Only runs
+  // when there are no normal visual_directions, so that path is untouched.
+  if (visualDirections.isEmpty) {
+    final styleDirections = _extractStyleThisDirections(response, data);
+    if (styleDirections.isNotEmpty) {
+      final anchorId = _anchorItemId(response, data);
+      visualDirections = styleDirections
+          .map((dir) => _styleDirectionToCanonical(dir, anchorId))
+          .toList();
+      debugPrint(
+        'AHVI_STYLE_DIRECTION_ADAPTER source_field=style_directions '
+        'direction_count=${styleDirections.length} '
+        'mapped_block_count=${visualDirections.length}',
+      );
+    }
+  }
   // Render wardrobe boards (style_boards/rendered_boards/outfits) through the
   // SAME editorial flat-lay as catalog directions. When the backend ships only
   // style_boards (e.g. "use my wardrobe" / weak_occasion_match), convert them
@@ -274,6 +293,60 @@ List<Map<String, dynamic>> _extractVisualDirections(
         data['visual_directions'] ??
         data['visualDirections'],
   );
+}
+
+/// Style This ships its boards under `style_directions`.
+List<Map<String, dynamic>> _extractStyleThisDirections(
+  Map<String, dynamic> response,
+  Map<String, dynamic> data,
+) {
+  return _mapList(
+    response['style_directions'] ??
+        response['styleDirections'] ??
+        data['style_directions'] ??
+        data['styleDirections'],
+  );
+}
+
+/// Top-level anchor garment id (verification only — the board card locks it).
+String _anchorItemId(
+  Map<String, dynamic> response,
+  Map<String, dynamic> data,
+) {
+  final anchor =
+      response['anchor_item'] ??
+      response['anchorItem'] ??
+      data['anchor_item'] ??
+      data['anchorItem'];
+  if (anchor is Map) {
+    return (anchor['item_id'] ?? anchor['id'] ?? anchor[r'$id'] ?? '')
+        .toString()
+        .trim();
+  }
+  return '';
+}
+
+/// Map one `style_directions` entry to a canonical visual direction. Preserves
+/// every backend field (board_id, revision, board_items, positions, title,
+/// occasion, story/reasoning, image provenance…) and stamps the Style This
+/// contract fields the downstream card + modal validate against. Carries the
+/// anchor id so AhviOutfitBoardCard locks only the anchor.
+Map<String, dynamic> _styleDirectionToCanonical(
+  Map<String, dynamic> direction,
+  String anchorItemId,
+) {
+  final out = <String, dynamic>{
+    ...direction,
+    'scenario': 'style_this',
+    'interaction_mode': 'style_this',
+    'source_policy': 'wardrobe',
+  };
+  if (anchorItemId.isNotEmpty) {
+    out['anchor_item_id'] = anchorItemId;
+    out['originating_item_id'] =
+        direction['originating_item_id'] ?? anchorItemId;
+  }
+  return out;
 }
 
 /// Magazine-cover header surfaced above the direction cards. Backend ships

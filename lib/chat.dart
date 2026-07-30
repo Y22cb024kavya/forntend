@@ -14,6 +14,8 @@ import 'package:myapp/widgets/ahvi_home_text.dart';
 import 'package:myapp/widgets/ahvi_header.dart';
 import 'package:myapp/feature/chat/models/ahvi_response_block.dart';
 import 'package:myapp/feature/chat/services/ahvi_block_response_parser.dart';
+import 'package:myapp/feature/chat/services/ahvi_processing_message.dart';
+import 'package:myapp/feature/chat/widgets/ahvi_processing_bubble.dart';
 import 'package:myapp/feature/chat/widgets/blocks/ahvi_block_renderer.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/visual_direction_carousel.dart';
 import 'package:myapp/services/appwrite_service.dart';
@@ -1033,6 +1035,26 @@ class _ChatScreenState extends State<ChatScreen>
       ? 'plan'
       : widget.moduleContext.toLowerCase().trim();
 
+  /// Context-aware processing copy for the typing bubble, keyed off the active
+  /// chat module. Falls back to the general message.
+  String get _typingMessage {
+    switch (_module) {
+      case 'wardrobe':
+        return ahviProcessingMessage(AhviProcessingContext.wardrobe);
+      case 'style':
+      case 'daily_wear':
+        return ahviProcessingMessage(
+          AhviProcessingContext.styleRecommendation,
+        );
+      case 'plan':
+      case 'planner':
+      case 'calendar':
+        return ahviProcessingMessage(AhviProcessingContext.calendar);
+      default:
+        return ahviProcessingMessage(AhviProcessingContext.general);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1866,11 +1888,11 @@ class _ChatScreenState extends State<ChatScreen>
                         ),
                       ),
                       if (_isTyping)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 20, bottom: 8),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 20, bottom: 8),
                           child: Align(
                             alignment: Alignment.centerLeft,
-                            child: _TypingBubble(),
+                            child: _TypingBubble(message: _typingMessage),
                           ),
                         ),
                     ],
@@ -5002,86 +5024,18 @@ class _OutfitDetailPageState extends State<_OutfitDetailPage>
 }
 
 // ── Animated typing bubble (3 bouncing dots) ────────────────────────────────
-class _TypingBubble extends StatefulWidget {
-  const _TypingBubble();
-  @override
-  State<_TypingBubble> createState() => _TypingBubbleState();
-}
-
-class _TypingBubbleState extends State<_TypingBubble>
-    with TickerProviderStateMixin {
-  late final List<AnimationController> _ctrls;
-  late final List<Animation<double>> _anims;
+/// Chat-facing wrapper. Delegates to the shared [AhviProcessingBubble] so the
+/// branded ✦ + message + dots animation is identical everywhere. [message]
+/// defaults to the general copy; callers pass context-aware copy via
+/// [ahviProcessingMessage].
+class _TypingBubble extends StatelessWidget {
+  final String message;
+  const _TypingBubble({String? message})
+      : message = message ?? 'AHVI is thinking';
 
   @override
-  void initState() {
-    super.initState();
-    _ctrls = List.generate(
-      3,
-          (i) => AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 500),
-      ),
-    );
-    _anims = _ctrls
-        .map(
-          (c) => Tween<double>(
-        begin: 0,
-        end: -6,
-      ).animate(CurvedAnimation(parent: c, curve: Curves.easeInOut)),
-    )
-        .toList();
-    for (var i = 0; i < 3; i++) {
-      Future.delayed(Duration(milliseconds: i * 160), () {
-        if (mounted) _ctrls[i].repeat(reverse: true);
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    for (final c in _ctrls) c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.themeTokens;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: t.backgroundSecondary,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(18),
-          topRight: Radius.circular(18),
-          bottomRight: Radius.circular(18),
-          bottomLeft: Radius.circular(4),
-        ),
-        border: Border.all(color: t.cardBorder),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(
-          3,
-              (i) => AnimatedBuilder(
-            animation: _anims[i],
-            builder: (_, __) => Transform.translate(
-              offset: Offset(0, _anims[i].value),
-              child: Container(
-                margin: EdgeInsets.only(right: i < 2 ? 5 : 0),
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  color: t.mutedText.withValues(alpha: 0.6),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      AhviProcessingBubble(message: message);
 }
 
 // ── Pulsing mic animation when listening ────────────────────────────────────

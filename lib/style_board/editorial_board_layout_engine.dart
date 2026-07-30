@@ -110,7 +110,7 @@ class EditorialBoardLayoutEngine {
       _applySafeZone(dense, width, height),
       width,
       height,
-    );
+    ).map((p) => p.rotation == 0.0 ? p : p.copyWith(rotation: 0.0)).toList();
     _logLayout(raw.mode, finalPlacements, width, height);
     return EditorialLayoutResult(mode: raw.mode, placements: finalPlacements);
   }
@@ -189,85 +189,81 @@ class EditorialBoardLayoutEngine {
         ),
       );
     } else {
-      // Pure 3-piece flat-lay. The garment trio dominates the canvas while
-      // retaining intentional overlap and enough negative space to read as an
-      // editorial composition rather than a product grid.
+      // Row-band flat-lay: top, bottom and footwear each own a fixed,
+      // non-overlapping vertical band. A band's item is capped to its band's
+      // height, so nothing can ever grow into the next row — the earlier
+      // "shirt hides jeans" bug was a shared y-range, not just a z-order slip.
+      const topBandY = 0.02, topBandH = 0.30;
+      const botBandY = 0.37, botBandH = 0.32;
+
+      // Top stays narrower than full width so the accessory column (right of
+      // it, same band) never has to overlap it.
       final topW =
           width *
           switch (itemCount) {
-            3 => 0.74,
-            4 => 0.69,
-            _ => 0.65,
+            3 => 0.62,
+            4 => 0.58,
+            _ => 0.56,
           };
       placements.add(
         BoardItemPlacement(
           item: top,
-          x: width * 0.08,
-          y: height * 0.05,
+          x: width * 0.04,
+          y: height * topBandY,
           width: topW,
-          height: _boxHeight(BoardItemRole.top, topW, height * 0.52),
-          rotation: -0.02,
+          height: _boxHeight(BoardItemRole.top, topW, height * topBandH),
+          rotation: 0,
           zIndex: 2,
         ),
       );
-      final botW =
-          width *
-          switch (itemCount) {
-            3 => 0.60,
-            4 => 0.56,
-            _ => 0.52,
-          };
+      final botW = width * 0.82;
       placements.add(
         BoardItemPlacement(
           item: bottom,
-          x: width * 0.36,
-          y: height * 0.35,
+          x: width * 0.09,
+          y: height * botBandY,
           width: botW,
-          height: _boxHeight(BoardItemRole.bottom, botW, height * 0.52),
-          rotation: 0.015,
+          height: _boxHeight(BoardItemRole.bottom, botW, height * botBandH),
+          rotation: 0,
           zIndex: 1,
         ),
       );
     }
 
+    // Footwear owns the bottom band, fully clear of the trousers above it.
+    const footBandY = 0.73, footBandH = 0.17;
     final footW =
         width *
         switch (itemCount) {
-          3 => 0.52,
-          4 => 0.48,
-          _ => 0.45,
+          3 => 0.60,
+          4 => 0.54,
+          _ => 0.50,
         };
     placements.add(
       BoardItemPlacement(
         item: footwear,
-        x: width * 0.08,
-        y: height * 0.70,
+        x: (width - footW) / 2,
+        y: height * footBandY,
         width: footW,
-        height: _boxHeight(BoardItemRole.footwear, footW, height * 0.22),
-        rotation: -0.03,
+        height: _boxHeight(BoardItemRole.footwear, footW, height * footBandH),
+        rotation: 0,
         zIndex: 3,
       ),
     );
 
     for (var i = 0; i < math.min(accessories.length, 2); i++) {
-      // i==0 = small jewelry/accessory mid-right; i==1 = bag/extra upper-right,
-      // a touch larger but never dominant. Both kept off the main garments.
-      final accW =
-          width *
-          switch ((accessories.length, i)) {
-            (1, _) => 0.27,
-            (_, 0) => 0.27,
-            _ => 0.20,
-          };
+      // Accessory column: clear of the top garment (which stops at ~0.66w)
+      // and confined to the top band, so it never touches bottom/footwear.
+      final accW = width * (accessories.length == 1 ? 0.30 : 0.26);
       placements.add(
         BoardItemPlacement(
           item: accessories[i],
-          x: width * (i == 0 ? 0.70 : 0.68),
-          y: height * (i == 0 ? 0.40 : 0.18),
+          x: width * 0.68,
+          y: height * (0.02 + i * 0.16),
           width: accW,
-          height: _boxHeight(BoardItemRole.accessory, accW, height * 0.22),
-          rotation: i == 0 ? 0.06 : -0.04,
-          zIndex: i == 0 ? 4 : 3,
+          height: _boxHeight(BoardItemRole.accessory, accW, height * 0.14),
+          rotation: 0,
+          zIndex: 4,
         ),
       );
     }

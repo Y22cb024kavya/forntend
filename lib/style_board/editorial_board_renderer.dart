@@ -38,15 +38,23 @@ class EditorialBoardCanvas extends StatelessWidget {
             height: h,
           );
 
+          // Style This boards ship backend-authored positions that overlap
+          // (ring over shirt, shoes over trousers). Ignore them and use the
+          // deterministic engine layout. Recommendation boards keep their
+          // curated backend positions.
+          final preferEngine = board.scenario == 'style_this';
+
           final placements = generated.placements.map((placement) {
             final position = placement.item.position;
-            if (position == null || !position.isUsable) return placement;
+            if (preferEngine || position == null || !position.isUsable) {
+              return placement;
+            }
             return placement.copyWith(
               x: position.x! * w,
               y: position.y! * h,
               width: position.width! * w,
               height: position.height! * h,
-              rotation: position.rotation ?? placement.rotation,
+              rotation: 0.0,
               zIndex: position.z ?? placement.zIndex,
             );
           }).toList()..sort((a, b) => a.zIndex.compareTo(b.zIndex));

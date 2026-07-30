@@ -89,9 +89,30 @@ void main() {
       double widthFor(BoardItemRole role) =>
           placements.singleWhere((p) => p.item.role == role).width / w;
 
-      expect(widthFor(BoardItemRole.top), inInclusiveRange(.70, .75));
-      expect(widthFor(BoardItemRole.bottom), inInclusiveRange(.58, .62));
-      expect(widthFor(BoardItemRole.footwear), inInclusiveRange(.50, .54));
+      // Row-band flat-lay: each role owns a fixed, non-overlapping vertical
+      // band, so bottom (a full-width band) is now the widest piece.
+      expect(widthFor(BoardItemRole.top), inInclusiveRange(.60, .64));
+      expect(widthFor(BoardItemRole.bottom), inInclusiveRange(.80, .84));
+      expect(widthFor(BoardItemRole.footwear), inInclusiveRange(.58, .62));
+      expect(
+        widthFor(BoardItemRole.bottom),
+        greaterThan(widthFor(BoardItemRole.top)),
+      );
+
+      double topOf(BoardItemRole role) =>
+          placements.singleWhere((p) => p.item.role == role).y / h;
+      double bottomOf(BoardItemRole role) {
+        final p = placements.singleWhere((p) => p.item.role == role);
+        return (p.y + p.height) / h;
+      }
+
+      // The core fix under test: bands never overlap vertically, so no item
+      // can visually hide another regardless of aspect ratio.
+      expect(bottomOf(BoardItemRole.top), lessThan(topOf(BoardItemRole.bottom)));
+      expect(
+        bottomOf(BoardItemRole.bottom),
+        lessThan(topOf(BoardItemRole.footwear)),
+      );
     });
 
     test('four- and five-piece layouts preserve the garment hierarchy', () {
@@ -127,26 +148,26 @@ void main() {
       double roleWidth(List<BoardItemPlacement> items, BoardItemRole role) =>
           items.singleWhere((p) => p.item.role == role).width / w;
 
-      expect(roleWidth(four, BoardItemRole.top), inInclusiveRange(.67, .71));
-      expect(roleWidth(four, BoardItemRole.bottom), inInclusiveRange(.54, .58));
+      expect(roleWidth(four, BoardItemRole.top), inInclusiveRange(.56, .60));
+      // Bottom's band is fixed-width regardless of accessory count.
+      expect(roleWidth(four, BoardItemRole.bottom), inInclusiveRange(.80, .84));
       expect(
         roleWidth(four, BoardItemRole.footwear),
-        inInclusiveRange(.46, .50),
+        inInclusiveRange(.52, .56),
       );
-      expect(roleWidth(five, BoardItemRole.top), inInclusiveRange(.63, .67));
-      expect(roleWidth(five, BoardItemRole.bottom), inInclusiveRange(.50, .54));
+      expect(roleWidth(five, BoardItemRole.top), inInclusiveRange(.54, .58));
+      expect(roleWidth(five, BoardItemRole.bottom), inInclusiveRange(.80, .84));
       expect(
         roleWidth(five, BoardItemRole.footwear),
-        inInclusiveRange(.43, .47),
+        inInclusiveRange(.48, .52),
       );
       final accessoryWidths = five
           .where((p) => p.item.role == BoardItemRole.accessory)
           .map((p) => p.width / w)
           .toList();
-      expect(
-        accessoryWidths,
-        containsAll([closeTo(.27, .01), closeTo(.20, .01)]),
-      );
+      // Two accessories share a compact size, both kept off the garments.
+      expect(accessoryWidths, hasLength(2));
+      expect(accessoryWidths, everyElement(closeTo(.26, .01)));
     });
 
     test('dress-led boards use the dress as the visual hero', () {

@@ -47,6 +47,36 @@ void main() {
     expect(processed.sourceKind, 'processed_cutout');
   });
 
+  test('wardrobe grid prefers the catalog image over a masked cutout', () {
+    final raw = {
+      'item_id': 'wp-shirt',
+      'masked_url': 'https://test/wardrobe_wp.png',
+      'image_status': 'rmbg_complete',
+      'normalized_url': 'https://test/catalog_wp.png',
+      // Backend froze masked as the display field — grid must still show catalog.
+      'selected_field': 'masked_url',
+      'source_kind': 'legacy_masked_cutout',
+      'expected_transparent': true,
+    };
+    final grid = resolveWardrobeImage(raw, surface: 'wardrobe_grid');
+    expect(grid.url, 'https://test/catalog_wp.png');
+    expect(grid.sourceKind, 'catalog_fallback');
+
+    // Boards are unchanged: they keep the transparent cutout.
+    final board = resolveWardrobeImage(raw, surface: 'style_board_render');
+    expect(board.url, 'https://test/wardrobe_wp.png');
+  });
+
+  test('grid catalog-first only fires for a real catalog_* object', () {
+    // A non-catalog normalized url must NOT hijack the masked cutout.
+    final grid = resolveWardrobeImage({
+      'masked_url': 'https://test/masked.png',
+      'image_status': 'rmbg_complete',
+      'normalized_url': 'https://test/normalized.png',
+    }, surface: 'wardrobe_grid');
+    expect(grid.url, 'https://test/masked.png');
+  });
+
   test('style asset source alone does not validate its board image', () {
     final result = resolveWardrobeImage({
       'source': 'style_asset',

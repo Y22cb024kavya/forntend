@@ -323,7 +323,29 @@ ResolvedWardrobeImage resolveWardrobeImage(
     _ => 4,
   };
 
+  // Wardrobe grid/detail should show the polished catalog image when one
+  // exists; boards keep transparent cutouts. The winner is first-non-null in
+  // list order, so prepend the catalog candidate for wardrobe surfaces only.
+  final gridSurface = surface.startsWith('wardrobe');
+  final catalogFirstUrl = _clean(
+    normalizedUrl ??
+        raw['normalized_url'] ??
+        raw['normalizedUrl'] ??
+        raw['catalog_image_url'] ??
+        raw['catalogImageUrl'] ??
+        wardrobe['normalized_url'] ??
+        wardrobe['normalizedUrl'],
+  );
   final candidates = <_Candidate>[
+    if (gridSurface && !isStyleAsset && _isCatalogObject(catalogFirstUrl))
+      _Candidate(
+        'normalized_url',
+        catalogFirstUrl,
+        'catalog_fallback',
+        3,
+        false,
+        false,
+      ),
     if (frozenUrl != null &&
         (!frozenValidated ||
             (!isCatalogAlias(frozenUrl) && !isFrozenOriginalAlias(frozenUrl))))

@@ -767,6 +767,10 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
   @override
   void initState() {
     super.initState();
+    debugPrint(
+      'AHVI_MODULE_OPEN module=${widget.moduleContext} '
+      'initialPrompt=${widget.initialPrompt ?? ''}',
+    );
     WidgetsBinding.instance.addObserver(this);
     _currentSessionId = DateTime.now().millisecondsSinceEpoch.toString();
     _loadHistoryFromDisk();
@@ -1316,6 +1320,11 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           ? 'style'
           : widget.moduleContext;
       final isPlanPackRequest = _isPlanPackRequest(trimmed);
+      debugPrint(
+        'AHVI_MODULE_SEND module=${widget.moduleContext} '
+        'domain=${canonicalModuleChatDomain(widget.moduleContext, plannerRequest: isPlanPackRequest)} '
+        'planPack=$isPlanPackRequest',
+      );
       final isClosestStyleAction =
           styleModules.contains(widget.moduleContext) &&
               _isShowClosestStyleAction(trimmed);
@@ -1406,6 +1415,11 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
         message: query,
         chatHistory: List<Map<String, String>>.from(_chatHistory),
         context: moduleContextData,
+      );
+      debugPrint(
+        'AHVI_MODULE_RESPONSE module=${widget.moduleContext} '
+        'respModule=${response['module'] ?? response['domain'] ?? ''} '
+        'intent=${response['intent'] ?? ''}',
       );
       if (!mounted) return;
       final refreshTarget =

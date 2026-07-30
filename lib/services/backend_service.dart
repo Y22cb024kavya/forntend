@@ -18,7 +18,12 @@ String _encodeBytes(Uint8List bytes) => base64Encode(bytes);
 String canonicalModuleChatDomain(String domain, {bool plannerRequest = false}) {
   if (plannerRequest) return 'planner';
   final normalized = domain.trim().toLowerCase();
-  return normalized == 'prepare' ? 'plan' : normalized;
+  // Generic planner aliases must land on the backend-canonical 'planner'
+  // module (which _normalize_module_name accepts). 'prepare' previously
+  // mapped to 'plan' and 'organize' fell through to 'chat' — both downgraded
+  // the module and produced generic responses.
+  const plannerAliases = {'prepare', 'plan', 'planning'};
+  return plannerAliases.contains(normalized) ? 'planner' : normalized;
 }
 
 Object? _jsonSafe(Object? value) {

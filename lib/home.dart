@@ -6,6 +6,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:myapp/models/calendar_event_record.dart';
+import 'package:myapp/models/planner_actions.dart';
 import 'package:myapp/navigation/ahvi_back_navigation.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter/services.dart';
@@ -1903,7 +1904,11 @@ class _Screen4State extends State<Screen4>
         _stopThinkingAnimation();
         _overlayState = _OverlayState.suggestions;
         _overlaySuggestions = cfg.suggestions;
+        // Isolate per-intent chat state — a Diet message must not leak into
+        // a later Prepare/Style overlay session.
         _responses.clear();
+        _chatHistory.clear();
+        _runningMemory = '';
         _tagsRevealed = false;
       });
       _overlayFadeCtrl.animateTo(
@@ -2075,23 +2080,17 @@ class _Screen4State extends State<Screen4>
     setState(() => _chatPlaceholderKey = 'placeholder_$intent');
   }
 
-  void _handlePrepareChipSend(String query) {
-    if (_activeIntent == 'prepare' &&
-        (_overlayState == _OverlayState.suggestions ||
-            _overlayState == _OverlayState.response)) {
-      _handleQuery(query, 'prepare');
-      return;
-    }
-    if (_overlayState == _OverlayState.idle) {
-      _triggerIntent('prepare');
-      Future.delayed(const Duration(milliseconds: 420), () {
-        if (!mounted) return;
-        if (_overlayState == _OverlayState.suggestions &&
-            (_activeIntent ?? 'prepare') == 'prepare') {
-          _handleQuery(query, 'prepare');
-        }
-      });
-    }
+  // Explicit Planner chip → canonical module chat. Bypasses the local
+  // generic-prepare overlay (prepare_exact / /api/text) entirely so the
+  // selected prompt is submitted as a real /api/module-chat user request.
+  void _handlePrepareChipSend(String actionId) {
+    final route = plannerRouteFor(actionId);
+    _recordIntent('prepare');
+    showAhviStylistChatSheet(
+      context,
+      moduleContext: route.module,
+      initialPrompt: route.prompt,
+    );
   }
 
   _ResponseData _buildPrepareChipResponse(String question) {
@@ -3165,7 +3164,7 @@ class _Screen4State extends State<Screen4>
           // 🆕 label localized, prompt English గా పంపుతున్నాం
           return _PrepareQuickChip(
             label: AppLocalizations.t(context, _prepareChipKeys[i].$1),
-            onSend: () => _handlePrepareChipSend(_prepareChipKeys[i].$2),
+            onSend: () => _handlePrepareChipSend(_prepareChipKeys[i].$1),
             accent: _accent,
             accentSecondary: _accentSecondary,
             panel: _panel,

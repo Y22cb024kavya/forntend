@@ -20,9 +20,10 @@ StyleBoardItem _lockable(String id, String slot, BoardItemRole role) =>
     );
 
 StyleBoardState _officeWardrobeBoard() => StyleBoardState(
-      boardId: 'board_abc123',
+      boardId: '11111111-1111-4111-8111-111111111111',
       revision: 1,
       sourcePolicy: 'wardrobe',
+      shuffleAvailable: true,
       items: [
         _lockable('top-1', 'top', BoardItemRole.top),
         _lockable('bottom-1', 'bottom', BoardItemRole.bottom),
@@ -40,7 +41,7 @@ void main() {
       );
       expect(payload['revision'], 1);
       expect(payload['occasion'], 'office'); // office stays office
-      expect(payload['source_policy'], 'wardrobe'); // wardrobe stays wardrobe
+      expect(payload['source_policy'], 'inherit'); // request is always inherit
       expect(payload['style_direction'], 'Composed Authority');
       expect(payload['scenario'], 'shuffle_unlocked');
       expect((payload['board_items'] as List).length, 3);
@@ -49,7 +50,7 @@ void main() {
     test('board_id drives the locked shuffle endpoint, not a chat prompt', () {
       // shuffle() posts to /api/style-boards/{board_id}/shuffle via the backend;
       // the id comes straight off the board state.
-      expect(_officeWardrobeBoard().boardId, 'board_abc123');
+      expect(_officeWardrobeBoard().boardId, '11111111-1111-4111-8111-111111111111');
     });
   });
 

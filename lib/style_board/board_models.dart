@@ -389,12 +389,17 @@ class StyleBoardData {
   final String sourcePolicy;
   final bool allowWardrobeFallback;
 
+  /// Backend capability flag: this board is persisted and its mutation
+  /// endpoint (shuffle) is available. Never inferred client-side.
+  final bool shuffleAvailable;
+
   const StyleBoardData({
     this.boardId = '',
     this.revision = 0,
     this.scenario = '',
     this.sourcePolicy = '',
     this.allowWardrobeFallback = false,
+    this.shuffleAvailable = false,
     required this.title,
     this.styleArchetype,
     this.boardRole,

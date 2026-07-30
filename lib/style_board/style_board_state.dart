@@ -22,6 +22,7 @@ class StyleBoardState {
   final String scenario;
   final String sourcePolicy;
   final bool allowWardrobeFallback;
+  final bool shuffleAvailable;
 
   const StyleBoardState({
     required this.boardId,
@@ -34,7 +35,23 @@ class StyleBoardState {
     this.scenario = '',
     this.sourcePolicy = '',
     this.allowWardrobeFallback = false,
+    this.shuffleAvailable = false,
   });
+
+  static final _uuidPattern = RegExp(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+    caseSensitive: false,
+  );
+
+  /// A persisted, mutable board: real UUID id (never a synthetic style_this_*
+  /// / outfit_card_* / occasion-name id).
+  bool get isPersistedBoardId {
+    final id = boardId.trim().toLowerCase();
+    if (id.startsWith('style_this_') || id.startsWith('outfit_card_')) {
+      return false;
+    }
+    return _uuidPattern.hasMatch(id);
+  }
 
   bool get hasExplicitSourcePolicy =>
       validSourcePolicies.contains(sourcePolicy);
@@ -62,7 +79,10 @@ class StyleBoardState {
       sourcePolicyOk &&
       stableItemIdsOk &&
       requestCarriedItemsOk;
-  bool get canShuffle => canLock;
+  /// Shuffle needs the local lock preconditions AND a real persisted board the
+  /// backend flagged shuffleable. Synthetic Style This boards render + lock
+  /// locally but must NOT expose a broken shuffle control.
+  bool get canShuffle => canLock && shuffleAvailable && isPersistedBoardId;
   bool get supportsShuffle => canShuffle;
   List<String> get failedContractPredicates => [
     if (!boardIdOk) 'board_id',
@@ -93,6 +113,7 @@ class StyleBoardState {
     scenario: scenario,
     sourcePolicy: sourcePolicy,
     allowWardrobeFallback: allowWardrobeFallback,
+    shuffleAvailable: shuffleAvailable,
   );
 
   StyleBoardState deepCopy() => copyWith(

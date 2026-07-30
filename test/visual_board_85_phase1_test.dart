@@ -215,10 +215,11 @@ Map<String, dynamic> _boardItem(
 };
 
 final _direction = <String, dynamic>{
-  'board_id': 'haldi-board-1',
+  'board_id': '11111111-1111-4111-8111-111111111111',
   'revision': 3,
   'scenario': 'recommendation',
   'source_policy': 'wardrobe',
+  'shuffle_available': true,
   'direction_name': 'Sunlit Traditional',
   'style_archetype': 'Sunlit Traditional',
   'occasion': 'Haldi',
@@ -368,7 +369,7 @@ void main() {
     await _settleFixtureImages(tester);
 
     expect(apiCalls, 1);
-    expect(captured!.boardId, 'haldi-board-1');
+    expect(captured!.boardId, '11111111-1111-4111-8111-111111111111');
     expect(captured!.revision, 3);
     expect(captured!.scenario, 'build_outfit');
     expect(captured!.sourcePolicy, 'wardrobe');

@@ -32,12 +32,14 @@ StyleBoardState boardState({
   String scenario = '',
   String sourcePolicy = '',
   bool allowWardrobeFallback = false,
+  bool shuffleAvailable = true,
 }) => StyleBoardState(
-  boardId: 'board_123',
+  boardId: '11111111-1111-4111-8111-111111111111',
   revision: 1,
   scenario: scenario,
   sourcePolicy: sourcePolicy,
   allowWardrobeFallback: allowWardrobeFallback,
+  shuffleAvailable: shuffleAvailable,
   items: [
     'top',
     'bottom',
@@ -218,6 +220,33 @@ void main() {
       );
     });
 
+    test(
+      'synthetic Style This board does not call persisted shuffle endpoint',
+      () async {
+        var calls = 0;
+        final initial = StyleBoardState(
+          boardId: 'style_this_anchor-1_0',
+          revision: 1,
+          scenario: 'style_this',
+          sourcePolicy: 'wardrobe',
+          items: boardState(sourcePolicy: 'wardrobe').items,
+          lockedItemIds: const {'top'},
+        );
+        final controller = StyleBoardController(
+          initialState: initial,
+          shuffleCall: (board) async {
+            calls++;
+            return success(board);
+          },
+        );
+
+        expect(await controller.shuffle(), 'BOARD_NOT_PERSISTED');
+        expect(calls, 0);
+        expect(controller.state.isShuffling, isFalse);
+        expect(controller.state.lockedItemIds, {'top'});
+      },
+    );
+
     test('legacy board without explicit policy cannot shuffle', () {
       expect(boardState().supportsShuffle, isFalse);
       expect(
@@ -235,9 +264,10 @@ void main() {
           )
           .toList();
       final state = StyleBoardState(
-        boardId: 'board_b2fe1847ee39',
+        boardId: '11111111-1111-4111-8111-111111111111',
         revision: 1,
         sourcePolicy: 'wardrobe',
+        shuffleAvailable: true,
         items: items,
       );
 
@@ -276,13 +306,13 @@ void main() {
           locked: {'top'},
         ),
       );
-      expect(styleThis['source_policy'], 'style_asset');
+      expect(styleThis['source_policy'], 'inherit');
       expect(styleThis.containsKey('allow_wardrobe_fallback'), isFalse);
 
       final buildOutfit = api.buildShufflePayload(
         board: boardState(scenario: 'build_outfit', sourcePolicy: 'wardrobe'),
       );
-      expect(buildOutfit['source_policy'], 'wardrobe');
+      expect(buildOutfit['source_policy'], 'inherit');
 
       final mixed = api.buildShufflePayload(
         board: boardState(
@@ -290,7 +320,7 @@ void main() {
           allowWardrobeFallback: true,
         ),
       );
-      expect(mixed['source_policy'], 'mixed');
+      expect(mixed['source_policy'], 'inherit');
       expect(mixed['allow_wardrobe_fallback'], isTrue);
     });
 

@@ -33,8 +33,9 @@ Map<String, dynamic> _boardItem(String id, String slot, {bool source = false}) =
     };
 
 Map<String, dynamic> _officeDirection({String sourcePolicy = 'wardrobe'}) => {
-      'board_id': 'board_67acadea9420',
+      'board_id': '11111111-1111-4111-8111-111111111111',
       'revision': 1,
+      'shuffle_available': true,
       'source_policy': sourcePolicy,
       'occasion': 'office',
       'direction_name': 'Composed Authority',

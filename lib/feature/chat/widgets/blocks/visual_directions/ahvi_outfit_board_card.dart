@@ -73,6 +73,8 @@ String _shuffleFailureMessage(String code) => switch (code) {
     'No curated pieces are available for this look right now.',
   'BOARD_SOURCE_POLICY_UNKNOWN' =>
     'This board is missing its styling source. Ask AHVI for a fresh look to continue.',
+  'BOARD_NOT_PERSISTED' =>
+    'This Style This look can’t be shuffled yet. Ask AHVI for a fresh look to continue.',
   _ =>
     'We couldn’t refresh these pieces. Your current look has been preserved.',
 };
@@ -260,6 +262,7 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
       scenario: parsed.board.scenario,
       sourcePolicy: parsed.board.sourcePolicy,
       allowWardrobeFallback: parsed.board.allowWardrobeFallback,
+      shuffleAvailable: parsed.board.shuffleAvailable,
       items: stateItems,
       lockedItemIds: lockedItemIds,
     );
@@ -302,7 +305,12 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
       'failed_predicates=${failedPredicates.isEmpty ? "none" : failedPredicates.join(",")}',
     );
     final modeAllowsMutation = _interactionMode.supportsMutation;
-    final controlsEnabled = modeAllowsMutation && state.supportsShuffle;
+    // Build the controller for LOCAL lock/unlock whenever the mode allows
+    // mutation and the board can be locked. Shuffle (a backend mutation) is
+    // gated separately by state.canShuffle inside the mutation bar, so a
+    // synthetic Style This board still renders lock UI without a broken
+    // shuffle button.
+    final controlsEnabled = modeAllowsMutation && state.canLock;
     debugPrint(
       'AHVI_BOARD_INTERACTION_MODE '
       'board_id=${state.boardId} '
@@ -982,20 +990,24 @@ class BoardMutationBar extends StatelessWidget {
         height: 52,
         child: Row(
           children: [
-            Expanded(
-              child: _BoardAction(
-                icon: state.isShuffling
-                    ? Icons.hourglass_top_rounded
-                    : Icons.shuffle_rounded,
-                label: state.isShuffling
-                    ? ahviProcessingMessage(AhviProcessingContext.shuffle)
-                    : state.allItemsLocked
-                        ? 'Unlock an item to shuffle'
-                        : 'Shuffle unlocked pieces',
-                enabled: !state.isShuffling && !state.allItemsLocked,
-                onTap: _shuffle,
+            // Shuffle is a backend mutation — only surface it for a real
+            // persisted, shuffleable board. Synthetic Style This boards keep
+            // lock/unlock but never a broken shuffle control.
+            if (state.canShuffle)
+              Expanded(
+                child: _BoardAction(
+                  icon: state.isShuffling
+                      ? Icons.hourglass_top_rounded
+                      : Icons.shuffle_rounded,
+                  label: state.isShuffling
+                      ? ahviProcessingMessage(AhviProcessingContext.shuffle)
+                      : state.allItemsLocked
+                          ? 'Unlock an item to shuffle'
+                          : 'Shuffle unlocked pieces',
+                  enabled: !state.isShuffling && !state.allItemsLocked,
+                  onTap: _shuffle,
+                ),
               ),
-            ),
             if (locked > 0)
               Expanded(
                 child: _BoardAction(
@@ -2097,6 +2109,9 @@ StyleBoardData _toStyleBoardData(
     allowWardrobeFallback:
         direction['allow_wardrobe_fallback'] == true ||
         direction['allowWardrobeFallback'] == true,
+    shuffleAvailable:
+        direction['shuffle_available'] == true ||
+        direction['shuffleAvailable'] == true,
     title: model.title,
     styleArchetype: direction['style_archetype'] ?? direction['styleArchetype'],
     boardRole: direction['board_role'] ?? direction['boardRole'],

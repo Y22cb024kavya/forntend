@@ -56,9 +56,13 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
     final styleDirections = _extractStyleThisDirections(response, data);
     if (styleDirections.isNotEmpty) {
       final anchor = _anchorItemMap(response, data);
+      final responsePolicy = _validSourcePolicy(
+        response['source_policy'] ?? data['source_policy'],
+      );
       var index = 0;
       visualDirections = styleDirections
-          .map((dir) => _styleDirectionToCanonical(dir, anchor, index++))
+          .map((dir) =>
+              _styleDirectionToCanonical(dir, anchor, index++, responsePolicy))
           .toList();
       debugPrint(
         'AHVI_STYLE_DIRECTION_ADAPTER source_field=style_directions '
@@ -340,6 +344,14 @@ Map<String, dynamic> _anchorItemMap(
 String _itemId(Map<String, dynamic> it) =>
     (it['item_id'] ?? it['id'] ?? it[r'$id'] ?? '').toString().trim();
 
+const _validSourcePolicies = {'wardrobe', 'style_asset', 'mixed'};
+
+/// Return the value only if it is an allowed board source policy, else null.
+String? _validSourcePolicy(dynamic value) {
+  final policy = value?.toString().trim().toLowerCase();
+  return _validSourcePolicies.contains(policy) ? policy : null;
+}
+
 /// Map one backend `style_directions` entry to a canonical visual direction.
 ///
 /// The backend entry is `{title, items, missing_items, styling_note}` — no
@@ -352,6 +364,7 @@ Map<String, dynamic> _styleDirectionToCanonical(
   Map<String, dynamic> direction,
   Map<String, dynamic> anchorItem,
   int index,
+  String? responsePolicy,
 ) {
   final anchorId = _itemId(anchorItem);
   final items = _mapList(
@@ -377,13 +390,19 @@ Map<String, dynamic> _styleDirectionToCanonical(
       ? direction['revision']
       : 1;
 
+  // Resolution order: direction-level → response-level → wardrobe fallback.
+  // Never overwrite an explicit style_asset / mixed policy with wardrobe.
+  final sourcePolicy = _validSourcePolicy(direction['source_policy']) ??
+      responsePolicy ??
+      'wardrobe';
+
   final out = <String, dynamic>{
     ...direction,
     'board_id': boardId,
     'revision': revision,
     'scenario': 'style_this',
     'interaction_mode': 'style_this',
-    'source_policy': 'wardrobe',
+    'source_policy': sourcePolicy,
     'board_items': boardItems,
     'title': direction['title'] ?? direction['direction_name'],
     'why_it_works': direction['why_it_works'] ?? direction['styling_note'],

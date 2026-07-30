@@ -43,7 +43,7 @@ Map<String, dynamic> _item(
 };
 
 Map<String, dynamic> _board({
-  String boardId = 'board-1',
+  String boardId = '11111111-1111-4111-8111-111111111111',
   int revision = 1,
   String scenario = 'build_outfit',
   String sourcePolicy = 'wardrobe',
@@ -52,6 +52,7 @@ Map<String, dynamic> _board({
   'revision': revision,
   'scenario': scenario,
   'source_policy': sourcePolicy,
+  'shuffle_available': true,
   'title': 'Build Outfit',
   'occasion': 'Client meeting',
   'style_archetype': 'Business professional',
@@ -309,7 +310,7 @@ void main() {
         .whereType<Map>()
         .map((value) => Map<String, dynamic>.from(value))
         .toList();
-    expect(directions.single['board_id'], 'board-1');
+    expect(directions.single['board_id'], '11111111-1111-4111-8111-111111111111');
     expect(directions.single['revision'], 1);
     expect(
       (directions.single['board_items'] as List).first['item_id'],
@@ -394,7 +395,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(sentMessages, isEmpty);
-      expect(request!.boardId, 'board-1');
+      expect(request!.boardId, '11111111-1111-4111-8111-111111111111');
       expect(request!.revision, 1);
       expect(request!.sourcePolicy, 'wardrobe');
       expect(request!.lockedItemIds, {'anchor'});
@@ -563,11 +564,38 @@ void main() {
     );
   });
 
+  testWidgets('synthetic Style This shuffle fails locally with guidance', (
+    tester,
+  ) async {
+    var calls = 0;
+    await _pumpCard(
+      tester,
+      board: _board(
+        boardId: 'style_this_anchor_0',
+        scenario: 'style_this',
+        sourcePolicy: 'style_asset',
+      ),
+      shuffleCall: (state) async {
+        calls++;
+        return _success(state);
+      },
+    );
+
+    await tester.pumpAndSettle();
+
+    // Synthetic (non-UUID) board is not backend-persisted: no shuffle control
+    // is exposed at all. Lock UI still renders locally.
+    expect(find.text('Shuffle unlocked pieces'), findsNothing);
+    expect(find.byIcon(Icons.shuffle_rounded), findsNothing);
+    expect(calls, 0);
+    expect(find.text('1 of 3 items locked'), findsOneWidget);
+  });
+
   testWidgets(
     'mocked connected Style This flow keeps style_asset policy end to end',
     (tester) async {
       final board = _board(
-        boardId: 'board-sty',
+        boardId: '22222222-2222-4222-8222-222222222222',
         scenario: 'style_this',
         sourcePolicy: 'style_asset',
       );
@@ -611,7 +639,9 @@ void main() {
       final payload = const StyleBoardApiService().buildShufflePayload(
         board: captured!,
       );
-      expect(payload['source_policy'], 'style_asset');
+      // Request always sends 'inherit'; the board's own style_asset policy is
+      // preserved in state (asserted below), not echoed into the request.
+      expect(payload['source_policy'], 'inherit');
       expect(captured!.lockedItemIds, {'anchor'});
 
       // 7-9: response accepted, revision advanced, policy preserved.
@@ -667,7 +697,7 @@ void main() {
 }
 
 StyleBoardState _requestWithAnchorLocked() => StyleBoardState(
-  boardId: 'board-1',
+  boardId: '11111111-1111-4111-8111-111111111111',
   revision: 1,
   items: (_board()['board_items'] as List)
       .whereType<Map>()

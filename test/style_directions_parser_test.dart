@@ -140,6 +140,69 @@ void main() {
     expect(dir['board_id'], 'rec-board-1');
   });
 
+  test('direction-level style_asset / mixed policy survives (not forced wardrobe)',
+      () {
+    for (final policy in ['style_asset', 'mixed']) {
+      final resp = _styleThisResponse(
+        directions: [
+          {
+            'title': 'P',
+            'source_policy': policy,
+            'items': [_item('anchor-1', 'top'), _item('b', 'bottom')],
+          },
+        ],
+      );
+      final dir = _directionsOf(parseAhviResponse(resp)).single;
+      expect(dir['source_policy'], policy);
+    }
+  });
+
+  test('direction-level policy beats response-level policy', () {
+    final resp = _styleThisResponse(
+      directions: [
+        {
+          'title': 'P',
+          'source_policy': 'style_asset',
+          'items': [_item('anchor-1', 'top')],
+        },
+      ],
+    )..['source_policy'] = 'wardrobe';
+    final dir = _directionsOf(parseAhviResponse(resp)).single;
+    expect(dir['source_policy'], 'style_asset');
+  });
+
+  test('response-level policy used when the direction omits it', () {
+    final resp = _styleThisResponse(
+      directions: [
+        {
+          'title': 'P',
+          'items': [_item('anchor-1', 'top')],
+        },
+      ],
+    )..['source_policy'] = 'mixed';
+    final dir = _directionsOf(parseAhviResponse(resp)).single;
+    expect(dir['source_policy'], 'mixed');
+  });
+
+  test('wardrobe fallback only when neither level has a valid policy', () {
+    final dir = _directionsOf(parseAhviResponse(_styleThisResponse())).single;
+    expect(dir['source_policy'], 'wardrobe');
+  });
+
+  test('backend shuffle_available flag is preserved onto the direction', () {
+    final resp = _styleThisResponse(
+      directions: [
+        {
+          'title': 'P',
+          'shuffle_available': true,
+          'items': [_item('anchor-1', 'top')],
+        },
+      ],
+    );
+    final dir = _directionsOf(parseAhviResponse(resp)).single;
+    expect(dir['shuffle_available'], isTrue);
+  });
+
   test('no directions of either kind → no visualDirections block', () {
     final parsed = parseAhviResponse({'success': true, 'message_text': 'hi'});
     expect(_hasVisualDirections(parsed), isFalse);

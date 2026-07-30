@@ -88,12 +88,9 @@ class StyleBoardApiService {
       'exclude_item_ids': board.excludedItemIds
           .where((id) => !board.lockedItemIds.contains(id))
           .toList(),
-      // Contract-complete boards send their explicit board-level policy;
-      // 'inherit' remains only as legacy compatibility (backend resolves it
-      // from persisted board state, never from locked-item sources).
-      'source_policy': board.hasExplicitSourcePolicy
-          ? board.sourcePolicy
-          : 'inherit',
+      // Always 'inherit' so the backend's persisted board policy stays
+      // authoritative — never override it from the client's local state.
+      'source_policy': 'inherit',
       if (board.sourcePolicy == 'mixed') 'allow_wardrobe_fallback': true,
       'board_items': board.items.map((item) => item.toContractJson()).toList(),
     };

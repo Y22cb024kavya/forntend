@@ -323,10 +323,10 @@ ResolvedWardrobeImage resolveWardrobeImage(
     _ => 4,
   };
 
-  // Wardrobe grid/detail should show the polished catalog image when one
-  // exists; boards keep transparent cutouts. The winner is first-non-null in
-  // list order, so prepend the catalog candidate for wardrobe surfaces only.
-  final gridSurface = surface.startsWith('wardrobe');
+  // Prefer the polished catalog image whenever a real one exists — for the
+  // wardrobe grid AND Style This boards (the anchor's raw/bad cutout otherwise
+  // shows on the board). The winner is first-non-null in list order, so prepend
+  // the catalog candidate. Style assets keep their own cutout-first pipeline.
   final catalogFirstUrl = _clean(
     normalizedUrl ??
         raw['normalized_url'] ??
@@ -337,7 +337,7 @@ ResolvedWardrobeImage resolveWardrobeImage(
         wardrobe['normalizedUrl'],
   );
   final candidates = <_Candidate>[
-    if (gridSurface && !isStyleAsset && _isCatalogObject(catalogFirstUrl))
+    if (!isStyleAsset && _isCatalogObject(catalogFirstUrl))
       _Candidate(
         'normalized_url',
         catalogFirstUrl,

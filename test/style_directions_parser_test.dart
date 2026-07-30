@@ -5,35 +5,42 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/feature/chat/models/ahvi_response_block.dart';
 import 'package:myapp/feature/chat/services/ahvi_block_response_parser.dart';
 
-Map<String, dynamic> _boardItem(String id, String role) => {
+// Mirrors the real backend item shape (item0_keys observed on device).
+Map<String, dynamic> _item(String id, String role) => {
       'item_id': id,
       'name': id,
+      'category': role,
       'role': role,
       'image_url': 'https://example.test/$id.png',
-      'board_image_url': 'https://example.test/$id.png',
+      'owned': true,
     };
 
+// Real backend style_directions entry: {title, items, missing_items,
+// styling_note} — NO board_id/revision/board_items/positions.
 Map<String, dynamic> _styleThisResponse({
   Map<String, dynamic>? anchor,
   List<Map<String, dynamic>>? directions,
 }) => {
       'success': true,
       'mode': 'style_this',
-      'anchor_item': anchor ?? {'item_id': 'anchor-1', 'name': 'Pink Shirt'},
+      'anchor_item': anchor ??
+          {
+            'item_id': 'anchor-1',
+            'name': 'Pink Shirt',
+            'category': 'top',
+            'image_url': 'https://example.test/anchor-1.png',
+          },
       'style_directions': directions ??
           [
             {
-              'board_id': 'style-board-1',
-              'revision': 1,
               'title': 'Sharp Layers',
-              'occasion': 'work',
-              'why_it_works': 'Balances the anchor',
-              'board_items': [
-                _boardItem('anchor-1', 'top'),
-                _boardItem('bottom-7', 'bottom'),
-                _boardItem('shoe-9', 'footwear'),
+              'styling_note': 'Balances the anchor',
+              'missing_items': const [],
+              'items': [
+                _item('anchor-1', 'top'),
+                _item('bottom-7', 'bottom'),
+                _item('shoe-9', 'footwear'),
               ],
-              'positions': {'anchor-1': {'x': 0.1, 'y': 0.1}},
             },
           ],
       'context_usage': {'context_version': 'v2'},
@@ -76,25 +83,40 @@ void main() {
     expect(dir['originating_item_id'], 'anchor-1');
   });
 
-  test('all canonical board fields survive the mapping', () {
+  test('synthesizes contract fields the backend omits (board_id, revision)',
+      () {
     final dir = _directionsOf(parseAhviResponse(_styleThisResponse())).single;
-    expect(dir['board_id'], 'style-board-1');
+    // board_id stable + not a forbidden outfit_card_* id.
+    expect((dir['board_id'] as String).startsWith('style_this_'), isTrue);
+    expect((dir['board_id'] as String).startsWith('outfit_card_'), isFalse);
     expect(dir['revision'], 1);
     expect(dir['title'], 'Sharp Layers');
-    expect(dir['occasion'], 'work');
+    // styling_note → why_it_works (board card reads whyItWorks).
     expect(dir['why_it_works'], 'Balances the anchor');
-    expect(dir['positions'], isNotNull);
-    final items = (dir['board_items'] as List).cast<Map>();
-    expect(items, hasLength(3));
-    expect(items.first['item_id'], 'anchor-1');
   });
 
-  test('anchor present in board_items', () {
+  test('maps items → board_items and keeps the anchor present', () {
     final dir = _directionsOf(parseAhviResponse(_styleThisResponse())).single;
-    final items = (dir['board_items'] as List)
-        .map((e) => (e as Map)['item_id'])
-        .toList();
-    expect(items, contains('anchor-1'));
+    final items = (dir['board_items'] as List).cast<Map>();
+    expect(items, hasLength(3));
+    expect(items.map((e) => e['item_id']), contains('anchor-1'));
+  });
+
+  test('injects the anchor into board_items when a direction omits it', () {
+    final resp = _styleThisResponse(
+      directions: [
+        {
+          'title': 'Support Only',
+          'styling_note': 'note',
+          'items': [_item('bottom-7', 'bottom'), _item('shoe-9', 'footwear')],
+        },
+      ],
+    );
+    final dir = _directionsOf(parseAhviResponse(resp)).single;
+    final ids =
+        (dir['board_items'] as List).map((e) => (e as Map)['item_id']).toList();
+    expect(ids, contains('anchor-1')); // anchor injected
+    expect(ids, hasLength(3));
   });
 
   test('existing visual_directions parsing is unchanged (no style_this stamp)',
@@ -107,7 +129,7 @@ void main() {
           'revision': 2,
           'interaction_mode': 'recommendation',
           'title': 'Weekend Ease',
-          'board_items': [_boardItem('a', 'top')],
+          'board_items': [_item('a', 'top')],
         },
       ],
     };

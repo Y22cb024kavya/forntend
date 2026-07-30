@@ -55,9 +55,10 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   if (visualDirections.isEmpty) {
     final styleDirections = _extractStyleThisDirections(response, data);
     if (styleDirections.isNotEmpty) {
-      final anchorId = _anchorItemId(response, data);
+      final anchor = _anchorItemMap(response, data);
+      var index = 0;
       visualDirections = styleDirections
-          .map((dir) => _styleDirectionToCanonical(dir, anchorId))
+          .map((dir) => _styleDirectionToCanonical(dir, anchor, index++))
           .toList();
       debugPrint(
         'AHVI_STYLE_DIRECTION_ADAPTER source_field=style_directions '
@@ -308,8 +309,8 @@ List<Map<String, dynamic>> _extractStyleThisDirections(
   );
 }
 
-/// Top-level anchor garment id (verification only — the board card locks it).
-String _anchorItemId(
+/// Top-level anchor garment as a board-item-shaped map (id + image + role).
+Map<String, dynamic> _anchorItemMap(
   Map<String, dynamic> response,
   Map<String, dynamic> data,
 ) {
@@ -318,33 +319,79 @@ String _anchorItemId(
       response['anchorItem'] ??
       data['anchor_item'] ??
       data['anchorItem'];
-  if (anchor is Map) {
-    return (anchor['item_id'] ?? anchor['id'] ?? anchor[r'$id'] ?? '')
-        .toString()
-        .trim();
-  }
-  return '';
+  if (anchor is! Map) return const {};
+  final m = Map<String, dynamic>.from(anchor);
+  final id = (m['item_id'] ?? m['id'] ?? m[r'$id'] ?? '').toString().trim();
+  if (id.isEmpty) return const {};
+  return {
+    ...m,
+    'item_id': id,
+    'image_url':
+        m['image_url'] ??
+        m['imageUrl'] ??
+        m['resolved_image_url'] ??
+        m['normalized_url'] ??
+        m['masked_url'],
+    'role': m['role'] ?? m['category'],
+    'owned': true,
+  };
 }
 
-/// Map one `style_directions` entry to a canonical visual direction. Preserves
-/// every backend field (board_id, revision, board_items, positions, title,
-/// occasion, story/reasoning, image provenance…) and stamps the Style This
-/// contract fields the downstream card + modal validate against. Carries the
-/// anchor id so AhviOutfitBoardCard locks only the anchor.
+String _itemId(Map<String, dynamic> it) =>
+    (it['item_id'] ?? it['id'] ?? it[r'$id'] ?? '').toString().trim();
+
+/// Map one backend `style_directions` entry to a canonical visual direction.
+///
+/// The backend entry is `{title, items, missing_items, styling_note}` — no
+/// board_id/revision/positions and its garments live under `items` (not
+/// `board_items`). Synthesize the contract fields the modal + board card
+/// require: stable board_id, revision=1, style_this scenario/mode, wardrobe
+/// source; map items→board_items; guarantee the anchor is present so it can be
+/// the locked piece.
 Map<String, dynamic> _styleDirectionToCanonical(
   Map<String, dynamic> direction,
-  String anchorItemId,
+  Map<String, dynamic> anchorItem,
+  int index,
 ) {
+  final anchorId = _itemId(anchorItem);
+  final items = _mapList(
+    direction['items'] ??
+        direction['board_items'] ??
+        direction['boardItems'],
+  );
+  final hasAnchor =
+      anchorId.isNotEmpty && items.any((it) => _itemId(it) == anchorId);
+  final boardItems = (!hasAnchor && anchorItem.isNotEmpty)
+      ? <Map<String, dynamic>>[anchorItem, ...items]
+      : items;
+
+  final existingBoardId = (direction['board_id'] ?? '').toString().trim();
+  final boardId = (existingBoardId.isNotEmpty &&
+          !existingBoardId.toLowerCase().startsWith('outfit_card_'))
+      ? existingBoardId
+      : (anchorId.isNotEmpty
+          ? 'style_this_${anchorId}_$index'
+          : 'style_this_$index');
+  final revision = (direction['revision'] is num &&
+          (direction['revision'] as num) >= 1)
+      ? direction['revision']
+      : 1;
+
   final out = <String, dynamic>{
     ...direction,
+    'board_id': boardId,
+    'revision': revision,
     'scenario': 'style_this',
     'interaction_mode': 'style_this',
     'source_policy': 'wardrobe',
+    'board_items': boardItems,
+    'title': direction['title'] ?? direction['direction_name'],
+    'why_it_works': direction['why_it_works'] ?? direction['styling_note'],
   };
-  if (anchorItemId.isNotEmpty) {
-    out['anchor_item_id'] = anchorItemId;
+  if (anchorId.isNotEmpty) {
+    out['anchor_item_id'] = anchorId;
     out['originating_item_id'] =
-        direction['originating_item_id'] ?? anchorItemId;
+        direction['originating_item_id'] ?? anchorId;
   }
   return out;
 }

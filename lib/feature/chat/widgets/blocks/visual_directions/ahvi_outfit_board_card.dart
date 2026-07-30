@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:myapp/services/appwrite_service.dart';
+import 'package:myapp/feature/chat/services/ahvi_processing_message.dart';
 import 'package:myapp/feature/chat/services/fashion_item_filter.dart';
 import 'package:myapp/feature/chat/services/saved_boards_store.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/editorial_collage.dart';
@@ -986,9 +987,11 @@ class BoardMutationBar extends StatelessWidget {
                 icon: state.isShuffling
                     ? Icons.hourglass_top_rounded
                     : Icons.shuffle_rounded,
-                label: state.allItemsLocked
-                    ? 'Unlock an item to shuffle'
-                    : 'Shuffle unlocked pieces',
+                label: state.isShuffling
+                    ? ahviProcessingMessage(AhviProcessingContext.shuffle)
+                    : state.allItemsLocked
+                        ? 'Unlock an item to shuffle'
+                        : 'Shuffle unlocked pieces',
                 enabled: !state.isShuffling && !state.allItemsLocked,
                 onTap: _shuffle,
               ),

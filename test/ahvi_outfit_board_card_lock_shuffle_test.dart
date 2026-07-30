@@ -482,7 +482,13 @@ void main() {
     expect(find.byKey(const ValueKey<String>('bottom-1')), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNWidgets(2));
 
-    await tester.tap(find.text('Shuffle unlocked pieces'), warnIfMissed: false);
+    // Mid-shuffle the control now reads the inline processing copy and is
+    // disabled — tapping it must not fire a second request.
+    expect(find.text('Refreshing unlocked pieces'), findsOneWidget);
+    await tester.tap(
+      find.text('Refreshing unlocked pieces'),
+      warnIfMissed: false,
+    );
     expect(calls, 1);
 
     pending.complete(_success(_requestWithAnchorLocked()));

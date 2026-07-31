@@ -432,6 +432,15 @@ class _ItemDetailModal extends StatelessWidget {
     Navigator.of(
       context,
     ).pop(); // item detail modal close ÃƒÂ Ã‚Â°Ã…Â¡ÃƒÂ Ã‚Â±Ã¢â‚¬Â¡ÃƒÂ Ã‚Â°Ã‚Â¯ÃƒÂ Ã‚Â°Ã‚Â¿
+    // Build Outfit is stubbed for beta (coming soon).
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Build Outfit is coming soon ✨'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+    return;
+    // ignore: dead_code
     showBuildOutfitSheet(
       context,
       selectedItem: item,

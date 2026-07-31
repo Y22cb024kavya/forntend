@@ -47,23 +47,29 @@ void main() {
     expect(processed.sourceKind, 'processed_cutout');
   });
 
-  test('catalog image wins over a bad/raw cutout on grid AND board', () {
+  test('grid stays catalog-first; board is cutout-first for a masked cutout', () {
     final raw = {
       'item_id': 'wp-shirt',
       'masked_url': 'https://test/wardrobe_wp.png',
       'image_status': 'rmbg_complete',
       'normalized_url': 'https://test/catalog_wp.png',
-      // Backend froze masked as the display field — catalog must still win.
       'selected_field': 'masked_url',
       'source_kind': 'legacy_masked_cutout',
       'expected_transparent': true,
     };
-    // Both the wardrobe grid and the Style This board show the clean catalog
-    // image (the anchor's raw cutout otherwise shows on the board).
-    for (final surface in ['wardrobe_grid', 'style_board_render', 'style_this_request']) {
+    // Wardrobe grid keeps catalog-first (polished, consistent photography).
+    final grid = resolveWardrobeImage(raw, surface: 'wardrobe_grid');
+    expect(grid.url, 'https://test/catalog_wp.png');
+    expect(grid.sourceKind, 'catalog_fallback');
+    // Board surfaces are cutout-first: the transparent masked cutout wins so
+    // the garment renders frameless and full-size (policy: prefer cutouts on
+    // boards; rawCutoutIsSafe already filters genuinely broken cutouts).
+    for (final surface in ['style_board_render', 'style_this_request']) {
       final r = resolveWardrobeImage(raw, surface: surface);
-      expect(r.url, 'https://test/catalog_wp.png', reason: surface);
-      expect(r.sourceKind, 'catalog_fallback', reason: surface);
+      expect(r.url, 'https://test/wardrobe_wp.png', reason: surface);
+      expect(r.sourceKind,
+          anyOf('validated_cutout', 'legacy_masked_cutout'), reason: surface);
+      expect(r.shouldFrame, isFalse, reason: surface);
     }
   });
 

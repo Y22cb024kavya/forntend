@@ -64,6 +64,18 @@ bool _objectPathMatches(String? url, RegExp pattern) {
   }
 }
 
+// Style-board canvases render garments frameless, so they must prefer clean
+// transparent cutouts (validated_cutout=0, legacy_masked=1) over the opaque
+// catalog image (3). The wardrobe grid keeps catalog-first for consistent
+// photography. Surface is passed explicitly by callers — never inferred.
+bool _isStyleBoardSurface(String surface) {
+  final s = surface.trim().toLowerCase();
+  return s.startsWith('style_board') ||
+      s.startsWith('style_this') ||
+      s == 'build_outfit' ||
+      s == 'boards';
+}
+
 bool _isCatalogObject(String? url) => _objectPathMatches(
   url,
   RegExp(
@@ -737,10 +749,18 @@ ResolvedWardrobeImage resolveWardrobeImage(
     ),
   ];
 
-  final selected = candidates.firstWhere(
-    (candidate) => candidate.url != null,
-    orElse: () => const _Candidate('none', null, 'missing', 5, false, false),
-  );
+  final available = candidates.where((c) => c.url != null).toList();
+  final isBoardSurface = _isStyleBoardSurface(surface);
+  final selected = available.isEmpty
+      ? const _Candidate('none', null, 'missing', 5, false, false)
+      : isBoardSurface
+          // Board canvas: cutout-first. Lowest tier wins (validated_cutout=0,
+          // legacy_masked=1, catalog=3, raw=4); reduce is stable on ties so
+          // same-tier order is preserved. Only safe cutouts reach the list,
+          // so this still falls back to catalog/raw when no cutout exists.
+          ? available.reduce((a, b) => b.tier < a.tier ? b : a)
+          // Wardrobe grid etc: keep catalog-first (first non-null in order).
+          : available.first;
   final result = ResolvedWardrobeImage(
     url: selected.url,
     field: selected.field,
@@ -805,6 +825,18 @@ ResolvedWardrobeImage resolveWardrobeImage(
         'source_kind=${result.sourceKind} '
         'expected_transparent=${result.expectedTransparent}',
       );
+      if (isBoardSurface) {
+        debugPrint(
+          'AHVI_STYLE_ITEM_IMAGE_SELECTED '
+          'item_id=$diagnosticId '
+          'surface=$surface '
+          'selected_field=${result.field} '
+          'source_kind=${result.sourceKind} '
+          'expected_transparent=${result.expectedTransparent} '
+          'requires_frame=${result.requiresFrame} '
+          'candidate_count=${available.length}',
+        );
+      }
     }
   }
   return result;

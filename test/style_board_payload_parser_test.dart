@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/feature/chat/models/ahvi_response_block.dart';
 import 'package:myapp/feature/chat/services/ahvi_block_response_parser.dart';
+import 'package:myapp/util/wardrobe_image_resolver.dart';
 import 'package:myapp/widgets/ahvi_stylist_chat.dart';
 
 Map<String, dynamic> _board(String id) => {
@@ -10,6 +11,22 @@ Map<String, dynamic> _board(String id) => {
 };
 
 void main() {
+  Map<dynamic, dynamic> adaptedItem(Map<String, dynamic> item) {
+    final parsed = parseAhviResponse({
+      'rendered_boards': [
+        {
+          'board_id': 'provenance-board',
+          'items': [item],
+        },
+      ],
+    });
+    final block = parsed.blocks.singleWhere(
+      (item) => item.type == AhviBlockType.visualDirections,
+    );
+    final direction = (block.data['directions'] as List).single as Map;
+    return (direction['board_items'] as List).single as Map;
+  }
+
   group('Style Me board alias parsing', () {
     test('accepts root style_boards', () {
       final selected = selectStyleBoardAlias({
@@ -196,6 +213,71 @@ void main() {
       );
       expect(item['role'], 'dress');
       expect(item['image_url'], 'https://example.test/rendered.png');
+    });
+
+    test('adapter preserves masked, catalog, and original provenance', () {
+      final item = adaptedItem({
+        'item_id': 'blue-shirt',
+        'masked_url': 'https://example.test/blue-shirt-mask.png',
+        'normalized_url': 'https://example.test/catalog_blue-shirt.jpg',
+        'image_url': 'https://example.test/blue-shirt-original.jpg',
+      });
+
+      expect(item['masked_url'], 'https://example.test/blue-shirt-mask.png');
+      expect(
+        item['normalized_url'],
+        'https://example.test/catalog_blue-shirt.jpg',
+      );
+      expect(item['image_url'], 'https://example.test/blue-shirt-original.jpg');
+      final resolved = resolveWardrobeImage(
+        Map<String, dynamic>.from(item),
+        surface: 'style_board_render',
+        emitDiagnostic: false,
+      );
+      expect(resolved.field, 'masked_url');
+      expect(resolved.expectedTransparent, isTrue);
+      expect(resolved.requiresFrame, isFalse);
+    });
+
+    test('adapter retains a masked item without inventing an original', () {
+      final item = adaptedItem({
+        'item_id': 'masked-only',
+        'maskedUrl': 'https://example.test/masked-only.png',
+        'normalizedUrl': 'https://example.test/catalog_masked-only.jpg',
+      });
+
+      expect(item, isNot(contains('image_url')));
+      expect(item['masked_url'], 'https://example.test/masked-only.png');
+      expect(
+        resolveWardrobeImage(
+          Map<String, dynamic>.from(item),
+          surface: 'style_board_render',
+          emitDiagnostic: false,
+        ).url,
+        'https://example.test/masked-only.png',
+      );
+    });
+
+    test('adapter canonicalizes prepared style asset fields', () {
+      final item = adaptedItem({
+        'item_id': 'prepared-asset',
+        'source': 'style_asset',
+        'assetCutoutUrl': 'https://example.test/prepared-cutout.png',
+        'assetMaskedUrl': 'https://example.test/prepared-mask.png',
+        'processedUrl': 'https://example.test/prepared.jpg',
+        'imageUrl': 'https://example.test/prepared-original.jpg',
+      });
+
+      expect(
+        item['asset_cutout_url'],
+        'https://example.test/prepared-cutout.png',
+      );
+      expect(
+        item['asset_masked_url'],
+        'https://example.test/prepared-mask.png',
+      );
+      expect(item['processed_url'], 'https://example.test/prepared.jpg');
+      expect(item['image_url'], 'https://example.test/prepared-original.jpg');
     });
   });
 }

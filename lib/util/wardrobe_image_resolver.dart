@@ -341,6 +341,12 @@ ResolvedWardrobeImage resolveWardrobeImage(
     'catalog_fallback' || 'style_asset_processed' => 3,
     _ => 4,
   };
+  final isBoardSurface = _isStyleBoardSurface(surface);
+  bool explicitMaskIsSafeForBoard(String? url) =>
+      isBoardSurface &&
+      url != null &&
+      !isCatalogAlias(url) &&
+      !_isCatalogObject(url);
 
   // Prefer the polished catalog image whenever a real one exists — for the
   // wardrobe grid AND Style This boards (the anchor's raw/bad cutout otherwise
@@ -471,7 +477,9 @@ ResolvedWardrobeImage resolveWardrobeImage(
         true,
         true,
       ),
-    if (!isStyleAsset && rawCutoutIsSafe(resolvedMasked))
+    if (!isStyleAsset &&
+        (rawCutoutIsSafe(resolvedMasked) ||
+            explicitMaskIsSafeForBoard(resolvedMasked)))
       _Candidate(
         'masked_url',
         resolvedMasked,
@@ -757,19 +765,18 @@ ResolvedWardrobeImage resolveWardrobeImage(
   ];
 
   final available = candidates.where((c) => c.url != null).toList();
-  final isBoardSurface = _isStyleBoardSurface(surface);
   final selected = available.isEmpty
       ? const _Candidate('none', null, 'missing', 5, false, false)
       : isBoardSurface
-          // Board canvas: cutout-first. `tier` is a priority RANK, lower
-          // number = higher preference (validated_cutout=0, legacy_masked=1,
-          // catalog=3, raw=4) — not a quality score. The minimum-rank
-          // candidate wins; reduce is stable on ties so same-rank order is
-          // preserved. Only safe cutouts reach the list, so this still falls
-          // back to catalog/raw when no cutout exists.
-          ? available.reduce((a, b) => b.tier < a.tier ? b : a)
-          // Wardrobe grid etc: keep catalog-first (first non-null in order).
-          : available.first;
+      // Board canvas: cutout-first. `tier` is a priority RANK, lower
+      // number = higher preference (validated_cutout=0, legacy_masked=1,
+      // catalog=3, raw=4) — not a quality score. The minimum-rank
+      // candidate wins; reduce is stable on ties so same-rank order is
+      // preserved. Only safe cutouts reach the list, so this still falls
+      // back to catalog/raw when no cutout exists.
+      ? available.reduce((a, b) => b.tier < a.tier ? b : a)
+      // Wardrobe grid etc: keep catalog-first (first non-null in order).
+      : available.first;
   // Ordered fallback candidates — board surfaces only. Rank order (lower tier
   // first, stable within a tier), deduped by URL identity. The renderer walks
   // this list when the preferred image fails at runtime.
@@ -778,20 +785,28 @@ ResolvedWardrobeImage resolveWardrobeImage(
     final ordered = [
       for (var t = 0; t <= 5; t++) ...available.where((c) => c.tier == t),
     ];
-    final seen = <String>{};
-    final out = <ResolvedWardrobeImage>[];
+    final strongestByUrl = <String, _Candidate>{};
     for (final c in ordered) {
       final id = _urlIdentity(c.url) ?? c.url;
-      if (id == null || !seen.add(id)) continue;
-      out.add(ResolvedWardrobeImage(
-        url: c.url,
-        field: c.field,
-        sourceKind: c.sourceKind,
-        tier: c.tier,
-        expectedTransparent: c.expectedTransparent,
-        validated: c.validated,
-        shouldFrame: c.url != null && !c.validated,
-      ));
+      if (id == null) continue;
+      final existing = strongestByUrl[id];
+      if (existing == null || c.tier < existing.tier) {
+        strongestByUrl[id] = c;
+      }
+    }
+    final out = <ResolvedWardrobeImage>[];
+    for (final c in strongestByUrl.values) {
+      out.add(
+        ResolvedWardrobeImage(
+          url: c.url,
+          field: c.field,
+          sourceKind: c.sourceKind,
+          tier: c.tier,
+          expectedTransparent: c.expectedTransparent,
+          validated: c.validated,
+          shouldFrame: c.url != null && !c.validated,
+        ),
+      );
     }
     return out;
   }
@@ -891,17 +906,16 @@ List<ResolvedWardrobeImage> resolveWardrobeImageCandidates(
   String surface = 'style_board_render',
   String itemId = '',
   Map<String, dynamic>? wardrobeRecord,
-}) =>
-    resolveWardrobeImage(
-      raw,
-      normalizedUrl: normalizedUrl,
-      imageUrl: imageUrl,
-      maskedUrl: maskedUrl,
-      surface: surface,
-      itemId: itemId,
-      emitDiagnostic: false,
-      wardrobeRecord: wardrobeRecord,
-    ).candidates;
+}) => resolveWardrobeImage(
+  raw,
+  normalizedUrl: normalizedUrl,
+  imageUrl: imageUrl,
+  maskedUrl: maskedUrl,
+  surface: surface,
+  itemId: itemId,
+  emitDiagnostic: false,
+  wardrobeRecord: wardrobeRecord,
+).candidates;
 
 Map<String, dynamic> resolveStyleBoardItemImage(
   Map<String, dynamic> item,

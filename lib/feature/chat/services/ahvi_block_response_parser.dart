@@ -406,8 +406,8 @@ Map<String, dynamic> _styleDirectionToCanonical(
           !existingBoardId.toLowerCase().startsWith('outfit_card_'))
       ? existingBoardId
       : (anchorId.isNotEmpty
-          ? 'style_this_${anchorId}_$index'
-          : 'style_this_$index');
+            ? 'style_this_${anchorId}_$index'
+            : 'style_this_$index');
   final revision =
       (direction['revision'] is num && (direction['revision'] as num) >= 1)
       ? direction['revision']
@@ -467,29 +467,57 @@ Map<String, dynamic> _styleBoardToDirection(Map<String, dynamic> board) {
   );
   final boardItems = items
       .map((it) {
-        final image =
-            it['asset_cutout_url'] ??
-            it['cutout_url'] ??
-            it['asset_masked_url'] ??
-            it['masked_url'] ??
-            it['transparent_url'] ??
-            it['processed_url'] ??
-            it['normalized_url'] ??
-            it['normalizedUrl'] ??
-            it['board_image_url'] ??
-            it['boardImageUrl'] ??
-            it['image_url'] ??
-            it['imageUrl'];
-        return <String, dynamic>{
+        final out = <String, dynamic>{
           ...it,
           'name': it['name'] ?? it['title'] ?? it['label'],
           'role': it['role'] ?? it['slot'] ?? it['category'],
-          'image_url': image,
-          if (it['board_image_url'] != null)
-            'board_image_url': it['board_image_url'],
         };
+
+        void canonical(String field, Object? snake, Object? camel) {
+          final value = snake ?? camel;
+          if (value?.toString().trim().isNotEmpty == true) out[field] = value;
+        }
+
+        canonical(
+          'asset_cutout_url',
+          it['asset_cutout_url'],
+          it['assetCutoutUrl'],
+        );
+        canonical('cutout_url', it['cutout_url'], it['cutoutUrl']);
+        canonical(
+          'asset_masked_url',
+          it['asset_masked_url'],
+          it['assetMaskedUrl'],
+        );
+        canonical('masked_url', it['masked_url'], it['maskedUrl']);
+        canonical(
+          'transparent_url',
+          it['transparent_url'],
+          it['transparentUrl'],
+        );
+        canonical('processed_url', it['processed_url'], it['processedUrl']);
+        canonical('normalized_url', it['normalized_url'], it['normalizedUrl']);
+        canonical(
+          'board_image_url',
+          it['board_image_url'],
+          it['boardImageUrl'],
+        );
+        canonical('image_url', it['image_url'], it['imageUrl']);
+        return out;
       })
-      .where((it) => (it['image_url']?.toString().trim().isNotEmpty ?? false))
+      .where(
+        (it) => const [
+          'asset_cutout_url',
+          'cutout_url',
+          'asset_masked_url',
+          'masked_url',
+          'transparent_url',
+          'processed_url',
+          'normalized_url',
+          'board_image_url',
+          'image_url',
+        ].any((field) => it[field]?.toString().trim().isNotEmpty == true),
+      )
       .toList();
   final compositeImage =
       board['board_image_url'] ??

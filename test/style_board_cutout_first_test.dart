@@ -26,9 +26,10 @@ void main() {
     if (original) 'image_url': _original,
   };
 
-  ResolvedWardrobeImage board(Map<String, dynamic> raw,
-          {String surface = 'style_board_render'}) =>
-      resolveWardrobeImage(raw, surface: surface);
+  ResolvedWardrobeImage board(
+    Map<String, dynamic> raw, {
+    String surface = 'style_board_render',
+  }) => resolveWardrobeImage(raw, surface: surface);
 
   test('1. board prefers validated_cutout over catalog', () {
     final r = board(wardrobeItem(cutout: true, catalog: true, original: true));
@@ -148,6 +149,32 @@ void main() {
         'normalized_url': _catalog,
       }, surface: 'style_board_render');
       expect(c.where((x) => x.url == _cutout).length, 1);
+    });
+
+    test('same URL keeps explicit masked provenance over generic original', () {
+      final c = resolveWardrobeImageCandidates({
+        'item_id': 'same-url-mask',
+        'masked_url': _masked,
+        'image_url': _masked,
+      }, surface: 'style_board_render');
+
+      expect(c, hasLength(1));
+      expect(c.single.field, 'masked_url');
+      expect(c.single.sourceKind, 'legacy_masked_cutout');
+      expect(c.single.expectedTransparent, isTrue);
+      expect(c.single.requiresFrame, isFalse);
+    });
+
+    test('plain png original does not imply transparency', () {
+      final c = resolveWardrobeImageCandidates({
+        'item_id': 'opaque-png',
+        'image_url': 'https://test/product.png',
+      }, surface: 'style_board_render');
+
+      expect(c, hasLength(1));
+      expect(c.single.sourceKind, 'original');
+      expect(c.single.expectedTransparent, isFalse);
+      expect(c.single.requiresFrame, isTrue);
     });
 
     test('non-board surface exposes no fallback candidates', () {

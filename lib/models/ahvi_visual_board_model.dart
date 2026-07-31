@@ -60,7 +60,10 @@ class AhviBoardItem {
 
   /// visual checklist thumbnails
   final String imageUrl;
+  final List<String> imageUrls;
   final String iconName;
+  final String assetKey;
+  final String section;
   final String source;
   final bool checked;
 
@@ -71,7 +74,10 @@ class AhviBoardItem {
     this.category = '',
     this.options = const [],
     this.imageUrl = '',
+    this.imageUrls = const [],
     this.iconName = '',
+    this.assetKey = '',
+    this.section = '',
     this.source = '',
     this.checked = false,
   });
@@ -85,12 +91,17 @@ class AhviBoardItem {
         category: _str(raw['category']),
         options: _strList(raw['options']),
         imageUrl: _str(raw['imageUrl'] ?? raw['image_url']),
+        imageUrls: _strList(raw['image_urls'] ?? raw['imageUrls']),
         iconName: _str(
           raw['iconName'] ??
               raw['icon_name'] ??
               raw['assetIcon'] ??
               raw['asset_icon'],
         ),
+        assetKey: _str(
+          raw['asset_key'] ?? raw['assetKey'] ?? raw['assetIcon'],
+        ),
+        section: _str(raw['section'] ?? raw['category']),
         source: _str(raw['source']),
         checked: raw['checked'] == true,
       );
@@ -105,7 +116,10 @@ class AhviBoardItem {
     'category': category,
     'options': options,
     'image_url': imageUrl,
+    'image_urls': imageUrls,
     'icon_name': iconName,
+    'asset_key': assetKey,
+    'section': section,
     'source': source,
     'checked': checked,
   };

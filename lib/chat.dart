@@ -30,6 +30,7 @@ import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/models/ahvi_visual_board_model.dart';
 import 'package:myapp/widgets/ahvi_module_card.dart';
 import 'package:myapp/widgets/ahvi_visual_board.dart';
+import 'package:myapp/widgets/chat_cards/visual_packing_checklist_card.dart';
 import 'package:myapp/util/safe_text.dart';
 import 'package:provider/provider.dart';
 
@@ -3207,6 +3208,11 @@ class _ChatScreenState extends State<ChatScreen>
       Map<String, dynamic> card,
       AppThemeTokens t,
       ) {
+    return VisualPackingChecklistCard(
+      card: card,
+      onAction: _sendMessage,
+    );
+    /*
     final sections = _packingVisualSections(card);
     if (sections.isEmpty) return const SizedBox.shrink();
     final title = (card['title'] ?? 'Carry-on Packing Checklist')
@@ -3334,7 +3340,7 @@ class _ChatScreenState extends State<ChatScreen>
           ),
         );
       },
-    );
+    ); */
   }
 
   List<Map<String, dynamic>> _packingVisualSections(Map<String, dynamic> card) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:myapp/models/ahvi_visual_board_model.dart';
+import 'package:myapp/widgets/chat_cards/visual_packing_checklist_card.dart';
 
 /// Single reusable renderer for every AHVI visual_board response
 /// (diet / pack / plan). Handles all section layouts:
@@ -42,6 +43,9 @@ class AhviVisualBoardView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (board.isEmpty) return const SizedBox.shrink();
+    if (_isPackingBoard) {
+      return VisualPackingChecklistCard(card: _packingCard());
+    }
 
     return Container(
       width: double.infinity,
@@ -90,6 +94,39 @@ class AhviVisualBoardView extends StatelessWidget {
       ),
     );
   }
+
+  bool get _isPackingBoard {
+    final type = board.boardType.toLowerCase();
+    return type.contains('pack') || type.contains('trip');
+  }
+
+  Map<String, dynamic> _packingCard() => {
+    'type': 'visual_packing_checklist',
+    'title': board.title,
+    'subtitle': board.subtitle,
+    'visual_sections': board.sections
+        .map(
+          (section) => {
+            'title': section.title,
+            'layout': section.layout,
+            'items': section.items
+                .map(
+                  (item) => {
+                    'label': item.displayText,
+                    'name': item.name,
+                    'image_url': item.imageUrl,
+                    'image_urls': item.imageUrls,
+                    'icon_key': item.iconName,
+                    'asset_key': item.assetKey,
+                    'section': item.section,
+                    'packed': item.checked,
+                  },
+                )
+                .toList(),
+          },
+        )
+        .toList(),
+  };
 
   Widget _principles(BuildContext context) {
     return Wrap(

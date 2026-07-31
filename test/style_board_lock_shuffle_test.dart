@@ -30,7 +30,7 @@ Map<String, dynamic> itemJson(String id, String slot, {bool locked = false}) =>
 StyleBoardState boardState({
   Set<String> locked = const {},
   String scenario = '',
-  String sourcePolicy = '',
+  String sourcePolicy = 'wardrobe',
   bool allowWardrobeFallback = false,
   bool shuffleAvailable = true,
 }) => StyleBoardState(
@@ -187,6 +187,21 @@ void main() {
       },
     );
 
+    test('explicitly unavailable board never calls shuffle endpoint', () async {
+      var calls = 0;
+      final controller = StyleBoardController(
+        initialState: boardState(shuffleAvailable: false),
+        shuffleCall: (board) async {
+          calls++;
+          return success(board);
+        },
+      );
+
+      expect(await controller.shuffle(), 'SHUFFLE_NOT_AVAILABLE');
+      expect(calls, 0);
+      expect(controller.state.isShuffling, isFalse);
+    });
+
     test('accessory subtype stays in items but shuffle slot is canonical', () {
       const api = StyleBoardApiService();
       final accessory = StyleBoardItem.fromJson({
@@ -248,7 +263,7 @@ void main() {
     );
 
     test('legacy board without explicit policy cannot shuffle', () {
-      expect(boardState().supportsShuffle, isFalse);
+      expect(boardState(sourcePolicy: '').supportsShuffle, isFalse);
       expect(
         boardState(sourcePolicy: 'style_asset').supportsShuffle,
         isTrue,

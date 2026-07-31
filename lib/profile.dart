@@ -1909,6 +1909,7 @@ class _ProfileView extends StatelessWidget {
                         icon: '🗑️',
                         iconDanger: true,
                         label: t.deleteAccount,
+                        meta: 'Unavailable in beta',
                         labelDanger: true,
                         colors: colors,
                         card: card,
@@ -1916,7 +1917,7 @@ class _ProfileView extends StatelessWidget {
                         textPrimary: textPrimary,
                         textMuted: textMuted,
                         danger: danger,
-                        onTap: () => _showDeleteAccountModal(context, t),
+                        onTap: null,
                       ),
                     ],
                   ),
@@ -2069,6 +2070,7 @@ class _ProfileView extends StatelessWidget {
     onToast(messages[permission] ?? 'Could not get location.');
   }
 
+  // ignore: unused_element - retained until the beta gains a deletion contract.
   void _showDeleteAccountModal(BuildContext context, AppStrings t) {
     showModalBottomSheet(
       context: context,
@@ -4768,7 +4770,8 @@ class _ListItem extends StatelessWidget {
               ),
               const SizedBox(width: 4),
             ],
-            Text('›', style: TextStyle(color: textMuted, fontSize: 14)),
+            if (onTap != null)
+              Text('›', style: TextStyle(color: textMuted, fontSize: 14)),
           ],
         ),
       ),

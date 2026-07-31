@@ -488,7 +488,7 @@ class _MediTrackScreenState extends State<MediTrackScreen>
     return scheduled;
   }
 
-  Future<void> _scheduleMedicineReminder({
+  Future<bool> _scheduleMedicineReminder({
     required AppwriteService appwrite,
     required String medId,
     required String medName,
@@ -501,7 +501,7 @@ class _MediTrackScreenState extends State<MediTrackScreen>
       debugPrint(
         'AHVI_MED_REMINDER_INVALID_TIME medId=$medId time=$timeText',
       );
-      return;
+      return false;
     }
 
     final sendAtIso = sendAt.toUtc().toIso8601String();
@@ -525,6 +525,7 @@ class _MediTrackScreenState extends State<MediTrackScreen>
       'AHVI_MED_REMINDER_SCHEDULE_REQUEST '
       'medId=$medId ok=$ok sendAt=$sendAtIso',
     );
+    return ok;
   }
   Future<void> _fetchData() async {
     final generation = ++_fetchGeneration;
@@ -3061,16 +3062,11 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                               'total': supply,
                             });
 
-                            await _scheduleMedicineReminder(
-                              appwrite: appwrite,
-                              medId: medId,
-                              medName: name,
-                              dose: dose,
-                              timeText: resolvedTime,
-                            );
-
                             if (!mounted || !context.mounted) return;
-                            _showToast('Medicine updated', '✅');
+                            _showToast(
+                              'Medicine updated. Existing reminder schedule was not changed.',
+                              '✅',
+                            );
                           } else {
                             final created = await appwrite.createMed({
                               'name': name,
@@ -3083,7 +3079,7 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                               'reminder': true,
                             });
 
-                            await _scheduleMedicineReminder(
+                            final reminderScheduled = await _scheduleMedicineReminder(
                               appwrite: appwrite,
                               medId: created.$id,
                               medName: name,
@@ -3093,11 +3089,10 @@ class _MediTrackScreenState extends State<MediTrackScreen>
 
                             if (!mounted || !context.mounted) return;
                             _showToast(
-                              AppLocalizations.t(
-                                this.context,
-                                'medi_medicine_added',
-                              ),
-                              '💊',
+                              reminderScheduled
+                                  ? 'Medicine saved and reminder scheduled'
+                                  : 'Medicine saved, but the reminder was not scheduled',
+                              reminderScheduled ? '💊' : '⚠️',
                             );
                           }
                           if (!mounted || !context.mounted) return;

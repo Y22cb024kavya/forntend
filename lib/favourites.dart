@@ -1,33 +1,10 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/services/appwrite_service.dart';
 import 'package:myapp/app_localizations.dart';
 import 'package:myapp/style_board/saved_board_images.dart';
-
-// ── Favourite API ─────────────────────────────────────────────────────────────
-Future<void> toggleGarmentFavorite(
-    String userId,
-    String itemId,
-    bool isLiked,
-    ) async {
-  final response = await http.post(
-    Uri.parse('YOUR_BACKEND_URL/api/wardrobe/favorite'),
-    headers: {'Content-Type': 'application/json'},
-    body: jsonEncode({
-      'user_id': userId,
-      'item_id': itemId,
-      'is_liked': isLiked,
-    }),
-  );
-  if (response.statusCode != 200) {
-    throw Exception('Failed to sync favorite status');
-  }
-}
 
 // ── Data model ───────────────────────────────────────────────────────────────
 class FavouriteLookItem {
@@ -493,37 +470,9 @@ class _LookCardState extends State<_LookCard> {
     _isLiked = widget.look.isFavourite;
   }
 
-  Future<void> _handleFavouriteToggle() async {
-    final newValue = !_isLiked;
-
-    // 1. Optimistically update UI
-    setState(() {
-      _isLiked = newValue;
-      widget.look.isFavourite = newValue;
-    });
-
-    try {
-      // 2. Sync with backend
-      await toggleGarmentFavorite(widget.userId, widget.look.id, newValue);
-      widget.onFavouriteToggled();
-    } catch (e) {
-      // 3. Revert on failure
-      setState(() {
-        _isLiked = !newValue;
-        widget.look.isFavourite = !newValue;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to save to Favorites.')),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final t = context.themeTokens;
-    final onAccent = _contrastColor(_bgGradient(widget.look.bg));
 
     return GestureDetector(
       onLongPress: widget.onDelete,
@@ -600,8 +549,8 @@ class _LookCardState extends State<_LookCard> {
                           ),
                         ),
                         // ── Heart / favourite toggle ──────────────────────
-                        GestureDetector(
-                          onTap: _handleFavouriteToggle,
+                        Tooltip(
+                          message: 'Saved favorite',
                           child: Container(
                             padding: const EdgeInsets.all(4),
                             decoration: BoxDecoration(
@@ -652,56 +601,6 @@ class _LookCardState extends State<_LookCard> {
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                  // Try On button
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.fromLTRB(10, 2, 10, 6),
-                    child: GestureDetector(
-                      onTap: () {},
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 9),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              t.accent.tertiary,
-                              t.accent.primary,
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: [
-                            BoxShadow(
-                              color: t.accent.tertiary
-                                  .withValues(alpha: 0.40),
-                              blurRadius: 10,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.auto_awesome_rounded,
-                              size: 14,
-                              color: onAccent,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              context.tr('daily_wear_try_on'),
-                              style: TextStyle(
-                                fontFamily: 'Inter',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: onAccent,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                     ),
                   ),
                 ],
@@ -808,15 +707,6 @@ class _LookCardState extends State<_LookCard> {
     };
   }
 
-  Color _contrastColor(LinearGradient gradient) {
-    // Simple heuristic: if gradient is dark, use white; else use black
-    final firstColor = gradient.colors.first;
-    final brightness =
-        (firstColor.red * 299 + firstColor.green * 587 +
-            firstColor.blue * 114) /
-            1000;
-    return brightness > 128 ? Colors.black : Colors.white;
-  }
 }
 
 // ── Empty State ──────────────────────────────────────────────────────────────

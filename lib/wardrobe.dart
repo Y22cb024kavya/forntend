@@ -369,6 +369,7 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
   int _activeTab = 0;
   String _searchQuery = '';
   final List<WardrobeItem> _wardrobe = [];
+  final Set<String> _wearLoggingIds = {};
 
   String? _currentUserId;
   bool _loadedCache = false;
@@ -548,17 +549,25 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
     );
   }
 
-  Future<void> _markWoreToday(WardrobeItem item) async {
+  Future<bool> _markWoreToday(WardrobeItem item) async {
+    if (!_wearLoggingIds.add(item.id)) return false;
+    final previousWorn = item.worn;
     setState(() => item.worn++);
     await _saveWardrobeCache();
     try {
       await _updateOutfitDocument(item.id, {'worn': item.worn});
     } catch (e) {
       debugPrint('Failed to persist wear count: $e');
-      _showToast(AppLocalizations.t(context, 'wardrobe_saved_offline'));
-      return;
+      item.worn = previousWorn;
+      if (mounted) setState(() {});
+      await _saveWardrobeCache();
+      if (mounted) _showToast('Wear was not logged. Please try again.');
+      return false;
+    } finally {
+      _wearLoggingIds.remove(item.id);
     }
-    _showToast('Logged a wear for "${item.name}"');
+    if (mounted) _showToast('Logged a wear for "${item.name}"');
+    return true;
   }
 
   // ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Fetch from Appwrite
@@ -859,7 +868,7 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
       context,
       item: item,
       allItems: _wardrobe,
-      onWore: () => _markWoreToday(item),
+      onWore: _markWoreToday,
       onLike: () {
         setState(() => item.liked = !item.liked);
         _saveWardrobeCache();
@@ -2973,9 +2982,18 @@ class _AddItemModalState extends State<_AddItemModal>
       _saveComplete = true;
     });
     final requestedCount = selected.length;
+    final catalogScheduledCount = saveResult['catalog_scheduled_count'] is int
+        ? saveResult['catalog_scheduled_count'] as int
+        : int.tryParse(saveResult['catalog_scheduled_count']?.toString() ?? '') ?? 0;
     if (savedCount < requestedCount) {
       _toast(
-        'Saved $savedCount of $requestedCount items. Some were skipped because AHVI could not create clean wardrobe images.',
+        'Saved $savedCount of $requestedCount items. Some were skipped because AHVI could not create clean wardrobe images.'
+        '${catalogScheduledCount > 0 ? ' Catalog enhancement for saved items is processing on a best-effort basis.' : ''}',
+      );
+    } else if (catalogScheduledCount > 0) {
+      _toast(
+        'Saved $savedCount item${savedCount == 1 ? '' : 's'} to wardrobe. '
+        'Catalog enhancement is processing on a best-effort basis.',
       );
     } else {
       _toast('Saved $savedCount item${savedCount == 1 ? '' : 's'} to wardrobe.');

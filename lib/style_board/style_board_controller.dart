@@ -54,12 +54,12 @@ class StyleBoardController extends ChangeNotifier {
 
   Future<String?> shuffle() async {
     if (_state.isShuffling) return null;
-    if (_state.allItemsLocked) return 'ALL_ITEMS_LOCKED';
-    // Style This directions synthesize an ID for stable rendering, but they
-    // are not persisted style boards and cannot use the mutation endpoint.
-    if (_state.boardId.toLowerCase().startsWith('style_this_')) {
-      return 'BOARD_NOT_PERSISTED';
+    if (!_state.canShuffle) {
+      return _state.isPersistedBoardId
+          ? 'SHUFFLE_NOT_AVAILABLE'
+          : 'BOARD_NOT_PERSISTED';
     }
+    if (_state.allItemsLocked) return 'ALL_ITEMS_LOCKED';
     final snapshot = _state.deepCopy();
     _state = _state.copyWith(
       isShuffling: true,

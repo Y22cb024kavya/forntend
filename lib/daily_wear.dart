@@ -65,7 +65,6 @@ class _DailyWearScreenState extends State<DailyWearScreen>
   int get _carouselIndex => _carouselIndexNotifier.value;
   bool _chatOpen = false;
   bool _tryOnOpen = false;
-  bool _hasLoggedWear = false;
   bool _isLoading = true;
   bool _needsMoreClothes = false;
   String _emptyStateMessage = '';
@@ -1504,37 +1503,6 @@ class _DailyWearScreenState extends State<DailyWearScreen>
       );
     } catch (e) {
       debugPrint('Failed to save daily look to boards: $e');
-    }
-  }
-
-  Future<void> _logWearForCurrentLook() async {
-    final itemIds = _currentOutfitItemIds();
-    if (itemIds.isEmpty || _hasLoggedWear) return;
-
-    setState(() => _hasLoggedWear = true);
-    try {
-      final ok = await BackendService().logWear(itemIds);
-      if (!ok) {
-        if (!mounted) return;
-        setState(() => _hasLoggedWear = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to log outfit. Try again.')),
-        );
-        return;
-      }
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Outfit logged! We'll rotate these pieces tomorrow."),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _hasLoggedWear = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to log outfit. Try again.')),
-      );
     }
   }
 
@@ -3644,15 +3612,6 @@ class _DailyWearScreenState extends State<DailyWearScreen>
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: _actionBtn(
-              AppLocalizations.t(context, 'daily_wear_wear_today'),
-              _logWearForCurrentLook,
-              primary: true,
-            ),
-          ),
         ],
       );
     }
@@ -3757,14 +3716,6 @@ class _DailyWearScreenState extends State<DailyWearScreen>
               child: _actionBtn(
                 AppLocalizations.t(context, 'daily_wear_start_tryon'),
                 _startTryOnCamera,
-                primary: true,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _actionBtn(
-                AppLocalizations.t(context, 'daily_wear_wear_today'),
-                _logWearForCurrentLook,
                 primary: true,
               ),
             ),

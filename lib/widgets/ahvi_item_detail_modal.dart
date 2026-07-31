@@ -55,7 +55,7 @@ Future<void> showItemDetailModal(
   BuildContext context, {
   required WardrobeItem item,
   required List<WardrobeItem> allItems,
-  VoidCallback? onWore,
+  Future<bool> Function(WardrobeItem item)? onWore,
   VoidCallback? onEdit,
   VoidCallback? onLike,
   VoidCallback? onShare,
@@ -93,7 +93,7 @@ Future<void> showItemDetailModal(
 class _ItemDetailModal extends StatelessWidget {
   final WardrobeItem item;
   final List<WardrobeItem> allItems;
-  final VoidCallback? onWore;
+  final Future<bool> Function(WardrobeItem item)? onWore;
   final VoidCallback? onEdit;
   final VoidCallback? onLike;
   final VoidCallback? onShare;
@@ -1018,8 +1018,9 @@ class _ItemDetailModal extends StatelessWidget {
     );
   }
 
-  void _onWoreToday(BuildContext context, WardrobeItem item) {
-    onWore?.call();
+  Future<void> _onWoreToday(BuildContext context, WardrobeItem item) async {
+    final logged = await onWore?.call(item) ?? false;
+    if (!logged || !context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(

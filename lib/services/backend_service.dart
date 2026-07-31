@@ -329,27 +329,6 @@ class BackendService {
     };
   }
 
-  Future<bool> logWear(List<String> itemIds) async {
-    final ids = itemIds
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList(growable: false);
-    if (ids.isEmpty) return false;
-    try {
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/api/style/log-wear'),
-            headers: await _authHeaders(),
-            body: jsonEncode({'item_ids': ids}),
-          )
-          .timeout(const Duration(seconds: 20));
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      debugPrint('logWear error: $e');
-      return false;
-    }
-  }
-
   // --- ACCOUNT & PROFILE ---
   Future<void> deleteAccount(String userId) async {
     final response = await http.delete(

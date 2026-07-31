@@ -75,6 +75,8 @@ String _shuffleFailureMessage(String code) => switch (code) {
     'This board is missing its styling source. Ask AHVI for a fresh look to continue.',
   'BOARD_NOT_PERSISTED' =>
     'This Style This look can’t be shuffled yet. Ask AHVI for a fresh look to continue.',
+  'SHUFFLE_NOT_AVAILABLE' =>
+    'Shuffle isn’t available for this recommendation.',
   _ =>
     'We couldn’t refresh these pieces. Your current look has been preserved.',
 };
@@ -316,7 +318,7 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
       'board_id=${state.boardId} '
       'mode=${_interactionMode.wireName} '
       'lock=$controlsEnabled '
-      'shuffle=$controlsEnabled '
+      'shuffle=${state.canShuffle} '
       'undo=$controlsEnabled '
       'save=true share=true '
       'like=${_interactionMode == BoardInteractionMode.recommendation} '

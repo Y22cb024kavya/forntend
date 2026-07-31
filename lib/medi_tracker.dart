@@ -3064,7 +3064,9 @@ class _MediTrackScreenState extends State<MediTrackScreen>
 
                             if (!mounted || !context.mounted) return;
                             _showToast(
-                              'Medicine updated. Existing reminder schedule was not changed.',
+                              editMed['reminder'] == true
+                                  ? 'Medicine updated. Existing reminder schedule was not changed.'
+                                  : 'Medicine updated. No reminder is scheduled.',
                               '✅',
                             );
                           } else {
@@ -3076,7 +3078,7 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                               'cat': effectiveCat,
                               'left': supply,
                               'total': supply,
-                              'reminder': true,
+                              'reminder': false,
                             });
 
                             final reminderScheduled = await _scheduleMedicineReminder(
@@ -3086,6 +3088,11 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                               dose: dose,
                               timeText: resolvedTime,
                             );
+                            if (reminderScheduled) {
+                              await appwrite.updateMed(created.$id, {
+                                'reminder': true,
+                              });
+                            }
 
                             if (!mounted || !context.mounted) return;
                             _showToast(

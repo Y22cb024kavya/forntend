@@ -89,9 +89,9 @@ void main() {
       double widthFor(BoardItemRole role) =>
           placements.singleWhere((p) => p.item.role == role).width / w;
 
-      expect(widthFor(BoardItemRole.top), inInclusiveRange(.36, .40));
-      expect(widthFor(BoardItemRole.bottom), inInclusiveRange(.33, .37));
-      expect(widthFor(BoardItemRole.footwear), inInclusiveRange(.37, .41));
+      expect(widthFor(BoardItemRole.top), inInclusiveRange(.43, .45));
+      expect(widthFor(BoardItemRole.bottom), inInclusiveRange(.35, .37));
+      expect(widthFor(BoardItemRole.footwear), inInclusiveRange(.32, .34));
 
       double topOf(BoardItemRole role) =>
           placements.singleWhere((p) => p.item.role == role).y / h;
@@ -153,12 +153,18 @@ void main() {
       double roleWidth(List<BoardItemPlacement> items, BoardItemRole role) =>
           items.singleWhere((p) => p.item.role == role).width / w;
 
-      expect(roleWidth(four, BoardItemRole.top), inInclusiveRange(.34, .36));
-      expect(roleWidth(four, BoardItemRole.bottom), inInclusiveRange(.31, .33));
+      expect(roleWidth(four, BoardItemRole.top), inInclusiveRange(.43, .45));
+      expect(roleWidth(four, BoardItemRole.bottom), inInclusiveRange(.35, .37));
       expect(
         roleWidth(four, BoardItemRole.footwear),
-        inInclusiveRange(.35, .37),
+        inInclusiveRange(.32, .34),
       );
+      final fourAccessory = four.singleWhere(
+        (p) => p.item.role == BoardItemRole.accessory,
+      );
+      expect(fourAccessory.width / w, inInclusiveRange(.13, .15));
+      expect(fourAccessory.x, greaterThanOrEqualTo(0));
+      expect(fourAccessory.x + fourAccessory.width, lessThanOrEqualTo(w));
       expect(roleWidth(five, BoardItemRole.top), inInclusiveRange(.32, .34));
       expect(roleWidth(five, BoardItemRole.bottom), inInclusiveRange(.31, .33));
       expect(

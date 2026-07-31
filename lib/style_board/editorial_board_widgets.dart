@@ -65,8 +65,11 @@ class EditorialBoardItem extends StatelessWidget {
 
     // Framing, shadow and role scale are decided PER current candidate, so a
     // transparent cutout falling back to an opaque catalog reframes correctly.
-    Widget frame(BuildContext context, ResolvedWardrobeImage current,
-        Widget garment) {
+    Widget frame(
+      BuildContext context,
+      ResolvedWardrobeImage current,
+      Widget garment,
+    ) {
       final shouldFrame = current.requiresFrame;
       final content = Transform.rotate(
         angle: rotation,
@@ -75,9 +78,7 @@ class EditorialBoardItem extends StatelessWidget {
                 key: item.hasStableIdentity
                     ? ValueKey<String>('fallback-${item.itemId}')
                     : null,
-                padding: EdgeInsets.all(
-                  shouldFrame && item.role == BoardItemRole.accessory ? 2 : 5,
-                ),
+                padding: const EdgeInsets.all(6),
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
                   color: colors.surfaceContainerLow,
@@ -95,8 +96,7 @@ class EditorialBoardItem extends StatelessWidget {
                     child: Transform.translate(
                       offset: const Offset(0, 4),
                       child: ImageFiltered(
-                        imageFilter:
-                            ui.ImageFilter.blur(sigmaX: 7, sigmaY: 7),
+                        imageFilter: ui.ImageFilter.blur(sigmaX: 7, sigmaY: 7),
                         child: Image.network(
                           current.url ?? '',
                           fit: BoxFit.contain,
@@ -131,10 +131,9 @@ class EditorialBoardItem extends StatelessWidget {
       role: item.role.name,
       itemId: item.itemId,
       alignment: Alignment.center,
-      fitBuilder: (c) =>
-          c.requiresFrame && item.role == BoardItemRole.accessory
-              ? BoxFit.cover
-              : BoxFit.contain,
+      fitBuilder: (c) => c.requiresFrame && item.role == BoardItemRole.accessory
+          ? BoxFit.cover
+          : BoxFit.contain,
       placeholder: const Center(
         child: Icon(
           Icons.image_not_supported_outlined,

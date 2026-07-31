@@ -192,24 +192,24 @@ class EditorialBoardLayoutEngine {
       // One editorial composition, not three product rows: the top leads from
       // upper-left, the trousers form a vertical counterweight, and footwear
       // closes the diagonal near the bottom.
-      final topW = width * (itemCount <= 4 ? 0.35 : 0.33);
+      final topW = width * (itemCount <= 4 ? 0.44 : 0.33);
       placements.add(
         BoardItemPlacement(
           item: top,
-          x: width * 0.08,
-          y: height * 0.07,
+          x: width * 0.06,
+          y: height * 0.06,
           width: topW,
           height: _boxHeight(BoardItemRole.top, topW, height * 0.43),
           rotation: 0,
           zIndex: 2,
         ),
       );
-      final botW = width * 0.32;
+      final botW = width * (itemCount <= 4 ? 0.36 : 0.32);
       placements.add(
         BoardItemPlacement(
           item: bottom,
-          x: width * 0.45,
-          y: height * 0.25,
+          x: width * (itemCount <= 4 ? 0.52 : 0.45),
+          y: height * (itemCount <= 4 ? 0.22 : 0.25),
           width: botW,
           height: _boxHeight(BoardItemRole.bottom, botW, height * 0.53),
           rotation: 0,
@@ -218,11 +218,11 @@ class EditorialBoardLayoutEngine {
       );
     }
 
-    final footW = width * (itemCount <= 4 ? 0.36 : 0.32);
+    final footW = width * (itemCount <= 4 ? 0.33 : 0.32);
     placements.add(
       BoardItemPlacement(
         item: footwear,
-        x: width * 0.11,
+        x: width * 0.10,
         y: height * 0.68,
         width: footW,
         height: _boxHeight(BoardItemRole.footwear, footW, height * 0.22),
@@ -233,11 +233,11 @@ class EditorialBoardLayoutEngine {
 
     for (var i = 0; i < math.min(accessories.length, 2); i++) {
       final bag = _isBagAccessory(accessories[i]);
-      final accW = width * (bag ? 0.27 : 0.19);
+      final accW = width * (bag ? 0.27 : (itemCount <= 4 ? 0.14 : 0.19));
       placements.add(
         BoardItemPlacement(
           item: accessories[i],
-          x: width * (bag ? 0.69 : 0.75),
+          x: width * (bag ? 0.69 : (itemCount <= 4 ? 0.79 : 0.75)),
           y: height * (0.08 + i * 0.22),
           width: accW,
           height: _boxHeight(

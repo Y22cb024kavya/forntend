@@ -84,8 +84,9 @@ class VisualDirectionCarousel extends StatelessWidget {
                 Builder(
                   builder: (cardContext) {
                     final direction = usable[index];
-                    final underlyingCount =
-                        _underlyingOutfitItems(direction).length;
+                    final underlyingCount = _underlyingOutfitItems(
+                      direction,
+                    ).length;
                     if (underlyingCount > 0) {
                       debugPrint(
                         'AHVI_STYLE_CARD_PATH path=outfit_board '
@@ -94,15 +95,15 @@ class VisualDirectionCarousel extends StatelessWidget {
                         'underlying_item_count=$underlyingCount',
                       );
                       return AhviOutfitBoardCard(
-                        key: ValueKey('vd-board-$index'),
+                        key: ValueKey(_boardIdentity(direction, index)),
                         direction: direction,
                         width: width,
                         onSendMessage: onSendMessage,
                         editorialCover: editorialCover,
                         wardrobeById: wardrobeById,
-                        onTapBoard: () => _openBoardDetail(
+                        onTapBoard: (tappedBoard) => _openBoardDetail(
                           cardContext,
-                          direction: direction,
+                          direction: tappedBoard,
                           editorialCover: editorialCover,
                         ),
                       );
@@ -178,18 +179,12 @@ class AhviOutfitBoardDetailSheet extends StatelessWidget {
     this.onSendMessage,
   });
 
-  String get _title => _text(
-    direction['direction_name'] ??
-        direction['directionName'] ??
-        direction['archetype'] ??
-        direction['style_direction'] ??
-        direction['styleDirection'] ??
-        direction['title'],
-    'Style Direction',
-  );
+  String get _title => resolveOutfitBoardTitle(direction);
 
   List<String> get _moodTags => _stringList(
-    direction['mood_words'] ?? direction['moodWords'] ?? direction['adjectives'],
+    direction['mood_words'] ??
+        direction['moodWords'] ??
+        direction['adjectives'],
   ).take(4).toList(growable: false);
 
   List<String> get _reasons {
@@ -221,7 +216,9 @@ class AhviOutfitBoardDetailSheet extends StatelessWidget {
   // (the LLM's ideal piece names) — otherwise the sheet says "Tailored Khaki
   // Trouser / White Sneakers" while the card shows cream shorts + formal shoes.
   List<String> get _pieces {
-    final boardItems = _mapList(direction['board_items'] ?? direction['boardItems']);
+    final boardItems = _mapList(
+      direction['board_items'] ?? direction['boardItems'],
+    );
     if (boardItems.isNotEmpty) {
       final names = <String>[];
       final seen = <String>{};
@@ -232,9 +229,9 @@ class AhviOutfitBoardDetailSheet extends StatelessWidget {
       }
       if (names.isNotEmpty) return names.take(6).toList(growable: false);
     }
-    return _stringList(direction['items'] ?? direction['pieces'])
-        .take(6)
-        .toList(growable: false);
+    return _stringList(
+      direction['items'] ?? direction['pieces'],
+    ).take(6).toList(growable: false);
   }
 
   @override
@@ -566,7 +563,7 @@ class _BoardDirectionFallbackCard extends StatelessWidget {
     final String fallbackMessage = hasRoles
         ? 'Found outfit pieces, but board images are not ready yet.'
         : 'Board view needs complete pieces — a top, bottom, and footwear image. '
-            'Showing this as a direction for now.';
+              'Showing this as a direction for now.';
     return Container(
       width: width,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
@@ -646,6 +643,22 @@ List<Map<String, dynamic>> _underlyingOutfitItems(
   return const <Map<String, dynamic>>[];
 }
 
+String _boardIdentity(Map<String, dynamic> direction, int localIndex) {
+  final boardId = _text(direction['board_id'] ?? direction['boardId'], '');
+  final revision = direction['revision'];
+  if (boardId.isNotEmpty && revision != null) {
+    return 'vd-board-$boardId-$revision';
+  }
+  final localKey = _text(
+    direction['direction_id'] ??
+        direction['directionId'] ??
+        direction['id'] ??
+        direction['key'],
+    '$localIndex',
+  );
+  return 'vd-board-local-$localKey';
+}
+
 int _renderableAssetCount(Map<String, dynamic> direction) {
   var count = 0;
   for (final item in _underlyingOutfitItems(direction)) {
@@ -664,12 +677,13 @@ int _renderableAssetCount(Map<String, dynamic> direction) {
 String _directionResponseType(
   Map<String, dynamic> direction,
   Map<String, dynamic> cover,
-) => (direction['response_type'] ??
-        direction['type'] ??
-        cover['response_type'] ??
-        cover['type'] ??
-        '')
-    .toString();
+) =>
+    (direction['response_type'] ??
+            direction['type'] ??
+            cover['response_type'] ??
+            cover['type'] ??
+            '')
+        .toString();
 
 String _text(dynamic value, String fallback) {
   final text = value?.toString().trim() ?? '';

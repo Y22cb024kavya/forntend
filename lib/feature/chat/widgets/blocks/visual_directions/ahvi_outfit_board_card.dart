@@ -27,6 +27,7 @@ import 'package:myapp/style_board/editorial_board_renderer.dart';
 import 'package:myapp/util/wardrobe_image_resolver.dart';
 
 typedef OutfitBoardMessageSender = void Function(String message);
+typedef OutfitBoardTap = void Function(Map<String, dynamic> board);
 
 enum BoardInteractionMode { recommendation, styleThis, buildOutfit }
 
@@ -103,7 +104,7 @@ class AhviOutfitBoardCard extends StatefulWidget {
   /// Tap on the flat-lay visual opens the legacy stylist-reasoning detail
   /// sheet. The action bar keeps its own handlers and is excluded from this
   /// gesture so Save / Shuffle / Style This / Missing never trigger the sheet.
-  final VoidCallback? onTapBoard;
+  final OutfitBoardTap? onTapBoard;
   final StyleBoardShuffleCall? shuffleCall;
   final BoardSaveFn? saveBoardOverride;
   final Map<String, Map<String, dynamic>> wardrobeById;
@@ -555,13 +556,17 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                       _PremiumBoardHeader(mode: mode),
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTap: widget.onTapBoard,
+                        onTap: widget.onTapBoard == null
+                            ? null
+                            : () => widget.onTapBoard!(_currentDirection),
                         child: OutfitContextStrip(model: _model),
                       ),
                       Expanded(
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTap: widget.onTapBoard,
+                          onTap: widget.onTapBoard == null
+                              ? null
+                              : () => widget.onTapBoard!(_currentDirection),
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
                             child: renderable
@@ -881,7 +886,7 @@ class OutfitReasoningStrip extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-            if (model.intelligenceText.isNotEmpty) ...[
+          if (model.intelligenceText.isNotEmpty) ...[
             Text(
               'WHY IT WORKS',
               style: theme.textTheme.labelSmall?.copyWith(
@@ -892,19 +897,19 @@ class OutfitReasoningStrip extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 2),
-              Text(
-                model.intelligenceText,
+            Text(
+              model.intelligenceText,
               key: const ValueKey('style-why-it-works'),
               maxLines: 3,
               overflow: TextOverflow.fade,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colors.onSurface,
-                  fontWeight: FontWeight.w500,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurface,
+                fontWeight: FontWeight.w500,
                 height: 1.25,
-                ),
               ),
-            ],
-            if (model.stylingTip.isNotEmpty) ...[
+            ),
+          ],
+          if (model.stylingTip.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(
               'STYLING TIP',
@@ -916,21 +921,21 @@ class OutfitReasoningStrip extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 2),
-              Text(
-                model.stylingTip,
+            Text(
+              model.stylingTip,
               key: const ValueKey('style-styling-tip'),
               maxLines: 2,
               overflow: TextOverflow.fade,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                  fontStyle: FontStyle.italic,
-                  fontWeight: FontWeight.w500,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+                fontStyle: FontStyle.italic,
+                fontWeight: FontWeight.w500,
                 height: 1.22,
-                ),
               ),
-            ],
+            ),
           ],
-        ),
+        ],
+      ),
     );
   }
 }
@@ -945,7 +950,6 @@ class _ContextChip extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Container(
-      constraints: const BoxConstraints(maxWidth: 98),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
       decoration: BoxDecoration(
         color: colors.surfaceContainerLow,
@@ -954,8 +958,7 @@ class _ContextChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+        maxLines: 2,
         style: theme.textTheme.labelSmall?.copyWith(
           color: colors.onSurfaceVariant,
           fontSize: 9.5,
@@ -1047,8 +1050,8 @@ class BoardMutationBar extends StatelessWidget {
                   label: state.isShuffling
                       ? ahviProcessingMessage(AhviProcessingContext.shuffle)
                       : state.allItemsLocked
-                          ? 'Unlock an item to shuffle'
-                          : 'Shuffle unlocked pieces',
+                      ? 'Unlock an item to shuffle'
+                      : 'Shuffle unlocked pieces',
                   enabled: !state.isShuffling && !state.allItemsLocked,
                   onTap: _shuffle,
                 ),
@@ -1743,19 +1746,16 @@ class OutfitBoardModel {
         ? Map<String, dynamic>.from(rawStrategy)
         : const <String, dynamic>{};
     final strategyTitle = _text(
-      strategy['direction_title'] ?? strategy['directionTitle'],
+      strategy['direction_title'] ??
+          strategy['directionTitle'] ??
+          strategy['direction'],
     );
     final directionName = _text(
       direction['direction_name'] ??
           direction['directionName'] ??
           direction['style_direction'],
     );
-    final archetype = _text(
-      direction['archetype'] ??
-          direction['style_archetype'] ??
-          strategy['archetype'] ??
-          strategy['archetype_name'],
-    );
+    final archetype = _selectedArchetypeTitle(direction);
     final wardrobeMatchRaw =
         direction['wardrobe_match_pct'] ?? direction['wardrobeMatchPct'];
     final int? wardrobeMatchPct = wardrobeMatchRaw is int
@@ -1765,13 +1765,7 @@ class OutfitBoardModel {
               : (wardrobeMatchRaw is String
                     ? int.tryParse(wardrobeMatchRaw)
                     : null));
-    final title = strategyTitle.isNotEmpty
-        ? strategyTitle
-        : archetype.isNotEmpty
-        ? archetype
-        : (directionName.isNotEmpty
-              ? directionName
-              : _text(direction['title'], fallback: 'Style Direction'));
+    final title = resolveOutfitBoardTitle(direction);
     final occasion = _text(
       direction['occasion'] ?? editorialCover['occasion_label'],
     );
@@ -1799,6 +1793,7 @@ class OutfitBoardModel {
       dressCode,
       weather,
       contextLabel,
+      strategyTitle,
       directionName,
       adjective,
     ].where((value) => value.trim().isNotEmpty).toList(growable: false);
@@ -1819,24 +1814,24 @@ class OutfitBoardModel {
         .toList(growable: false);
     final intelligenceText = _completeDisplayThought(
       _text(
-      direction['short_note'] ??
-          direction['shortNote'] ??
-          direction['why_it_works'] ??
-          direction['whyItWorks'] ??
-          direction['why_this_works'] ??
-          direction['explanation'] ??
+        direction['short_note'] ??
+            direction['shortNote'] ??
+            direction['why_it_works'] ??
+            direction['whyItWorks'] ??
+            direction['why_this_works'] ??
+            direction['explanation'] ??
             direction['reason'] ??
             direction['description'] ??
             strategy['why_it_works'] ??
             strategy['reason'] ??
-          editorialCover['summary'],
+            editorialCover['summary'],
       ),
     );
     final stylingTip = _completeDisplayThought(
       _text(
-      direction['styling_tip'] ??
-          direction['style_tip'] ??
-          direction['style_note'] ??
+        direction['styling_tip'] ??
+            direction['style_tip'] ??
+            direction['style_note'] ??
             direction['styleNote'] ??
             direction['styling_note'] ??
             strategy['styling_tip'],
@@ -2467,6 +2462,54 @@ int _roleRank(OutfitRole role) {
     OutfitRole.accessory => 5,
     OutfitRole.other => 6,
   };
+}
+
+String _archetypeTitle(dynamic value) {
+  if (value is Map) {
+    return _text(
+      value['title'] ?? value['name'] ?? value['archetype'] ?? value['label'],
+    );
+  }
+  return _text(value);
+}
+
+String _selectedArchetypeTitle(Map<String, dynamic> direction) {
+  return _archetypeTitle(
+    direction['selected_archetype'] ??
+        direction['selectedArchetype'] ??
+        direction['archetype'] ??
+        direction['style_archetype'],
+  );
+}
+
+/// Canonical primary title shared by the live card and its detail sheet.
+String resolveOutfitBoardTitle(Map<String, dynamic> direction) {
+  final selectedArchetype = _selectedArchetypeTitle(direction);
+  if (selectedArchetype.isNotEmpty) return selectedArchetype;
+
+  final rawStrategy = direction['style_strategy'];
+  final strategy = rawStrategy is Map
+      ? Map<String, dynamic>.from(rawStrategy)
+      : const <String, dynamic>{};
+  final strategyArchetype = _archetypeTitle(
+    strategy['selected_archetype'] ??
+        strategy['selectedArchetype'] ??
+        strategy['archetype'] ??
+        strategy['archetype_name'],
+  );
+  if (strategyArchetype.isNotEmpty) return strategyArchetype;
+
+  final strategyDirection = _text(
+    strategy['direction_title'] ??
+        strategy['directionTitle'] ??
+        strategy['direction'],
+  );
+  if (strategyDirection.isNotEmpty) return strategyDirection;
+
+  return _text(
+    direction['title'] ?? direction['board_title'] ?? direction['boardTitle'],
+    fallback: 'Styled for You',
+  );
 }
 
 String _text(dynamic value, {String fallback = ''}) {

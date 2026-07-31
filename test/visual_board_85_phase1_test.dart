@@ -306,6 +306,33 @@ void main() {
     PaintingBinding.instance.imageCache.clearLiveImages();
   });
 
+  test('canonical title precedence is stable', () {
+    expect(
+      resolveOutfitBoardTitle({
+        'selected_archetype': {'title': 'Refined Weekend'},
+        'style_strategy': {'archetype': 'Understated Polish'},
+        'title': 'Legacy Board',
+      }),
+      'Refined Weekend',
+    );
+    expect(
+      resolveOutfitBoardTitle({
+        'style_strategy': {'archetype': 'Understated Polish'},
+        'title': 'Legacy Board',
+      }),
+      'Understated Polish',
+    );
+    expect(
+      resolveOutfitBoardTitle({
+        'style_strategy': {'direction_title': 'Effortless Edge'},
+        'title': 'Legacy Board',
+      }),
+      'Effortless Edge',
+    );
+    expect(resolveOutfitBoardTitle({'title': 'Legacy Board'}), 'Legacy Board');
+    expect(resolveOutfitBoardTitle({}), 'Styled for You');
+  });
+
   testWidgets('Phase 1 keeps the board and removes report-style content', (
     tester,
   ) async {
@@ -360,7 +387,7 @@ void main() {
     expect(tester.getTopLeft(title).dy, lessThan(tester.getTopLeft(canvas).dy));
   });
 
-  testWidgets('strategy title wins and meaningful context replaces daily', (
+  testWidgets('selected archetype wins and meaningful context is not clipped', (
     tester,
   ) async {
     await _pumpBoard(
@@ -369,15 +396,23 @@ void main() {
       width: 320,
       direction: {
         ..._direction,
+        'selected_archetype': {'title': 'Refined Weekend'},
         'occasion': 'daily',
         'dress_code': 'Smart Casual',
-        'style_strategy': {'direction_title': 'Refined Ease'},
+        'style_strategy': {'direction_title': 'Understated Polish'},
       },
     );
 
-    expect(find.text('Refined Ease'), findsOneWidget);
+    expect(find.text('Refined Weekend'), findsOneWidget);
+    expect(find.text('Understated Polish'), findsOneWidget);
+    expect(find.text('Understated Po...'), findsNothing);
     expect(find.text('Smart Casual'), findsOneWidget);
     expect(find.text('daily'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('editorial-outfit-canvas')));
+    await tester.pumpAndSettle();
+    expect(find.text('Refined Weekend'), findsNWidgets(2));
+    expect(find.textContaining('Marigold Yellow Cotton Kurta'), findsOneWidget);
   });
 
   testWidgets('reasoning keeps useful bounded lines below the canvas', (
@@ -402,8 +437,13 @@ void main() {
     await _pumpBoard(tester, use85Layout: true, width: 320);
 
     expect(find.byKey(const ValueKey('cutout-kurta-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('cutout-bottom-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('cutout-shoe-1')), findsOneWidget);
     final frame = find.byKey(const ValueKey('fallback-bag-1'));
     expect(frame, findsOneWidget);
+    final frameWidget = tester.widget<Container>(frame);
+    expect(frameWidget.padding, const EdgeInsets.all(6));
+    expect((frameWidget.decoration! as BoxDecoration).color, isNotNull);
     expect(
       tester.widget<Image>(
         find.descendant(of: frame, matching: find.byType(Image)),
@@ -412,13 +452,116 @@ void main() {
     );
   });
 
+  testWidgets('legacy masked accessory stays unframed', (tester) async {
+    final items = (List<Map<String, dynamic>>.from(
+      _direction['board_items'] as List,
+    )).map(Map<String, dynamic>.from).toList();
+    items[3] = {
+      ...items[3],
+      'masked_url': 'https://example.test/kurta-1.png',
+      'board_image_url': null,
+      'image_url': null,
+      'board_status': null,
+    };
+    await _pumpBoard(
+      tester,
+      use85Layout: true,
+      direction: {..._direction, 'board_items': items},
+    );
+
+    expect(find.byKey(const ValueKey('cutout-bag-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('fallback-bag-1')), findsNothing);
+  });
+
+  testWidgets('failed cutout activates exactly one catalog frame', (
+    tester,
+  ) async {
+    final items = (List<Map<String, dynamic>>.from(
+      _direction['board_items'] as List,
+    )).map(Map<String, dynamic>.from).toList();
+    items[0] = {
+      ...items[0],
+      'board_image_url': 'https://example.test/missing-cutout.png',
+      'normalized_url': 'https://example.test/bag-1.png',
+      'image_url': null,
+    };
+    await _pumpBoard(
+      tester,
+      use85Layout: true,
+      direction: {..._direction, 'board_items': items},
+    );
+
+    final frame = find.byKey(const ValueKey('fallback-kurta-1'));
+    expect(frame, findsOneWidget);
+    expect(find.byKey(const ValueKey('cutout-kurta-1')), findsNothing);
+    expect(
+      tester
+          .widget<Transform>(
+            find.byKey(const ValueKey<String>('vscale-kurta-1')),
+          )
+          .transform
+          .getMaxScaleOnAxis(),
+      1,
+    );
+    expect(tester.widget<Container>(frame).padding, const EdgeInsets.all(6));
+  });
+
+  testWidgets('duplicate titles open the exact tapped board pieces', (
+    tester,
+  ) async {
+    final boardA = Map<String, dynamic>.from(_direction)
+      ..['direction_name'] = 'Duplicate title'
+      ..['style_archetype'] = 'Duplicate title';
+    final boardBItems = (List<Map<String, dynamic>>.from(
+      _direction['board_items'] as List,
+    )).map(Map<String, dynamic>.from).toList();
+    boardBItems[0] = {...boardBItems[0], 'name': 'Teal Shirt Board B'};
+    final boardB = <String, dynamic>{
+      ..._direction,
+      'board_id': '22222222-2222-4222-8222-222222222222',
+      'direction_name': 'Duplicate title',
+      'style_archetype': 'Duplicate title',
+      'board_items': boardBItems,
+    };
+    await _pumpBoard(
+      tester,
+      use85Layout: true,
+      directions: [boardA, boardB],
+      surface: const Size(430, 900),
+    );
+
+    final secondBoard = find.byKey(
+      const ValueKey('vd-board-22222222-2222-4222-8222-222222222222-3'),
+    );
+    await tester.drag(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is SingleChildScrollView &&
+            widget.scrollDirection == Axis.horizontal,
+      ),
+      const Offset(-390, 0),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: secondBoard,
+        matching: find.byKey(const ValueKey('editorial-outfit-canvas')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Teal Shirt Board B'), findsOneWidget);
+    expect(find.textContaining('Marigold Yellow Cotton Kurta'), findsNothing);
+  });
+
   testWidgets('connected Shuffle invokes the injected backend action', (
     tester,
   ) async {
     var apiCalls = 0;
     StyleBoardState? captured;
+    Map<String, dynamic>? tappedBoard;
     await _pumpConnectedBoard(
       tester,
+      onTapBoard: (board) => tappedBoard = board,
       shuffleCall: (state) async {
         apiCalls++;
         captured = state.deepCopy();
@@ -459,6 +602,18 @@ void main() {
     expect(captured!.scenario, 'build_outfit');
     expect(captured!.sourcePolicy, 'wardrobe');
     expect(find.byKey(const ValueKey<String>('kurta-1-next')), findsOneWidget);
+
+    await tester.tap(find.text('Sunlit Traditional'));
+    expect(tappedBoard?['revision'], 4);
+    final tappedItems = (tappedBoard?['board_items'] as List).whereType<Map>();
+    expect(
+      tappedItems.map((item) => item['item_id']),
+      contains('kurta-1-next'),
+    );
+    expect(
+      tappedItems.map((item) => item['item_id']),
+      isNot(contains('kurta-1')),
+    );
   });
 
   testWidgets('footer Shuffle never sends a conversational fallback', (
@@ -557,6 +712,7 @@ Future<void> _pumpConnectedBoard(
   WidgetTester tester, {
   required Future<StyleBoardShuffleResult> Function(StyleBoardState)
   shuffleCall,
+  OutfitBoardTap? onTapBoard,
 }) async {
   await _withFixtureImages(() async {
     await tester.binding.setSurfaceSize(const Size(430, 900));
@@ -570,6 +726,7 @@ Future<void> _pumpConnectedBoard(
               width: 390,
               onSendMessage: (_) {},
               shuffleCall: shuffleCall,
+              onTapBoard: onTapBoard,
             ),
           ),
         ),
@@ -584,6 +741,7 @@ Future<void> _pumpBoard(
   required bool use85Layout,
   double width = 320,
   Map<String, dynamic>? direction,
+  List<Map<String, dynamic>>? directions,
   ValueChanged<String>? onSendMessage,
   Size surface = const Size(390, 760),
 }) async {
@@ -596,7 +754,7 @@ Future<void> _pumpBoard(
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(12),
             child: VisualDirectionCarousel(
-              directions: [direction ?? _direction],
+              directions: directions ?? [direction ?? _direction],
               cardWidth: width,
               curationReveal: false,
               use85Layout: use85Layout,

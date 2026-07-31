@@ -16,6 +16,7 @@ import 'package:myapp/feature/chat/services/ahvi_processing_message.dart';
 import 'package:myapp/feature/chat/widgets/ahvi_processing_bubble.dart';
 import 'package:myapp/models/calendar_actions.dart';
 import 'package:myapp/services/backend_service.dart';
+import 'package:myapp/services/chat_response_renderer_registry.dart';
 import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
 import 'package:myapp/widgets/ahvi_module_card.dart';
@@ -1476,15 +1477,18 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       if (updatedMemory != null) _runningMemory = updatedMemory.toString();
       final _lsc = _styleBlockFromResponse(response, 'last_style_context');
       if (_lsc != null) _lastStyleContext = _lsc;
-      final visualPackingCard = _sheetPackingCardFromResponse(response);
-      final typedModuleCard = AhviModuleCard.fromResponse(response);
+      final selection = AhviChatResponseRendererRegistry.select(response);
+      final visualPackingCard =
+          AhviChatResponseRendererRegistry.packingCard(response);
+      final typedModuleCard =
+          AhviChatResponseRendererRegistry.typedModuleCard(response);
       final visualBoard = AhviVisualBoard.isVisualBoard(response)
           ? AhviVisualBoard.fromJson(response)
           : null;
       final suppressGenericRenderer =
-          typedModuleCard != null ||
-          visualPackingCard != null ||
-          visualBoard != null;
+          selection.kind == AhviChatRendererKind.moduleCard ||
+          selection.kind == AhviChatRendererKind.visualPackingChecklist ||
+          selection.kind == AhviChatRendererKind.visualBoard;
       final moduleCards = _moduleCardsFromSheetResponse(response)
           .where((card) =>
               card['type']?.toString() != 'visual_packing_checklist' &&
@@ -2308,63 +2312,7 @@ List<Map<String, dynamic>> _moduleCardsFromSheetResponse(
     Map<String, dynamic> response,
     ) {
   if (!_isModuleResponse(response)) return const [];
-  final data = response['data'] is Map
-      ? Map<String, dynamic>.from(response['data'] as Map)
-      : <String, dynamic>{};
-  final packing = _sheetPackingCardFromResponse(response);
-  if (packing != null) return [packing];
-  final cards = <Map<String, dynamic>>[];
-  for (final value in [
-    response['card'],
-    response['moduleCard'],
-    data['card'],
-    data['moduleCard'],
-  ]) {
-    if (value is Map) cards.add(Map<String, dynamic>.from(value));
-  }
-  for (final value in [response['cards'], data['cards']]) {
-    if (value is List) {
-      cards.addAll(
-        value.whereType<Map>().map((item) => Map<String, dynamic>.from(item)),
-      );
-    }
-  }
-  if (cards.isEmpty) cards.add(response);
-  return cards;
-}
-
-Map<String, dynamic>? _sheetPackingCardFromResponse(
-  Map<String, dynamic> response,
-) {
-  final data = response['data'] is Map
-      ? Map<String, dynamic>.from(response['data'] as Map)
-      : <String, dynamic>{};
-  for (final source in [response, data]) {
-    final sections = source['visual_sections'] ?? source['visualSections'];
-    if (sections is List) {
-      return {
-        'type': 'visual_packing_checklist',
-        'title': source['title'] ?? 'Carry-on Packing Checklist',
-        'subtitle': source['subtitle'] ?? '',
-        'visual_sections': sections,
-        'actions': source['actions'] ??
-            source['quick_actions'] ??
-            response['quick_actions'] ??
-            response['chips'],
-      };
-    }
-  }
-  for (final value in [response['card'], data['card']]) {
-    if (value is Map) {
-      final card = Map<String, dynamic>.from(value);
-      if (card['type']?.toString() == 'visual_packing_checklist' ||
-          card['visual_sections'] is List ||
-          card['visualSections'] is List) {
-        return card;
-      }
-    }
-  }
-  return null;
+  return AhviChatResponseRendererRegistry.moduleCards(response);
 }
 
 class _WardrobeGapPayload {

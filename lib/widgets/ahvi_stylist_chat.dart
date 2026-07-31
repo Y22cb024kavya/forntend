@@ -18,8 +18,11 @@ import 'package:myapp/models/calendar_actions.dart';
 import 'package:myapp/services/backend_service.dart';
 import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
+import 'package:myapp/widgets/ahvi_module_card.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/util/safe_text.dart';
+import 'package:myapp/models/ahvi_visual_board_model.dart';
+import 'package:myapp/widgets/ahvi_visual_board.dart';
 import 'package:myapp/feature/chat/widgets/blocks/ahvi_block_renderer.dart'
     show
     VisualInspirationCard,
@@ -28,6 +31,7 @@ import 'package:myapp/feature/chat/widgets/blocks/ahvi_block_renderer.dart'
     StylistReasoningCard,
     StyleAdviceCard;
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/visual_direction_carousel.dart';
+import 'package:myapp/widgets/chat_cards/visual_packing_checklist_card.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -1472,7 +1476,21 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       if (updatedMemory != null) _runningMemory = updatedMemory.toString();
       final _lsc = _styleBlockFromResponse(response, 'last_style_context');
       if (_lsc != null) _lastStyleContext = _lsc;
-      final moduleCards = _moduleCardsFromSheetResponse(response);
+      final visualPackingCard = _sheetPackingCardFromResponse(response);
+      final typedModuleCard = AhviModuleCard.fromResponse(response);
+      final visualBoard = AhviVisualBoard.isVisualBoard(response)
+          ? AhviVisualBoard.fromJson(response)
+          : null;
+      final suppressGenericRenderer =
+          typedModuleCard != null ||
+          visualPackingCard != null ||
+          visualBoard != null;
+      final moduleCards = _moduleCardsFromSheetResponse(response)
+          .where((card) =>
+              card['type']?.toString() != 'visual_packing_checklist' &&
+              card['visual_sections'] is! List &&
+              card['visualSections'] is! List)
+          .toList(growable: false);
       final boardPayload = _StyleBoardPayload.fromResponse(response);
       final gapPayload = _WardrobeGapPayload.fromResponse(response);
       final visualPayload = _VisualDirectionPayload.fromResponse(response);
@@ -1501,7 +1519,10 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       final stylistReasoning = visualPayload.hasDirections || boardPayload.hasBoards
           ? null
           : rawStylistReasoning;
-      final displayModuleCards = suppressReminderCreationResponse
+      final displayModuleCards = suppressReminderCreationResponse ||
+              suppressGenericRenderer ||
+              typedModuleCard != null ||
+              visualPackingCard != null
           ? const <Map<String, dynamic>>[]
           : moduleCards;
       final adviceBlock = _styleBlockFromResponse(response, 'body_proportion_advice') ??
@@ -1520,6 +1541,9 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
             text: displayText,
             isUser: false,
             moduleCards: displayModuleCards,
+            visualBoard: visualBoard,
+            typedModuleCard: typedModuleCard,
+            visualPackingCard: visualPackingCard,
             visualDirectionPayload: visualPayload.hasDirections
                 ? visualPayload
                 : null,
@@ -2026,6 +2050,9 @@ class _SheetMessage {
   final String? textKey;
   final bool isUser;
   final _StyleBoardPayload? boardPayload;
+  final AhviVisualBoard? visualBoard;
+  final AhviModuleCard? typedModuleCard;
+  final Map<String, dynamic>? visualPackingCard;
   final _WardrobeGapPayload? wardrobeGapPayload;
   final _VisualDirectionPayload? visualDirectionPayload;
   final Map<String, dynamic>? visualInspiration;
@@ -2040,6 +2067,9 @@ class _SheetMessage {
     this.textKey,
     required this.isUser,
     this.boardPayload,
+    this.visualBoard,
+    this.typedModuleCard,
+    this.visualPackingCard,
     this.wardrobeGapPayload,
     this.visualDirectionPayload,
     this.visualInspiration,
@@ -2060,6 +2090,9 @@ class _SheetMessage {
     'textKey': textKey,
     'isUser': isUser,
     'boardPayload': boardPayload?.toJson(),
+    'visualBoard': visualBoard?.toJson(),
+    'typedModuleCard': typedModuleCard?.toJson(),
+    'visualPackingCard': visualPackingCard,
     'wardrobeGapPayload': wardrobeGapPayload?.toJson(),
     'visualDirectionPayload': visualDirectionPayload?.toJson(),
     'visualInspiration': visualInspiration,
@@ -2080,6 +2113,17 @@ class _SheetMessage {
       boardPayload: j['boardPayload'] != null
           ? _StyleBoardPayload.fromJson(asMap(j['boardPayload'])!)
           : null,
+      visualBoard: j['visualBoard'] is Map
+          ? AhviVisualBoard.fromJson(
+              Map<String, dynamic>.from(j['visualBoard'] as Map),
+            )
+          : null,
+      typedModuleCard: j['typedModuleCard'] is Map
+          ? AhviModuleCard.fromJson(
+              Map<String, dynamic>.from(j['typedModuleCard'] as Map),
+            )
+          : null,
+      visualPackingCard: asMap(j['visualPackingCard']),
       wardrobeGapPayload: j['wardrobeGapPayload'] != null
           ? _WardrobeGapPayload.fromJson(asMap(j['wardrobeGapPayload'])!)
           : null,
@@ -2264,17 +2308,63 @@ List<Map<String, dynamic>> _moduleCardsFromSheetResponse(
     Map<String, dynamic> response,
     ) {
   if (!_isModuleResponse(response)) return const [];
+  final data = response['data'] is Map
+      ? Map<String, dynamic>.from(response['data'] as Map)
+      : <String, dynamic>{};
+  final packing = _sheetPackingCardFromResponse(response);
+  if (packing != null) return [packing];
   final cards = <Map<String, dynamic>>[];
-  final card = response['card'];
-  if (card is Map) cards.add(Map<String, dynamic>.from(card));
-  final rawCards = response['cards'];
-  if (rawCards is List) {
-    cards.addAll(
-      rawCards.whereType<Map>().map((item) => Map<String, dynamic>.from(item)),
-    );
+  for (final value in [
+    response['card'],
+    response['moduleCard'],
+    data['card'],
+    data['moduleCard'],
+  ]) {
+    if (value is Map) cards.add(Map<String, dynamic>.from(value));
+  }
+  for (final value in [response['cards'], data['cards']]) {
+    if (value is List) {
+      cards.addAll(
+        value.whereType<Map>().map((item) => Map<String, dynamic>.from(item)),
+      );
+    }
   }
   if (cards.isEmpty) cards.add(response);
   return cards;
+}
+
+Map<String, dynamic>? _sheetPackingCardFromResponse(
+  Map<String, dynamic> response,
+) {
+  final data = response['data'] is Map
+      ? Map<String, dynamic>.from(response['data'] as Map)
+      : <String, dynamic>{};
+  for (final source in [response, data]) {
+    final sections = source['visual_sections'] ?? source['visualSections'];
+    if (sections is List) {
+      return {
+        'type': 'visual_packing_checklist',
+        'title': source['title'] ?? 'Carry-on Packing Checklist',
+        'subtitle': source['subtitle'] ?? '',
+        'visual_sections': sections,
+        'actions': source['actions'] ??
+            source['quick_actions'] ??
+            response['quick_actions'] ??
+            response['chips'],
+      };
+    }
+  }
+  for (final value in [response['card'], data['card']]) {
+    if (value is Map) {
+      final card = Map<String, dynamic>.from(value);
+      if (card['type']?.toString() == 'visual_packing_checklist' ||
+          card['visual_sections'] is List ||
+          card['visualSections'] is List) {
+        return card;
+      }
+    }
+  }
+  return null;
 }
 
 class _WardrobeGapPayload {
@@ -2525,6 +2615,20 @@ class _Bubble extends StatelessWidget {
             payload: msg.wardrobeGapPayload!,
             onPrompt: onPrompt,
           ),
+        if (msg.visualPackingCard != null)
+          VisualPackingChecklistCard(
+            card: msg.visualPackingCard!,
+            onAction: onPrompt,
+          ),
+        if (msg.typedModuleCard != null)
+          AhviModuleCardView(
+            card: msg.typedModuleCard!,
+            onOpen: msg.typedModuleCard!.openKey.isEmpty
+                ? null
+                : () => onPrompt(msg.typedModuleCard!.openKey),
+          ),
+        if (msg.visualBoard != null)
+          AhviVisualBoardView(board: msg.visualBoard!),
         if (msg.moduleCards.isNotEmpty)
           _SheetModuleCards(cards: msg.moduleCards, onPrompt: onPrompt),
         if (msg.adviceBlock != null) StyleAdviceCard(data: msg.adviceBlock!),

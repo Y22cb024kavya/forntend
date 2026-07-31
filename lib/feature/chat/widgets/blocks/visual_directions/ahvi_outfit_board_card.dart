@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -75,8 +76,7 @@ String _shuffleFailureMessage(String code) => switch (code) {
     'This board is missing its styling source. Ask AHVI for a fresh look to continue.',
   'BOARD_NOT_PERSISTED' =>
     'This Style This look can’t be shuffled yet. Ask AHVI for a fresh look to continue.',
-  'SHUFFLE_NOT_AVAILABLE' =>
-    'Shuffle isn’t available for this recommendation.',
+  'SHUFFLE_NOT_AVAILABLE' => 'Shuffle isn’t available for this recommendation.',
   _ =>
     'We couldn’t refresh these pieces. Your current look has been preserved.',
 };
@@ -530,8 +530,7 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
 
     return SizedBox(
       width: widget.width,
-      // 4:5 portrait (Instagram-feed ratio): height = width * 5 / 4.
-      height: widget.width * 5 / 4,
+      height: math.max(460, widget.width * 1.35),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: theme.colorScheme.surface,
@@ -554,6 +553,11 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                   child: Column(
                     children: [
                       _PremiumBoardHeader(mode: mode),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: widget.onTapBoard,
+                        child: OutfitContextStrip(model: _model),
+                      ),
                       Expanded(
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
@@ -562,6 +566,9 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                             padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
                             child: renderable
                                 ? EditorialBoardCanvas(
+                                    key: const ValueKey(
+                                      'editorial-outfit-canvas',
+                                    ),
                                     board: board,
                                     lockedItemIds:
                                         _controller?.state.lockedItemIds ??
@@ -577,11 +584,7 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                           ),
                         ),
                       ),
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: widget.onTapBoard,
-                        child: OutfitContextStrip(model: _model),
-                      ),
+                      OutfitReasoningStrip(model: _model),
                     ],
                   ),
                 ),
@@ -821,7 +824,7 @@ class OutfitContextStrip extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 7),
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 9),
       child: SizedBox(
         width: double.infinity,
         child: Column(
@@ -854,40 +857,80 @@ class OutfitContextStrip extends StatelessWidget {
                 ],
               ),
             ],
-            // Style reason (why_it_works) — was never rendered, so boards
-            // showed no rationale. Show it under the title.
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class OutfitReasoningStrip extends StatelessWidget {
+  final OutfitBoardModel model;
+
+  const OutfitReasoningStrip({super.key, required this.model});
+
+  @override
+  Widget build(BuildContext context) {
+    if (model.intelligenceText.isEmpty && model.stylingTip.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
             if (model.intelligenceText.isNotEmpty) ...[
-              const SizedBox(height: 4),
+            Text(
+              'WHY IT WORKS',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.primary,
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.1,
+              ),
+            ),
+            const SizedBox(height: 2),
               Text(
                 model.intelligenceText,
-                textAlign: TextAlign.left,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              key: const ValueKey('style-why-it-works'),
+              maxLines: 3,
+              overflow: TextOverflow.fade,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: colors.onSurface,
                   fontWeight: FontWeight.w500,
-                  height: 1.22,
+                height: 1.25,
                 ),
               ),
             ],
             if (model.stylingTip.isNotEmpty) ...[
-              const SizedBox(height: 3),
+            const SizedBox(height: 6),
+            Text(
+              'STYLING TIP',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.primary,
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.1,
+              ),
+            ),
+            const SizedBox(height: 2),
               Text(
                 model.stylingTip,
-                textAlign: TextAlign.left,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              key: const ValueKey('style-styling-tip'),
+              maxLines: 2,
+              overflow: TextOverflow.fade,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: colors.onSurfaceVariant,
                   fontStyle: FontStyle.italic,
                   fontWeight: FontWeight.w500,
-                  height: 1.18,
+                height: 1.22,
                 ),
               ),
             ],
           ],
         ),
-      ),
     );
   }
 }
@@ -1089,6 +1132,27 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
   bool _disliked = false;
   BackendService? _backend;
   ScaffoldMessengerState? _messenger;
+
+  String _boardIdentity(OutfitActionBar value) {
+    final boardId = _text(
+      value.direction['board_id'] ?? value.direction['boardId'],
+    );
+    final revision = value.direction['revision']?.toString() ?? '0';
+    final rawTitle = _text(
+      value.direction['title'] ?? value.direction['direction_name'],
+    );
+    return '$boardId|$revision|$rawTitle|${value.primaryLabel}';
+  }
+
+  @override
+  void didUpdateWidget(covariant OutfitActionBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_boardIdentity(oldWidget) == _boardIdentity(widget)) return;
+    _saved = false;
+    _saving = false;
+    _liked = false;
+    _disliked = false;
+  }
 
   @override
   void didChangeDependencies() {
@@ -1467,6 +1531,7 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
     if (_saving || _saved) return;
     final selection = await _showSaveSheet();
     if (selection == null || !mounted) return;
+    final saveIdentity = _boardIdentity(widget);
     setState(() => _saving = true);
     debugPrint('AHVI_BOARD_SAVE_START');
     try {
@@ -1481,6 +1546,7 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
         items: items,
         isFavourite: selection.isFavourite,
       );
+      if (!mounted || saveIdentity != _boardIdentity(widget)) return;
       if (docId == null || docId.isEmpty) {
         throw Exception('appwrite_returned_null_document');
       }
@@ -1672,10 +1738,24 @@ class OutfitBoardModel {
     Map<String, dynamic> direction, {
     required Map<String, dynamic> editorialCover,
   }) {
-    final directionName = _text(
-      direction['direction_name'] ?? direction['directionName'],
+    final rawStrategy = direction['style_strategy'];
+    final strategy = rawStrategy is Map
+        ? Map<String, dynamic>.from(rawStrategy)
+        : const <String, dynamic>{};
+    final strategyTitle = _text(
+      strategy['direction_title'] ?? strategy['directionTitle'],
     );
-    final archetype = _text(direction['archetype']);
+    final directionName = _text(
+      direction['direction_name'] ??
+          direction['directionName'] ??
+          direction['style_direction'],
+    );
+    final archetype = _text(
+      direction['archetype'] ??
+          direction['style_archetype'] ??
+          strategy['archetype'] ??
+          strategy['archetype_name'],
+    );
     final wardrobeMatchRaw =
         direction['wardrobe_match_pct'] ?? direction['wardrobeMatchPct'];
     final int? wardrobeMatchPct = wardrobeMatchRaw is int
@@ -1685,10 +1765,9 @@ class OutfitBoardModel {
               : (wardrobeMatchRaw is String
                     ? int.tryParse(wardrobeMatchRaw)
                     : null));
-    // Title preference: the curated archetype name ("Structured Ease",
-    // "Clean Minimal") is the intended board title. Only fall back to
-    // direction_name / generic title when archetype is absent.
-    final title = archetype.isNotEmpty
+    final title = strategyTitle.isNotEmpty
+        ? strategyTitle
+        : archetype.isNotEmpty
         ? archetype
         : (directionName.isNotEmpty
               ? directionName
@@ -1696,25 +1775,72 @@ class OutfitBoardModel {
     final occasion = _text(
       direction['occasion'] ?? editorialCover['occasion_label'],
     );
+    final dressCode = _text(
+      direction['dress_code'] ??
+          direction['dressCode'] ??
+          strategy['dress_code'],
+    );
+    final weather = _contextText(
+      direction['weather_context'] ??
+          direction['weatherContext'] ??
+          direction['weather'] ??
+          strategy['weather_context'],
+    );
+    final contextLabel = _text(
+      direction['context_used'] ??
+          direction['contextUsed'] ??
+          direction['context_hint'],
+    );
     final adjectives = _strings(direction['adjectives']);
-    final chips = <String>[
-      if (occasion.isNotEmpty) occasion,
-      if (adjectives.isNotEmpty) adjectives.first,
-    ];
-    final intelligenceText = _text(
+    final adjective = adjectives.isEmpty ? '' : adjectives.first;
+    final candidates = <String>[
+      occasion,
+      archetype,
+      dressCode,
+      weather,
+      contextLabel,
+      directionName,
+      adjective,
+    ].where((value) => value.trim().isNotEmpty).toList(growable: false);
+    final hasMeaningfulContext = candidates.any(
+      (value) =>
+          !_isGenericContext(value) &&
+          value.trim().toLowerCase() != title.trim().toLowerCase(),
+    );
+    final seenChips = <String>{};
+    final chips = candidates
+        .where((value) {
+          final normalized = value.trim().toLowerCase();
+          if (normalized == title.trim().toLowerCase()) return false;
+          if (hasMeaningfulContext && _isGenericContext(value)) return false;
+          return seenChips.add(normalized);
+        })
+        .take(3)
+        .toList(growable: false);
+    final intelligenceText = _completeDisplayThought(
+      _text(
       direction['short_note'] ??
           direction['shortNote'] ??
           direction['why_it_works'] ??
           direction['whyItWorks'] ??
           direction['why_this_works'] ??
           direction['explanation'] ??
+            direction['reason'] ??
+            direction['description'] ??
+            strategy['why_it_works'] ??
+            strategy['reason'] ??
           editorialCover['summary'],
+      ),
     );
-    final stylingTip = _text(
+    final stylingTip = _completeDisplayThought(
+      _text(
       direction['styling_tip'] ??
           direction['style_tip'] ??
           direction['style_note'] ??
-          direction['styleNote'],
+            direction['styleNote'] ??
+            direction['styling_note'] ??
+            strategy['styling_tip'],
+      ),
     );
 
     // Authoritative path: when the backend sends itemized board_items, render
@@ -2346,6 +2472,34 @@ int _roleRank(OutfitRole role) {
 String _text(dynamic value, {String fallback = ''}) {
   final text = value?.toString().trim() ?? '';
   return text.isEmpty ? fallback : text;
+}
+
+String _contextText(dynamic value) {
+  if (value is Map) {
+    return _text(
+      value['label'] ??
+          value['summary'] ??
+          value['condition'] ??
+          value['description'],
+    );
+  }
+  return _text(value);
+}
+
+bool _isGenericContext(String value) {
+  return const {
+    'daily',
+    'everyday',
+    'general',
+    'default',
+  }.contains(value.trim().toLowerCase());
+}
+
+String _completeDisplayThought(String value) {
+  final text = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (text.length <= 220) return text;
+  final sentence = RegExp(r'^.{24,220}?[.!?](?:\s|$)').firstMatch(text);
+  return sentence?.group(0)?.trim() ?? text;
 }
 
 List<String> _strings(dynamic value) {

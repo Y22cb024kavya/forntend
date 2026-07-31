@@ -52,7 +52,7 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   // so parseAhviResponse → AhviBlockRenderer → VisualDirectionCarousel →
   // AhviOutfitBoardCard renders them exactly like normal directions. Only runs
   // when there are no normal visual_directions, so that path is untouched.
-  if (visualDirections.isEmpty) {
+  if (visualDirections.isEmpty && !_looksLikeModuleResponse(response, data)) {
     final styleDirections = _extractStyleThisDirections(response, data);
     if (styleDirections.isNotEmpty) {
       final anchor = _anchorItemMap(response, data);
@@ -61,8 +61,14 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
       );
       var index = 0;
       visualDirections = styleDirections
-          .map((dir) =>
-              _styleDirectionToCanonical(dir, anchor, index++, responsePolicy))
+          .map(
+            (dir) => _styleDirectionToCanonical(
+              dir,
+              anchor,
+              index++,
+              responsePolicy,
+            ),
+          )
           .toList();
       debugPrint(
         'AHVI_STYLE_DIRECTION_ADAPTER source_field=style_directions '
@@ -76,7 +82,7 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   // style_boards (e.g. "use my wardrobe" / weak_occasion_match), convert them
   // to the visual_directions shape so the look is consistent everywhere.
   var convertedWardrobeBoards = false;
-  if (visualDirections.isEmpty) {
+  if (visualDirections.isEmpty && !_looksLikeModuleResponse(response, data)) {
     final wardrobeBoards = _extractStyleBoards(response, data);
     if (wardrobeBoards.isNotEmpty) {
       visualDirections = wardrobeBoards.map(_styleBoardToDirection).toList();
@@ -373,13 +379,12 @@ Map<String, dynamic> _styleDirectionToCanonical(
 ) {
   final anchorId = _itemId(anchorItem);
   final items = _mapList(
-    direction['items'] ??
-        direction['board_items'] ??
-        direction['boardItems'],
+    direction['items'] ?? direction['board_items'] ?? direction['boardItems'],
   );
   final hasAnchor =
       anchorId.isNotEmpty && items.any((it) => _itemId(it) == anchorId);
-  final anchorCatalog = anchorItem['normalized_url'] ??
+  final anchorCatalog =
+      anchorItem['normalized_url'] ??
       anchorItem['normalizedUrl'] ??
       anchorItem['resolved_image_url'];
   // Merge the anchor's catalog image onto its board item so the board renders
@@ -396,20 +401,22 @@ Map<String, dynamic> _styleDirectionToCanonical(
       : items.map(withAnchorCatalog).toList();
 
   final existingBoardId = (direction['board_id'] ?? '').toString().trim();
-  final boardId = (existingBoardId.isNotEmpty &&
+  final boardId =
+      (existingBoardId.isNotEmpty &&
           !existingBoardId.toLowerCase().startsWith('outfit_card_'))
       ? existingBoardId
       : (anchorId.isNotEmpty
           ? 'style_this_${anchorId}_$index'
           : 'style_this_$index');
-  final revision = (direction['revision'] is num &&
-          (direction['revision'] as num) >= 1)
+  final revision =
+      (direction['revision'] is num && (direction['revision'] as num) >= 1)
       ? direction['revision']
       : 1;
 
   // Resolution order: direction-level → response-level → wardrobe fallback.
   // Never overwrite an explicit style_asset / mixed policy with wardrobe.
-  final sourcePolicy = _validSourcePolicy(direction['source_policy']) ??
+  final sourcePolicy =
+      _validSourcePolicy(direction['source_policy']) ??
       responsePolicy ??
       'wardrobe';
 
@@ -426,8 +433,7 @@ Map<String, dynamic> _styleDirectionToCanonical(
   };
   if (anchorId.isNotEmpty) {
     out['anchor_item_id'] = anchorId;
-    out['originating_item_id'] =
-        direction['originating_item_id'] ?? anchorId;
+    out['originating_item_id'] = direction['originating_item_id'] ?? anchorId;
   }
   return out;
 }
@@ -462,12 +468,18 @@ Map<String, dynamic> _styleBoardToDirection(Map<String, dynamic> board) {
   final boardItems = items
       .map((it) {
         final image =
-            it['image_url'] ??
-            it['imageUrl'] ??
+            it['asset_cutout_url'] ??
+            it['cutout_url'] ??
+            it['asset_masked_url'] ??
+            it['masked_url'] ??
+            it['transparent_url'] ??
+            it['processed_url'] ??
             it['normalized_url'] ??
             it['normalizedUrl'] ??
-            it['masked_url'] ??
-            it['maskedUrl'];
+            it['board_image_url'] ??
+            it['boardImageUrl'] ??
+            it['image_url'] ??
+            it['imageUrl'];
         return <String, dynamic>{
           ...it,
           'name': it['name'] ?? it['title'] ?? it['label'],
@@ -479,6 +491,23 @@ Map<String, dynamic> _styleBoardToDirection(Map<String, dynamic> board) {
       })
       .where((it) => (it['image_url']?.toString().trim().isNotEmpty ?? false))
       .toList();
+  final compositeImage =
+      board['board_image_url'] ??
+      board['boardImageUrl'] ??
+      board['image_url'] ??
+      board['imageUrl'];
+  if (boardItems.isEmpty &&
+      compositeImage?.toString().trim().isNotEmpty == true) {
+    boardItems.add({
+      'item_id': '${board['board_id'] ?? board['id'] ?? 'rendered'}-composite',
+      'name': board['title'] ?? board['name'] ?? 'Rendered outfit',
+      'role': 'dress',
+      'slot': 'dress',
+      'source': 'style_asset',
+      'image_url': compositeImage,
+      'locked': false,
+    });
+  }
   return <String, dynamic>{
     ...board,
     'direction_name': board['title'] ?? board['name'],
@@ -496,12 +525,14 @@ List<Map<String, dynamic>> _extractStyleBoards(
   Map<String, dynamic> data,
 ) {
   for (final value in [
-    response['style_boards'],
-    response['rendered_boards'],
-    response['outfits'],
-    data['style_boards'],
     data['rendered_boards'],
+    response['rendered_boards'],
+    response['style_boards'],
+    data['style_boards'],
+    response['cards'],
+    data['cards'],
     data['outfits'],
+    response['outfits'],
   ]) {
     final boards = _mapList(value);
     if (boards.isNotEmpty) return boards;
@@ -662,7 +693,9 @@ bool _looksLikeModuleResponse(
       .toString()
       .toLowerCase();
   final responseType =
-      (response['response_type'] ?? data['response_type'] ?? '').toString();
+      (response['response_type'] ?? data['response_type'] ?? '')
+          .toString()
+          .toLowerCase();
   final intent = (response['intent'] ?? data['intent'] ?? '')
       .toString()
       .toLowerCase();
@@ -682,8 +715,12 @@ bool _looksLikeModuleResponse(
       module == 'planner' ||
       module == 'calendar' ||
       module == 'bills' ||
+      module == 'diet' ||
+      module == 'fitness' ||
+      module == 'medi' ||
       module == 'medicines' ||
       module == 'meals' ||
+      module == 'home' ||
       module == 'workout' ||
       module == 'skincare';
 }

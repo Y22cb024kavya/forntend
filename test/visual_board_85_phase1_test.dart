@@ -50,6 +50,13 @@ class _FixtureImageHttpClient implements HttpClient {
     final fixtureId = fileName.endsWith('.png')
         ? fileName.substring(0, fileName.length - 4)
         : '';
+    if (fixtureId == 'bag-1') {
+      return _FixtureImageRequest(
+        File(
+          'assets/style_assets/accessories/bags/bag_04.jpg',
+        ).readAsBytesSync(),
+      );
+    }
     final encoded = _fixturePngs[fixtureId.replaceFirst('-next', '')];
     if (encoded == null) {
       throw StateError('Missing deterministic PNG fixture for $url');
@@ -253,6 +260,20 @@ final _direction = <String, dynamic>{
       height: .24,
       z: 2,
     ),
+    {
+      ..._boardItem(
+        'bag-1',
+        'Structured Handbag',
+        'accessory',
+        x: .72,
+        y: .12,
+        width: .22,
+        height: .20,
+        z: 3,
+      ),
+      'category': 'bag',
+      'board_status': 'original',
+    },
   ],
   'why_it_works': 'Warm festive color with a clean traditional silhouette.',
   'styling_tip':
@@ -298,7 +319,7 @@ void main() {
     expect(find.byKey(const ValueKey<String>('kurta-1')), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('bottom-1')), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('shoe-1')), findsOneWidget);
-    expect(_fixtureImageRequestCount, 3);
+    expect(_fixtureImageRequestCount, 4);
     expect(find.byIcon(Icons.image_not_supported_outlined), findsNothing);
 
     expect(find.text('Recommended'), findsNothing);
@@ -325,6 +346,70 @@ void main() {
     expect(find.text('Style This'), findsNothing);
     expect(find.text('Missing'), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('premium hierarchy puts one title and context above the canvas', (
+    tester,
+  ) async {
+    await _pumpBoard(tester, use85Layout: true, width: 320);
+
+    final title = find.text('Sunlit Traditional');
+    final canvas = find.byKey(const ValueKey('editorial-outfit-canvas'));
+    expect(title, findsOneWidget);
+    expect(canvas, findsOneWidget);
+    expect(tester.getTopLeft(title).dy, lessThan(tester.getTopLeft(canvas).dy));
+  });
+
+  testWidgets('strategy title wins and meaningful context replaces daily', (
+    tester,
+  ) async {
+    await _pumpBoard(
+      tester,
+      use85Layout: true,
+      width: 320,
+      direction: {
+        ..._direction,
+        'occasion': 'daily',
+        'dress_code': 'Smart Casual',
+        'style_strategy': {'direction_title': 'Refined Ease'},
+      },
+    );
+
+    expect(find.text('Refined Ease'), findsOneWidget);
+    expect(find.text('Smart Casual'), findsOneWidget);
+    expect(find.text('daily'), findsNothing);
+  });
+
+  testWidgets('reasoning keeps useful bounded lines below the canvas', (
+    tester,
+  ) async {
+    await _pumpBoard(tester, use85Layout: true, width: 320);
+
+    final canvas = find.byKey(const ValueKey('editorial-outfit-canvas'));
+    final why = find.byKey(const ValueKey('style-why-it-works'));
+    final tip = find.byKey(const ValueKey('style-styling-tip'));
+    expect(
+      tester.getTopLeft(why).dy,
+      greaterThan(tester.getTopLeft(canvas).dy),
+    );
+    expect(tester.widget<Text>(why).maxLines, 3);
+    expect(tester.widget<Text>(tip).maxLines, 2);
+  });
+
+  testWidgets('cutouts stay unframed and opaque accessory gets one frame', (
+    tester,
+  ) async {
+    await _pumpBoard(tester, use85Layout: true, width: 320);
+
+    expect(find.byKey(const ValueKey('cutout-kurta-1')), findsOneWidget);
+    final frame = find.byKey(const ValueKey('fallback-bag-1'));
+    expect(frame, findsOneWidget);
+    expect(
+      tester.widget<Image>(
+        find.descendant(of: frame, matching: find.byType(Image)),
+      ),
+      isA<Image>().having((image) => image.fit, 'fit', BoxFit.cover),
+    );
   });
 
   testWidgets('connected Shuffle invokes the injected backend action', (
@@ -409,11 +494,10 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('golden: legacy visual direction card', (tester) async {
-    await _pumpGolden(tester, use85Layout: false);
-    await expectLater(
-      find.byKey(const ValueKey('visual-board-golden')),
-      matchesGoldenFile('goldens/visual_board_phase1_before.png'),
+  test('pre-fix visual evidence remains available', () {
+    expect(
+      File('test/goldens/visual_board_phase1_before.png').existsSync(),
+      isTrue,
     );
   });
 

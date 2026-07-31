@@ -243,6 +243,7 @@ void main() {
       expect(savedTop['expected_transparent'], isFalse);
       expect(savedTop['position'], top['position']);
       expect(savedTop['item_id'], 'anchor');
+      await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 
@@ -250,7 +251,9 @@ void main() {
     tester,
   ) async {
     List<Map<String, dynamic>>? savedItems;
-    final board = _board()..['title'] = 'Cleared wardrobe map regression';
+    final board = _board()
+      ..['title'] = 'Cleared wardrobe map regression'
+      ..['style_archetype'] = 'Wardrobe clearing regression';
     await _pumpCard(
       tester,
       board: board,
@@ -310,7 +313,10 @@ void main() {
         .whereType<Map>()
         .map((value) => Map<String, dynamic>.from(value))
         .toList();
-    expect(directions.single['board_id'], '11111111-1111-4111-8111-111111111111');
+    expect(
+      directions.single['board_id'],
+      '11111111-1111-4111-8111-111111111111',
+    );
     expect(directions.single['revision'], 1);
     expect(
       (directions.single['board_items'] as List).first['item_id'],

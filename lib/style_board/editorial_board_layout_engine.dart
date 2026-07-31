@@ -189,79 +189,62 @@ class EditorialBoardLayoutEngine {
         ),
       );
     } else {
-      // Row-band flat-lay: top, bottom and footwear each own a fixed,
-      // non-overlapping vertical band. A band's item is capped to its band's
-      // height, so nothing can ever grow into the next row — the earlier
-      // "shirt hides jeans" bug was a shared y-range, not just a z-order slip.
-      const topBandY = 0.02, topBandH = 0.30;
-      const botBandY = 0.37, botBandH = 0.32;
-
-      // Top stays narrower than full width so the accessory column (right of
-      // it, same band) never has to overlap it.
-      final topW =
-          width *
-          switch (itemCount) {
-            3 => 0.62,
-            4 => 0.58,
-            _ => 0.56,
-          };
+      // One editorial composition, not three product rows: the top leads from
+      // upper-left, the trousers form a vertical counterweight, and footwear
+      // closes the diagonal near the bottom.
+      final topW = width * (itemCount <= 4 ? 0.35 : 0.33);
       placements.add(
         BoardItemPlacement(
           item: top,
-          x: width * 0.04,
-          y: height * topBandY,
+          x: width * 0.08,
+          y: height * 0.07,
           width: topW,
-          height: _boxHeight(BoardItemRole.top, topW, height * topBandH),
+          height: _boxHeight(BoardItemRole.top, topW, height * 0.43),
           rotation: 0,
           zIndex: 2,
         ),
       );
-      final botW = width * 0.82;
+      final botW = width * 0.32;
       placements.add(
         BoardItemPlacement(
           item: bottom,
-          x: width * 0.09,
-          y: height * botBandY,
+          x: width * 0.45,
+          y: height * 0.25,
           width: botW,
-          height: _boxHeight(BoardItemRole.bottom, botW, height * botBandH),
+          height: _boxHeight(BoardItemRole.bottom, botW, height * 0.53),
           rotation: 0,
           zIndex: 1,
         ),
       );
     }
 
-    // Footwear owns the bottom band, fully clear of the trousers above it.
-    const footBandY = 0.73, footBandH = 0.17;
-    final footW =
-        width *
-        switch (itemCount) {
-          3 => 0.60,
-          4 => 0.54,
-          _ => 0.50,
-        };
+    final footW = width * (itemCount <= 4 ? 0.36 : 0.32);
     placements.add(
       BoardItemPlacement(
         item: footwear,
-        x: (width - footW) / 2,
-        y: height * footBandY,
+        x: width * 0.11,
+        y: height * 0.68,
         width: footW,
-        height: _boxHeight(BoardItemRole.footwear, footW, height * footBandH),
+        height: _boxHeight(BoardItemRole.footwear, footW, height * 0.22),
         rotation: 0,
         zIndex: 3,
       ),
     );
 
     for (var i = 0; i < math.min(accessories.length, 2); i++) {
-      // Accessory column: clear of the top garment (which stops at ~0.66w)
-      // and confined to the top band, so it never touches bottom/footwear.
-      final accW = width * (accessories.length == 1 ? 0.30 : 0.26);
+      final bag = _isBagAccessory(accessories[i]);
+      final accW = width * (bag ? 0.27 : 0.19);
       placements.add(
         BoardItemPlacement(
           item: accessories[i],
-          x: width * 0.68,
-          y: height * (0.02 + i * 0.16),
+          x: width * (bag ? 0.69 : 0.75),
+          y: height * (0.08 + i * 0.22),
           width: accW,
-          height: _boxHeight(BoardItemRole.accessory, accW, height * 0.14),
+          height: _boxHeight(
+            BoardItemRole.accessory,
+            accW,
+            height * (bag ? 0.25 : 0.17),
+          ),
           rotation: 0,
           zIndex: 4,
         ),
@@ -272,6 +255,13 @@ class EditorialBoardLayoutEngine {
       mode: EditorialLayoutMode.classicThreePlusAccessory,
       placements: _sorted(placements),
     );
+  }
+
+  static bool _isBagAccessory(StyleBoardItem item) {
+    final value = '${item.category} ${item.name}'.toLowerCase();
+    return RegExp(
+      r'\b(bag|handbag|tote|clutch|purse|satchel|backpack)\b',
+    ).hasMatch(value);
   }
 
   static EditorialLayoutResult _dressFocused({

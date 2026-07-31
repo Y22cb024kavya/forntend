@@ -69,6 +69,26 @@ Future<void> _confirmSave(
 }
 
 void main() {
+  testWidgets('feedback state survives an unchanged semantic board rebuild', (
+    tester,
+  ) async {
+    OutfitActionBar bar(Map<String, dynamic> direction) => OutfitActionBar(
+      direction: direction,
+      editorialCover: const {},
+      primaryLabel: 'Office Look',
+      missingName: '',
+      shareBoundaryKey: GlobalKey(),
+    );
+    await _pumpBar(tester, bar(_direction()));
+    await tester.tap(find.text('Like'));
+    await tester.pump();
+    expect(find.byIcon(Icons.thumb_up_alt_rounded), findsOneWidget);
+
+    await _pumpBar(tester, bar({..._direction()}));
+    await tester.pump();
+    expect(find.byIcon(Icons.thumb_up_alt_rounded), findsOneWidget);
+  });
+
   testWidgets(
     'Save invokes callback, persists the rendered board, works without a board contract',
     (tester) async {

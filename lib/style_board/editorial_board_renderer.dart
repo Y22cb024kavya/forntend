@@ -4,6 +4,8 @@ import 'board_models.dart';
 import 'editorial_board_layout_engine.dart';
 import 'editorial_board_widgets.dart';
 
+final Set<String> _styleRenderDiagnosticKeys = <String>{};
+
 /// Inner canvas only: no save/share bar, no item boxes.
 /// Put this inside the existing AHVI board card body.
 class EditorialBoardCanvas extends StatelessWidget {
@@ -38,26 +40,36 @@ class EditorialBoardCanvas extends StatelessWidget {
             height: h,
           );
 
-          // Style This boards ship backend-authored positions that overlap
-          // (ring over shirt, shoes over trousers). Ignore them and use the
-          // deterministic engine layout. Recommendation boards keep their
-          // curated backend positions.
-          final preferEngine = board.scenario == 'style_this';
-
-          final placements = generated.placements.map((placement) {
-            final position = placement.item.position;
-            if (preferEngine || position == null || !position.isUsable) {
-              return placement;
-            }
-            return placement.copyWith(
-              x: position.x! * w,
-              y: position.y! * h,
-              width: position.width! * w,
-              height: position.height! * h,
-              rotation: 0.0,
-              zIndex: position.z ?? placement.zIndex,
+          // Every Style surface uses the same role-aware composition. Backend
+          // positions remain part of the persisted contract, but they must not
+          // turn recommendation cards into product rows while Style This uses
+          // an editorial layout.
+          final placements = generated.placements;
+          final boardKey =
+              '${board.boardId}|${board.revision}|${generated.mode.name}';
+          if (_styleRenderDiagnosticKeys.add(boardKey)) {
+            debugPrint(
+              'AHVI_STYLE_BOARD_RENDER board_id=${board.boardId} '
+              'revision=${board.revision} mode=${generated.mode.name} '
+              'item_count=${placements.length}',
             );
-          }).toList()..sort((a, b) => a.zIndex.compareTo(b.zIndex));
+            for (final placement in placements) {
+              final image = placement.item.resolveImage(
+                surface: 'style_board_bounds',
+            );
+              debugPrint(
+                'AHVI_STYLE_ITEM_IMAGE_SELECTED '
+                'item_id=${placement.item.itemId} '
+                'role=${placement.item.role.name} '
+                'category=${placement.item.category} '
+                'selected_field=${image.field} '
+                'source_kind=${image.sourceKind} '
+                'expected_transparency=${image.expectedTransparent} '
+                'bounds=${placement.x.toStringAsFixed(1)},${placement.y.toStringAsFixed(1)},'
+                '${placement.width.toStringAsFixed(1)},${placement.height.toStringAsFixed(1)}',
+              );
+            }
+          }
           return Stack(
             clipBehavior: Clip.hardEdge,
             children: [

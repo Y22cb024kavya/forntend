@@ -468,16 +468,8 @@ class SavedBoardCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AspectRatio(
-              aspectRatio: 1,
-              child: SavedBoardThumb(
-                source: source,
-                wardrobeById: wardrobeById,
-                radius: BorderRadius.zero,
-              ),
-            ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -495,6 +487,7 @@ class SavedBoardCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     title,
+                    key: const ValueKey('saved-board-title'),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -504,7 +497,23 @@ class SavedBoardCard extends StatelessWidget {
                       height: 1.2,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                ],
+              ),
+            ),
+            AspectRatio(
+              key: const ValueKey('saved-board-canvas'),
+              aspectRatio: 1,
+              child: SavedBoardThumb(
+                source: source,
+                wardrobeById: wardrobeById,
+                radius: BorderRadius.zero,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
                     description,
                     maxLines: 2,

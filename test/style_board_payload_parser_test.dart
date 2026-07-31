@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:myapp/feature/chat/models/ahvi_response_block.dart';
+import 'package:myapp/feature/chat/services/ahvi_block_response_parser.dart';
 import 'package:myapp/widgets/ahvi_stylist_chat.dart';
 
 Map<String, dynamic> _board(String id) => {
@@ -99,6 +101,32 @@ void main() {
   });
 
   group('Style Me renderer precedence', () {
+    test('generated Style aliases use canonical visual directions', () {
+      for (final response in [
+        {
+          'data': {
+            'rendered_boards': [_board('nested-rendered')],
+          },
+        },
+        {
+          'rendered_boards': [_board('rendered')],
+        },
+        {
+          'style_boards': [_board('style')],
+        },
+        {
+          'data': {
+            'outfits': [_board('outfit')],
+          },
+        },
+      ]) {
+        expect(
+          styleResponseRendererKindForTesting(response),
+          'visual_directions',
+        );
+      }
+    });
+
     test('visual directions take precedence over generated boards', () {
       expect(
         styleResponseRendererKindForTesting({
@@ -129,6 +157,45 @@ void main() {
         }),
         'text',
       );
+    });
+
+    test('module card aliases never become Style directions', () {
+      for (final module in ['diet', 'fitness', 'medi']) {
+        expect(
+          styleResponseRendererKindForTesting({
+            'module': module,
+            'cards': [
+              {'type': 'module_card', 'title': '$module card'},
+            ],
+          }),
+          'text',
+        );
+      }
+    });
+
+    test('composite rendered board retains a canonical visual item', () {
+      final response = {
+        'rendered_boards': [
+          {
+            'board_id': 'composite-1',
+            'title': 'Rendered Look',
+            'board_image_url': 'https://example.test/rendered.png',
+          },
+        ],
+      };
+      final parsed = parseAhviResponse(response);
+      final block = parsed.blocks.singleWhere(
+        (item) => item.type == AhviBlockType.visualDirections,
+      );
+      final direction = (block.data['directions'] as List).single as Map;
+      final item = (direction['board_items'] as List).single as Map;
+
+      expect(
+        styleResponseRendererKindForTesting(response),
+        'visual_directions',
+      );
+      expect(item['role'], 'dress');
+      expect(item['image_url'], 'https://example.test/rendered.png');
     });
   });
 }

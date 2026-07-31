@@ -89,15 +89,9 @@ void main() {
       double widthFor(BoardItemRole role) =>
           placements.singleWhere((p) => p.item.role == role).width / w;
 
-      // Row-band flat-lay: each role owns a fixed, non-overlapping vertical
-      // band, so bottom (a full-width band) is now the widest piece.
-      expect(widthFor(BoardItemRole.top), inInclusiveRange(.60, .64));
-      expect(widthFor(BoardItemRole.bottom), inInclusiveRange(.80, .84));
-      expect(widthFor(BoardItemRole.footwear), inInclusiveRange(.58, .62));
-      expect(
-        widthFor(BoardItemRole.bottom),
-        greaterThan(widthFor(BoardItemRole.top)),
-      );
+      expect(widthFor(BoardItemRole.top), inInclusiveRange(.36, .40));
+      expect(widthFor(BoardItemRole.bottom), inInclusiveRange(.33, .37));
+      expect(widthFor(BoardItemRole.footwear), inInclusiveRange(.37, .41));
 
       double topOf(BoardItemRole role) =>
           placements.singleWhere((p) => p.item.role == role).y / h;
@@ -106,13 +100,24 @@ void main() {
         return (p.y + p.height) / h;
       }
 
-      // The core fix under test: bands never overlap vertically, so no item
-      // can visually hide another regardless of aspect ratio.
-      expect(bottomOf(BoardItemRole.top), lessThan(topOf(BoardItemRole.bottom)));
+      // Garments form one diagonal composition rather than isolated rows.
       expect(
-        bottomOf(BoardItemRole.bottom),
-        lessThan(topOf(BoardItemRole.footwear)),
+        topOf(BoardItemRole.bottom),
+        lessThan(bottomOf(BoardItemRole.top)),
       );
+      expect(
+        topOf(BoardItemRole.footwear) - bottomOf(BoardItemRole.bottom),
+        lessThan(.03),
+      );
+      for (final placement in placements) {
+        final expectedRatio = switch (placement.item.role) {
+          BoardItemRole.top => 1.18,
+          BoardItemRole.bottom => 1.55,
+          BoardItemRole.footwear => .62,
+          _ => placement.height / placement.width,
+        };
+        expect(placement.height / placement.width, closeTo(expectedRatio, .02));
+      }
     });
 
     test('four- and five-piece layouts preserve the garment hierarchy', () {
@@ -148,26 +153,62 @@ void main() {
       double roleWidth(List<BoardItemPlacement> items, BoardItemRole role) =>
           items.singleWhere((p) => p.item.role == role).width / w;
 
-      expect(roleWidth(four, BoardItemRole.top), inInclusiveRange(.56, .60));
-      // Bottom's band is fixed-width regardless of accessory count.
-      expect(roleWidth(four, BoardItemRole.bottom), inInclusiveRange(.80, .84));
+      expect(roleWidth(four, BoardItemRole.top), inInclusiveRange(.34, .36));
+      expect(roleWidth(four, BoardItemRole.bottom), inInclusiveRange(.31, .33));
       expect(
         roleWidth(four, BoardItemRole.footwear),
-        inInclusiveRange(.52, .56),
+        inInclusiveRange(.35, .37),
       );
-      expect(roleWidth(five, BoardItemRole.top), inInclusiveRange(.54, .58));
-      expect(roleWidth(five, BoardItemRole.bottom), inInclusiveRange(.80, .84));
+      expect(roleWidth(five, BoardItemRole.top), inInclusiveRange(.32, .34));
+      expect(roleWidth(five, BoardItemRole.bottom), inInclusiveRange(.31, .33));
       expect(
         roleWidth(five, BoardItemRole.footwear),
-        inInclusiveRange(.48, .52),
+        inInclusiveRange(.31, .33),
       );
       final accessoryWidths = five
           .where((p) => p.item.role == BoardItemRole.accessory)
           .map((p) => p.width / w)
           .toList();
-      // Two accessories share a compact size, both kept off the garments.
       expect(accessoryWidths, hasLength(2));
-      expect(accessoryWidths, everyElement(closeTo(.26, .01)));
+      expect(accessoryWidths, everyElement(closeTo(.19, .01)));
+    });
+
+    test('bag is a medium support while small accessories stay accents', () {
+      final board = StyleBoardData(
+        boardId: 'accessory-hierarchy',
+        revision: 1,
+        title: 'Accessory hierarchy',
+        items: [
+          _item(BoardItemRole.top),
+          _item(BoardItemRole.bottom),
+          _item(BoardItemRole.footwear),
+          StyleBoardItem(
+            id: 'bag-1',
+            name: 'Leather handbag',
+            imageUrl: 'https://example.test/bag.png',
+            category: 'bag',
+            role: BoardItemRole.accessory,
+          ),
+          StyleBoardItem(
+            id: 'watch-1',
+            name: 'Watch',
+            imageUrl: 'https://example.test/watch.png',
+            category: 'watch',
+            role: BoardItemRole.accessory,
+          ),
+        ],
+      );
+      final placements = EditorialBoardLayoutEngine.resolve(
+        board,
+        width: w,
+        height: h,
+      ).placements;
+      final bag = placements.singleWhere((p) => p.item.id == 'bag-1');
+      final watch = placements.singleWhere((p) => p.item.id == 'watch-1');
+
+      expect(bag.width / w, inInclusiveRange(.26, .28));
+      expect(watch.width / w, inInclusiveRange(.18, .20));
+      expect(bag.width, greaterThan(watch.width));
     });
 
     test('dress-led boards use the dress as the visual hero', () {

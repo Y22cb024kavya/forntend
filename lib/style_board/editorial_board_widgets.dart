@@ -56,9 +56,10 @@ class EditorialBoardItem extends StatelessWidget {
     final resolved = item.resolveImage(surface: 'style_board_render');
     final imageUrl = resolved.url ?? '';
     final shouldFrame = resolved.requiresFrame;
+    final frameAccessory = shouldFrame && item.role == BoardItemRole.accessory;
     final garment = Image.network(
       imageUrl,
-      fit: BoxFit.contain,
+      fit: frameAccessory ? BoxFit.cover : BoxFit.contain,
       alignment: Alignment.center,
       filterQuality: FilterQuality.high,
       errorBuilder: (_, _, _) => const Center(
@@ -76,8 +77,12 @@ class EditorialBoardItem extends StatelessWidget {
               key: item.hasStableIdentity
                   ? ValueKey<String>('fallback-${item.itemId}')
                   : null,
-              padding: const EdgeInsets.all(5),
+              padding: EdgeInsets.all(frameAccessory ? 2 : 5),
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
               color: colors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(8),
+              ),
               child: garment,
             )
           : Stack(

@@ -26,5 +26,13 @@ void main() {
 
     expect(wardrobe, contains('item.worn = previousWorn'));
     expect(wardrobe, contains('Wear was not logged. Please try again.'));
+    expect(wardrobe, isNot(contains('Logged a wear for')));
+  });
+
+  test('async catalog copy describes best-effort processing', () {
+    final wardrobe = source('lib/wardrobe.dart');
+
+    expect(wardrobe, contains("saveResult['catalog_scheduled_count']"));
+    expect(wardrobe, contains('best-effort basis'));
   });
 }

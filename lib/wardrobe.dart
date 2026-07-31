@@ -566,7 +566,6 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
     } finally {
       _wearLoggingIds.remove(item.id);
     }
-    if (mounted) _showToast('Logged a wear for "${item.name}"');
     return true;
   }
 

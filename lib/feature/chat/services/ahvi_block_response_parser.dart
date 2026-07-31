@@ -381,24 +381,44 @@ Map<String, dynamic> _styleDirectionToCanonical(
   final items = _mapList(
     direction['items'] ?? direction['board_items'] ?? direction['boardItems'],
   );
-  final hasAnchor =
-      anchorId.isNotEmpty && items.any((it) => _itemId(it) == anchorId);
+
   final anchorCatalog =
       anchorItem['normalized_url'] ??
       anchorItem['normalizedUrl'] ??
       anchorItem['resolved_image_url'];
-  // Merge the anchor's catalog image onto its board item so the board renders
-  // the catalog, not the raw crop: the backend's direction items carry the
-  // anchor without its normalized/catalog url.
-  Map<String, dynamic> withAnchorCatalog(Map<String, dynamic> it) {
-    if (anchorCatalog == null || _itemId(it) != anchorId) return it;
-    if (it['normalized_url'] != null || it['normalizedUrl'] != null) return it;
-    return {...it, 'normalized_url': anchorCatalog};
-  }
 
-  final boardItems = (!hasAnchor && anchorItem.isNotEmpty)
-      ? <Map<String, dynamic>>[anchorItem, ...items]
-      : items.map(withAnchorCatalog).toList();
+  final anchorIndex = anchorId.isEmpty
+      ? -1
+      : items.indexWhere((item) => _itemId(item) == anchorId);
+
+  final backendAnchor = anchorIndex >= 0
+      ? items[anchorIndex]
+      : <String, dynamic>{};
+
+  final supportingItems = <Map<String, dynamic>>[
+    for (var itemIndex = 0; itemIndex < items.length; itemIndex++)
+      if (itemIndex != anchorIndex) items[itemIndex],
+  ];
+
+  final canonicalAnchor = <String, dynamic>{
+    ...backendAnchor,
+    ...anchorItem,
+    if (anchorId.isNotEmpty) 'item_id': anchorId,
+    if (anchorId.isNotEmpty) 'id': anchorId,
+    if (anchorCatalog != null) 'normalized_url': anchorCatalog,
+    'anchor': true,
+    'locked': true,
+    'source': 'wardrobe',
+    'source_policy': 'wardrobe',
+    'scenario': 'style_this',
+    'interaction_mode': 'style_this',
+  };
+
+  // Keep the selected garment first. A downstream visual item cap must never
+  // remove the garment that originated the Style This request.
+  final boardItems = anchorId.isNotEmpty && anchorItem.isNotEmpty
+      ? <Map<String, dynamic>>[canonicalAnchor, ...supportingItems]
+      : items;
 
   final existingBoardId = (direction['board_id'] ?? '').toString().trim();
   final boardId =

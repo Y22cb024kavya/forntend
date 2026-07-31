@@ -245,9 +245,9 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
       final fallbackAnchor = parsed.board.items
           .where((item) => item.hasStableIdentity)
           .firstOrNull;
-      originatingItem = requestedAnchor.isNotEmpty
-          ? anchor
-          : wardrobeAnchor ?? fallbackAnchor;
+      originatingItem =
+          anchor ??
+          (requestedAnchor.isEmpty ? wardrobeAnchor ?? fallbackAnchor : null);
       if (originatingItem != null) lockedItemIds.add(originatingItem.itemId);
     }
     final stateItems = parsed.board.items
@@ -1812,6 +1812,14 @@ class OutfitBoardModel {
         })
         .take(3)
         .toList(growable: false);
+    String normalizeDisplayCopy(String value) {
+      return value
+          .trim()
+          .toLowerCase()
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .replaceAll(RegExp(r'[.!?]+$'), '');
+    }
+
     final intelligenceText = _completeDisplayThought(
       _text(
         direction['short_note'] ??
@@ -1827,7 +1835,8 @@ class OutfitBoardModel {
             editorialCover['summary'],
       ),
     );
-    final stylingTip = _completeDisplayThought(
+
+    final stylingTipCandidate = _completeDisplayThought(
       _text(
         direction['styling_tip'] ??
             direction['style_tip'] ??
@@ -1837,6 +1846,12 @@ class OutfitBoardModel {
             strategy['styling_tip'],
       ),
     );
+
+    final stylingTip =
+        normalizeDisplayCopy(stylingTipCandidate) ==
+            normalizeDisplayCopy(intelligenceText)
+        ? ''
+        : stylingTipCandidate;
 
     // Authoritative path: when the backend sends itemized board_items, render
     // EXACTLY those. They already carry correct roles, images, completeness

@@ -155,11 +155,23 @@ void main() {
       expect(c.where((x) => x.url == _cutout).length, 1);
     });
 
-    test('same URL keeps explicit masked provenance over generic original', () {
+    test('masked_url equal to the raw upload yields no board candidate', () {
+      // masked == image_url means the "cutout" is the raw upload (a fabricated
+      // cutout / possible selfie). It must not survive as a board candidate.
       final c = resolveWardrobeImageCandidates({
         'item_id': 'same-url-mask',
         'masked_url': _masked,
         'image_url': _masked,
+      }, surface: 'style_board_render');
+
+      expect(c, isEmpty);
+    });
+
+    test('explicit masked cutout distinct from raw still wins', () {
+      final c = resolveWardrobeImageCandidates({
+        'item_id': 'distinct-mask',
+        'masked_url': _masked,
+        'image_url': _original,
       }, surface: 'style_board_render');
 
       expect(c, hasLength(1));
@@ -250,6 +262,29 @@ void main() {
         board(wardrobeItem(original: true), surface: 'wardrobe_grid').url,
         _original,
       );
+    });
+
+    test('masked_url aliasing the raw upload is rejected on boards', () {
+      // Device blocker: backend copies image_url into masked_url when RMBG
+      // produced nothing, so masked == the raw selfie. It must NOT render.
+      final r = board({
+        'item_id': 'top',
+        'role': 'top',
+        'image_url': _original,
+        'masked_url': _original,
+      });
+      expect(r.url, isNull); // omitted, never the person photo
+
+      // With a real catalog fallback present, the clean product image wins.
+      final withCatalog = board({
+        'item_id': 'top',
+        'role': 'top',
+        'image_url': _original,
+        'masked_url': _original,
+        'normalized_url': _catalog,
+      });
+      expect(withCatalog.sourceKind, 'catalog_fallback');
+      expect(withCatalog.url, _catalog);
     });
   });
 }

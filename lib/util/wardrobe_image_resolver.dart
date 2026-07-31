@@ -359,6 +359,10 @@ ResolvedWardrobeImage resolveWardrobeImage(
   bool explicitMaskIsSafeForBoard(String? url) =>
       isBoardSurface &&
       url != null &&
+      // A masked_url that aliases the raw upload is a fabricated cutout (the
+      // backend copies image_url into masked_url when RMBG produced nothing) —
+      // often a selfie. Never admit it to a board surface.
+      !isOriginalAlias(url) &&
       !isCatalogAlias(url) &&
       !_isCatalogObject(url);
 

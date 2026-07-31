@@ -22,6 +22,7 @@ import 'package:myapp/services/appwrite_service.dart';
 import 'package:myapp/services/ahvi_response_parser.dart';
 import 'package:myapp/services/ahvi_speech_service.dart';
 import 'package:myapp/services/backend_service.dart';
+import 'package:myapp/services/chat_response_renderer_registry.dart';
 import 'package:myapp/style_board/saved_board_persistence.dart';
 import 'package:myapp/skincare.dart' as skincare_page;
 import 'package:myapp/fitness_page.dart' as fitness_page;
@@ -3034,8 +3035,8 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Widget _genericModuleCard(Map<String, dynamic> card, AppThemeTokens t) {
-    if ((card['type'] ?? '').toString() == 'visual_packing_checklist' ||
-        card['visual_sections'] is List) {
+    if (AhviChatResponseRendererRegistry.select(card).kind ==
+        AhviChatRendererKind.visualPackingChecklist) {
       return _visualPackingChecklistCard(card, t);
     }
     final title =

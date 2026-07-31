@@ -754,10 +754,12 @@ ResolvedWardrobeImage resolveWardrobeImage(
   final selected = available.isEmpty
       ? const _Candidate('none', null, 'missing', 5, false, false)
       : isBoardSurface
-          // Board canvas: cutout-first. Lowest tier wins (validated_cutout=0,
-          // legacy_masked=1, catalog=3, raw=4); reduce is stable on ties so
-          // same-tier order is preserved. Only safe cutouts reach the list,
-          // so this still falls back to catalog/raw when no cutout exists.
+          // Board canvas: cutout-first. `tier` is a priority RANK, lower
+          // number = higher preference (validated_cutout=0, legacy_masked=1,
+          // catalog=3, raw=4) — not a quality score. The minimum-rank
+          // candidate wins; reduce is stable on ties so same-rank order is
+          // preserved. Only safe cutouts reach the list, so this still falls
+          // back to catalog/raw when no cutout exists.
           ? available.reduce((a, b) => b.tier < a.tier ? b : a)
           // Wardrobe grid etc: keep catalog-first (first non-null in order).
           : available.first;

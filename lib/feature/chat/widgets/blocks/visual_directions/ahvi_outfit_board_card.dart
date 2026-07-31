@@ -318,7 +318,7 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
       'board_id=${state.boardId} '
       'mode=${_interactionMode.wireName} '
       'lock=$controlsEnabled '
-      'shuffle=${state.canShuffle} '
+      'shuffle=${controlsEnabled && state.canShuffle} '
       'undo=$controlsEnabled '
       'save=true share=true '
       'like=${_interactionMode == BoardInteractionMode.recommendation} '

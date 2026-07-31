@@ -119,4 +119,52 @@ void main() {
     expect(r.sourceKind, 'validated_cutout');
     expect(r.shouldFrame, isFalse);
   });
+
+  group('resolveWardrobeImageCandidates (fallback ordering)', () {
+    test('board: ordered cutout -> catalog -> raw, first is preferred', () {
+      final c = resolveWardrobeImageCandidates(
+        wardrobeItem(cutout: true, catalog: true, original: true),
+        surface: 'style_board_render',
+      );
+      expect(c.length, greaterThanOrEqualTo(2));
+      expect(c.first.url, _cutout);
+      expect(c.first.requiresFrame, isFalse); // transparent cutout
+      // catalog fallback present and framed
+      final cat = c.firstWhere((x) => x.sourceKind == 'catalog_fallback');
+      expect(cat.url, _catalog);
+      expect(cat.requiresFrame, isTrue);
+      // strictly non-decreasing priority rank
+      for (var i = 1; i < c.length; i++) {
+        expect(c[i].tier, greaterThanOrEqualTo(c[i - 1].tier));
+      }
+    });
+
+    test('candidates are deduped by URL', () {
+      final c = resolveWardrobeImageCandidates({
+        'item_id': 'dup',
+        'cutout_status': 'ready',
+        'cutout_url': _cutout,
+        'masked_url': _cutout, // same url via another field
+        'normalized_url': _catalog,
+      }, surface: 'style_board_render');
+      expect(c.where((x) => x.url == _cutout).length, 1);
+    });
+
+    test('non-board surface exposes no fallback candidates', () {
+      final c = resolveWardrobeImageCandidates(
+        wardrobeItem(cutout: true, catalog: true),
+        surface: 'wardrobe_grid',
+      );
+      expect(c, isEmpty);
+    });
+
+    test('single-source item yields a one-entry candidate list', () {
+      final c = resolveWardrobeImageCandidates(
+        wardrobeItem(catalog: true),
+        surface: 'style_board_render',
+      );
+      expect(c, hasLength(1));
+      expect(c.single.sourceKind, 'catalog_fallback');
+    });
+  });
 }

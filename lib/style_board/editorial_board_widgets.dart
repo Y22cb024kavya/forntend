@@ -2,7 +2,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../util/wardrobe_image_resolver.dart';
 import 'board_models.dart';
+import 'style_board_network_image.dart';
 
 /// Central per-role visual zoom applied to each garment cutout INSIDE its
 /// existing placement box. Transparent-PNG cutouts leave the visible garment
@@ -54,75 +56,93 @@ class EditorialBoardItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final resolved = item.resolveImage(surface: 'style_board_render');
-    final imageUrl = resolved.url ?? '';
-    final shouldFrame = resolved.requiresFrame;
-    final frameAccessory = shouldFrame && item.role == BoardItemRole.accessory;
-    final garment = Image.network(
-      imageUrl,
-      fit: frameAccessory ? BoxFit.cover : BoxFit.contain,
+    // Ordered fallback candidates (cutout → masked → catalog → raw). The widget
+    // advances to the next source if one fails at runtime, so a single dead
+    // cutout URL no longer breaks the board.
+    final candidates = resolved.candidates.isNotEmpty
+        ? resolved.candidates
+        : <ResolvedWardrobeImage>[resolved];
+
+    // Framing, shadow and role scale are decided PER current candidate, so a
+    // transparent cutout falling back to an opaque catalog reframes correctly.
+    Widget frame(BuildContext context, ResolvedWardrobeImage current,
+        Widget garment) {
+      final shouldFrame = current.requiresFrame;
+      final content = Transform.rotate(
+        angle: rotation,
+        child: shouldFrame
+            ? Container(
+                key: item.hasStableIdentity
+                    ? ValueKey<String>('fallback-${item.itemId}')
+                    : null,
+                padding: EdgeInsets.all(
+                  shouldFrame && item.role == BoardItemRole.accessory ? 2 : 5,
+                ),
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: colors.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: garment,
+              )
+            : Stack(
+                key: item.hasStableIdentity
+                    ? ValueKey<String>('cutout-${item.itemId}')
+                    : null,
+                fit: StackFit.expand,
+                children: [
+                  Positioned.fill(
+                    child: Transform.translate(
+                      offset: const Offset(0, 4),
+                      child: ImageFiltered(
+                        imageFilter:
+                            ui.ImageFilter.blur(sigmaX: 7, sigmaY: 7),
+                        child: Image.network(
+                          current.url ?? '',
+                          fit: BoxFit.contain,
+                          alignment: Alignment.center,
+                          color: Colors.black.withValues(alpha: 0.22),
+                          colorBlendMode: BlendMode.srcIn,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    ),
+                  ),
+                  garment,
+                ],
+              ),
+      );
+      // Per-role visual zoom (paint-only): applied once here, never in the
+      // resolver or fallback widget. Framed opaque fallbacks are not zoomed.
+      return Transform.scale(
+        key: item.hasStableIdentity
+            ? ValueKey<String>('vscale-${item.itemId}')
+            : null,
+        scale: shouldFrame ? 1 : editorialVisualScaleForRole(item.role),
+        alignment: editorialAlignmentForRole(item.role),
+        filterQuality: FilterQuality.high,
+        child: content,
+      );
+    }
+
+    return StyleBoardNetworkImage(
+      candidates: candidates,
+      surface: 'style_board_render',
+      role: item.role.name,
+      itemId: item.itemId,
       alignment: Alignment.center,
-      filterQuality: FilterQuality.high,
-      errorBuilder: (_, _, _) => const Center(
+      fitBuilder: (c) =>
+          c.requiresFrame && item.role == BoardItemRole.accessory
+              ? BoxFit.cover
+              : BoxFit.contain,
+      placeholder: const Center(
         child: Icon(
           Icons.image_not_supported_outlined,
           size: 22,
           color: Colors.black26,
         ),
       ),
-    );
-    final content = Transform.rotate(
-      angle: rotation,
-      child: shouldFrame
-          ? Container(
-              key: item.hasStableIdentity
-                  ? ValueKey<String>('fallback-${item.itemId}')
-                  : null,
-              padding: EdgeInsets.all(frameAccessory ? 2 : 5),
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-              color: colors.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: garment,
-            )
-          : Stack(
-              key: item.hasStableIdentity
-                  ? ValueKey<String>('cutout-${item.itemId}')
-                  : null,
-              fit: StackFit.expand,
-              children: [
-                Positioned.fill(
-                  child: Transform.translate(
-                    offset: const Offset(0, 4),
-                    child: ImageFiltered(
-                      imageFilter: ui.ImageFilter.blur(sigmaX: 7, sigmaY: 7),
-                      child: Image.network(
-                        imageUrl,
-                        fit: BoxFit.contain,
-                        alignment: Alignment.center,
-                        color: Colors.black.withValues(alpha: 0.22),
-                        colorBlendMode: BlendMode.srcIn,
-                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                      ),
-                    ),
-                  ),
-                ),
-                garment,
-              ],
-            ),
-    );
-    // Per-role visual zoom (paint-only): enlarges the visible cutout inside its
-    // existing box. Layout size is unchanged, so the box, lock button and card
-    // dimensions stay put; the canvas Stack (Clip.hardEdge) clips any bleed at
-    // the board edge.
-    return Transform.scale(
-      key: item.hasStableIdentity
-          ? ValueKey<String>('vscale-${item.itemId}')
-          : null,
-      scale: shouldFrame ? 1 : editorialVisualScaleForRole(item.role),
-      alignment: editorialAlignmentForRole(item.role),
-      filterQuality: FilterQuality.high,
-      child: content,
+      builder: frame,
     );
   }
 }

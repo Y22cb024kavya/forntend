@@ -9,6 +9,12 @@ class ResolvedWardrobeImage {
   final bool validated;
   final bool shouldFrame;
 
+  /// Ordered fallback candidates (highest-priority first) for Style-board
+  /// surfaces only; empty elsewhere. Each entry carries its own provenance so
+  /// a runtime image failure can advance to the next source and reframe.
+  /// The list's first entry equals this result.
+  final List<ResolvedWardrobeImage> candidates;
+
   const ResolvedWardrobeImage({
     required this.url,
     required this.field,
@@ -17,6 +23,7 @@ class ResolvedWardrobeImage {
     required this.expectedTransparent,
     required this.validated,
     required this.shouldFrame,
+    this.candidates = const [],
   });
 
   bool get usedMasked => sourceKind == 'masked';
@@ -763,6 +770,32 @@ ResolvedWardrobeImage resolveWardrobeImage(
           ? available.reduce((a, b) => b.tier < a.tier ? b : a)
           // Wardrobe grid etc: keep catalog-first (first non-null in order).
           : available.first;
+  // Ordered fallback candidates — board surfaces only. Rank order (lower tier
+  // first, stable within a tier), deduped by URL identity. The renderer walks
+  // this list when the preferred image fails at runtime.
+  List<ResolvedWardrobeImage> boardCandidates() {
+    if (!isBoardSurface || available.isEmpty) return const [];
+    final ordered = [
+      for (var t = 0; t <= 5; t++) ...available.where((c) => c.tier == t),
+    ];
+    final seen = <String>{};
+    final out = <ResolvedWardrobeImage>[];
+    for (final c in ordered) {
+      final id = _urlIdentity(c.url) ?? c.url;
+      if (id == null || !seen.add(id)) continue;
+      out.add(ResolvedWardrobeImage(
+        url: c.url,
+        field: c.field,
+        sourceKind: c.sourceKind,
+        tier: c.tier,
+        expectedTransparent: c.expectedTransparent,
+        validated: c.validated,
+        shouldFrame: c.url != null && !c.validated,
+      ));
+    }
+    return out;
+  }
+
   final result = ResolvedWardrobeImage(
     url: selected.url,
     field: selected.field,
@@ -771,6 +804,7 @@ ResolvedWardrobeImage resolveWardrobeImage(
     expectedTransparent: selected.expectedTransparent,
     validated: selected.validated,
     shouldFrame: selected.url != null && !selected.validated,
+    candidates: boardCandidates(),
   );
 
   if (emitDiagnostic) {
@@ -843,6 +877,31 @@ ResolvedWardrobeImage resolveWardrobeImage(
   }
   return result;
 }
+
+/// Ordered fallback candidates (highest-priority first) for a Style-board
+/// surface; empty for non-board surfaces. Same selection logic as
+/// [resolveWardrobeImage] — this just exposes the whole ordered list so a
+/// renderer can advance on runtime image failure. See
+/// [ResolvedWardrobeImage.candidates].
+List<ResolvedWardrobeImage> resolveWardrobeImageCandidates(
+  Map<String, dynamic> raw, {
+  String? normalizedUrl,
+  String? imageUrl,
+  String? maskedUrl,
+  String surface = 'style_board_render',
+  String itemId = '',
+  Map<String, dynamic>? wardrobeRecord,
+}) =>
+    resolveWardrobeImage(
+      raw,
+      normalizedUrl: normalizedUrl,
+      imageUrl: imageUrl,
+      maskedUrl: maskedUrl,
+      surface: surface,
+      itemId: itemId,
+      emitDiagnostic: false,
+      wardrobeRecord: wardrobeRecord,
+    ).candidates;
 
 Map<String, dynamic> resolveStyleBoardItemImage(
   Map<String, dynamic> item,

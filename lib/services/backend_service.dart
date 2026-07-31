@@ -26,6 +26,28 @@ String canonicalModuleChatDomain(String domain, {bool plannerRequest = false}) {
   return plannerAliases.contains(normalized) ? 'planner' : normalized;
 }
 
+/// Home "Prep & Plan" CTA contract. Always invokes the planner with one stable
+/// routing message; the adaptive meal/workout/weekly recommendation rides as
+/// non-routing `context_hint`, so routing is decided by module + action, never
+/// by keywords in the recommendation (which would deflect to Diet/Fitness/
+/// Calendar). See AhviModuleConfig 'planner' + the sheet send path.
+class PrepPlanRequest {
+  const PrepPlanRequest(this.module, this.message, this.context);
+  final String module;
+  final String message;
+  final Map<String, dynamic> context;
+}
+
+PrepPlanRequest prepPlanCardRequest(String adaptiveHint) => PrepPlanRequest(
+  'planner',
+  'Help me prep and plan my day.',
+  {
+    'context_hint': adaptiveHint,
+    'source': 'home_prep_plan_card',
+    'requested_action': 'plan_day',
+  },
+);
+
 Object? _jsonSafe(Object? value) {
   if (value == null || value is String || value is num || value is bool) {
     return value;

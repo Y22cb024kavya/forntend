@@ -527,6 +527,21 @@ final Map<String, AhviModuleConfig> _moduleConfigs = {
       'Create a weather-ready checklist',
     ],
   ),
+  // Canonical planner module (Home "Prep & Plan" CTA). Same UX as 'prepare';
+  // kept distinct so its chat history stays isolated under the planner key.
+  'planner': AhviModuleConfig(
+    moduleContext: 'planner',
+    subtitle: 'Planning Assistant',
+    hintTextKey: 'daily_wear_chat_hint',
+    greetingKey: 'intent_prepare_s1',
+    quickPrompts: (ctx) => [
+      AppLocalizations.t(ctx, 'intent_prepare_s1'),
+      AppLocalizations.t(ctx, 'intent_prepare_s2'),
+      AppLocalizations.t(ctx, 'intent_prepare_s3'),
+      'Plan outfits for an event',
+      'Create a weather-ready checklist',
+    ],
+  ),
 };
 
 AhviModuleConfig _configFor(String moduleContext) =>

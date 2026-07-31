@@ -3930,11 +3930,22 @@ class _Screen4State extends State<Screen4>
                       _AnimatedPressable(
                         liftY: -2.0,
                         scalePressed: 0.95,
-                        onTap: () => showAhviStylistChatSheet(
-                          context,
-                          moduleContext: 'prepare',
-                          initialPrompt: content.prompt,
-                        ),
+                        // "Prep & Plan" always invokes the planner with one
+                        // stable planning request. The adaptive meal/workout/
+                        // weekly recommendation rides along as non-routing
+                        // context_hint so backend routing is decided by the
+                        // explicit module + action, never by keywords in the
+                        // recommendation text (which would deflect to
+                        // Diet/Fitness/Calendar).
+                        onTap: () {
+                          final req = prepPlanCardRequest(content.prompt);
+                          showAhviStylistChatSheet(
+                            context,
+                            moduleContext: req.module,
+                            initialPrompt: req.message,
+                            contextData: req.context,
+                          );
+                        },
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 8,

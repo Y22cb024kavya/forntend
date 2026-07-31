@@ -13,9 +13,9 @@ import 'package:myapp/style_board/board_models.dart';
 import 'package:myapp/style_board/editorial_board_renderer.dart';
 
 final _items = <StyleBoardItem>[
-  StyleBoardItem.fromJson(const {'item_id': 'top', 'role': 'top', 'image_url': 'https://x/top.png'}),
-  StyleBoardItem.fromJson(const {'item_id': 'bottom', 'role': 'bottom', 'image_url': 'https://x/bottom.png'}),
-  StyleBoardItem.fromJson(const {'item_id': 'shoe', 'role': 'footwear', 'image_url': 'https://x/shoe.png'}),
+  StyleBoardItem.fromJson(const {'item_id': 'top', 'role': 'top', 'image_url': 'https://x/top.png', 'masked_url': 'https://x/top-cutout.png'}),
+  StyleBoardItem.fromJson(const {'item_id': 'bottom', 'role': 'bottom', 'image_url': 'https://x/bottom.png', 'masked_url': 'https://x/bottom-cutout.png'}),
+  StyleBoardItem.fromJson(const {'item_id': 'shoe', 'role': 'footwear', 'image_url': 'https://x/shoe.png', 'masked_url': 'https://x/shoe-cutout.png'}),
 ];
 
 Future<GlobalKey> _pump(

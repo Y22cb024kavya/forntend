@@ -15,6 +15,7 @@ Map<String, dynamic> itemJson(String id, String slot, {bool locked = false}) =>
       'source': 'wardrobe',
       'image_url': 'https://example.test/$id.png',
       'board_image_url': 'https://example.test/$id-board.png',
+      'board_status': 'cutout_ready',
       'locked': locked,
       'position': {
         'x': .1,

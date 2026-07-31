@@ -26,8 +26,10 @@ Map<String, dynamic> _boardItem(String id, String slot, {bool source = false}) =
       'slot': slot,
       'role': slot,
       'image_url': 'https://x/$id.png',
-      // Renderable transparent asset (as the deployed backend sends).
-      'board_image_url': 'https://x/$id.png',
+      // Renderable transparent cutout with explicit provenance (as the fixed
+      // backend sends): distinct cutout URL + cutout_ready, never the raw image.
+      'board_image_url': 'https://x/$id-cutout.png',
+      'board_status': 'cutout_ready',
       // Device case: backend board_items carried NO per-item source field.
       if (source) 'source': 'wardrobe',
     };

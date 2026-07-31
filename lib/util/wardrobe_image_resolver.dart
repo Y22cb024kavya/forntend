@@ -75,6 +75,20 @@ bool _objectPathMatches(String? url, RegExp pattern) {
 // transparent cutouts (validated_cutout=0, legacy_masked=1) over the opaque
 // catalog image (3). The wardrobe grid keeps catalog-first for consistent
 // photography. Surface is passed explicitly by callers — never inferred.
+// Garment-only sources a Style board may render. Everything else — raw
+// image_url / original uploads (often a selfie, mirror photo or scene) — is
+// rejected on board surfaces so a person photo never lands on the editorial
+// canvas. Catalog/normalized are product cutouts on white, so they qualify.
+const Set<String> _boardSafeSourceKinds = {
+  'validated_cutout',
+  'legacy_masked_cutout',
+  'style_asset_cutout',
+  'style_asset_processed',
+  'catalog_fallback',
+  'masked',
+  'processed_cutout',
+};
+
 bool _isStyleBoardSurface(String surface) {
   final s = surface.trim().toLowerCase();
   return s.startsWith('style_board') ||
@@ -765,25 +779,34 @@ ResolvedWardrobeImage resolveWardrobeImage(
   ];
 
   final available = candidates.where((c) => c.url != null).toList();
-  final selected = available.isEmpty
+  // Admission guard: board surfaces drop raw/original candidates entirely, so
+  // a missing cutout can never fall through to a person photo. If nothing
+  // garment-only survives, the item resolves to no image and the renderer
+  // omits it (never a raw upload). The wardrobe grid keeps every candidate.
+  final boardPool = isBoardSurface
+      ? available
+          .where((c) => _boardSafeSourceKinds.contains(c.sourceKind))
+          .toList()
+      : available;
+  final rejectedUnsafe =
+      isBoardSurface ? available.length - boardPool.length : 0;
+  final selected = boardPool.isEmpty
       ? const _Candidate('none', null, 'missing', 5, false, false)
       : isBoardSurface
-      // Board canvas: cutout-first. `tier` is a priority RANK, lower
-      // number = higher preference (validated_cutout=0, legacy_masked=1,
-      // catalog=3, raw=4) — not a quality score. The minimum-rank
-      // candidate wins; reduce is stable on ties so same-rank order is
-      // preserved. Only safe cutouts reach the list, so this still falls
-      // back to catalog/raw when no cutout exists.
-      ? available.reduce((a, b) => b.tier < a.tier ? b : a)
+      // Board canvas: cutout-first over garment-only sources. `tier` is a
+      // priority RANK, lower = higher preference (validated_cutout=0,
+      // legacy_masked=1, catalog=3) — not a quality score. Minimum-rank wins;
+      // reduce is stable on ties.
+      ? boardPool.reduce((a, b) => b.tier < a.tier ? b : a)
       // Wardrobe grid etc: keep catalog-first (first non-null in order).
-      : available.first;
+      : boardPool.first;
   // Ordered fallback candidates — board surfaces only. Rank order (lower tier
   // first, stable within a tier), deduped by URL identity. The renderer walks
   // this list when the preferred image fails at runtime.
   List<ResolvedWardrobeImage> boardCandidates() {
-    if (!isBoardSurface || available.isEmpty) return const [];
+    if (!isBoardSurface || boardPool.isEmpty) return const [];
     final ordered = [
-      for (var t = 0; t <= 5; t++) ...available.where((c) => c.tier == t),
+      for (var t = 0; t <= 5; t++) ...boardPool.where((c) => c.tier == t),
     ];
     final strongestByUrl = <String, _Candidate>{};
     for (final c in ordered) {
@@ -885,7 +908,8 @@ ResolvedWardrobeImage resolveWardrobeImage(
           'source_kind=${result.sourceKind} '
           'expected_transparent=${result.expectedTransparent} '
           'requires_frame=${result.requiresFrame} '
-          'candidate_count=${available.length}',
+          'candidate_count=${boardPool.length} '
+          'rejected_unsafe=$rejectedUnsafe',
         );
       }
     }

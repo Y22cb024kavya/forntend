@@ -87,10 +87,14 @@ void main() {
     expect(r.url, _catalog);
   });
 
-  test('8. missing catalog safely falls back to raw image', () {
-    final r = board(wardrobeItem(original: true));
-    expect(r.url, _original);
-    expect(r.requiresFrame, isTrue);
+  test('8. board rejects a raw-only item; grid still uses it', () {
+    // Board admission guard: a raw upload (often a selfie) must not render.
+    expect(board(wardrobeItem(original: true)).url, isNull);
+    // Wardrobe grid is unchanged — it still shows the raw upload.
+    expect(
+      board(wardrobeItem(original: true), surface: 'wardrobe_grid').url,
+      _original,
+    );
   });
 
   test('9. empty/invalid urls are skipped', () {
@@ -165,16 +169,18 @@ void main() {
       expect(c.single.requiresFrame, isFalse);
     });
 
-    test('plain png original does not imply transparency', () {
-      final c = resolveWardrobeImageCandidates({
+    test('plain png original does not imply transparency (grid surface)', () {
+      // On the grid, original is a valid source and must be classed opaque
+      // (framed). On boards it is rejected by the admission guard instead
+      // (covered in "board admission guard").
+      final r = resolveWardrobeImage({
         'item_id': 'opaque-png',
         'image_url': 'https://test/product.png',
-      }, surface: 'style_board_render');
+      }, surface: 'wardrobe_grid');
 
-      expect(c, hasLength(1));
-      expect(c.single.sourceKind, 'original');
-      expect(c.single.expectedTransparent, isFalse);
-      expect(c.single.requiresFrame, isTrue);
+      expect(r.sourceKind, 'original');
+      expect(r.expectedTransparent, isFalse);
+      expect(r.requiresFrame, isTrue);
     });
 
     test('non-board surface exposes no fallback candidates', () {
@@ -192,6 +198,58 @@ void main() {
       );
       expect(c, hasLength(1));
       expect(c.single.sourceKind, 'catalog_fallback');
+    });
+  });
+
+  group('board admission guard (no raw/person images)', () {
+    test('raw image_url rejected on boards; catalog wins', () {
+      final r = board(wardrobeItem(catalog: true, original: true));
+      expect(r.sourceKind, 'catalog_fallback');
+      expect(r.url, _catalog);
+    });
+
+    test('raw-only item resolves to no board image', () {
+      expect(board(wardrobeItem(original: true)).url, isNull);
+    });
+
+    test('board candidates never include raw/original sources', () {
+      final c = resolveWardrobeImageCandidates(
+        wardrobeItem(cutout: true, catalog: true, original: true),
+        surface: 'style_board_render',
+      );
+      expect(
+        c.any((x) => x.sourceKind == 'original' || x.sourceKind == 'raw'),
+        isFalse,
+      );
+      expect(c.first.sourceKind, 'validated_cutout');
+    });
+
+    test('device fixture: raw-selfie top omitted, others render', () {
+      // top = raw selfie only -> rejected (omitted, not a person photo)
+      expect(
+        board({'item_id': 't', 'role': 'top', 'image_url': _original}).url,
+        isNull,
+      );
+      // jeans = catalog -> framed garment
+      final jeans =
+          board({'item_id': 'b', 'role': 'bottom', 'normalized_url': _catalog});
+      expect(jeans.sourceKind, 'catalog_fallback');
+      expect(jeans.requiresFrame, isTrue);
+      // footwear = masked cutout -> frameless
+      final foot = board({
+        'item_id': 'f',
+        'role': 'footwear',
+        'masked_url': _masked,
+        'image_status': 'rmbg_complete',
+      });
+      expect(foot.requiresFrame, isFalse);
+    });
+
+    test('wardrobe grid still allows raw (unchanged)', () {
+      expect(
+        board(wardrobeItem(original: true), surface: 'wardrobe_grid').url,
+        _original,
+      );
     });
   });
 }

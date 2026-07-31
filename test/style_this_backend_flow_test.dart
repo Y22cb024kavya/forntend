@@ -38,7 +38,7 @@ Map<String, dynamic> _boardItem(
   'source': 'wardrobe',
   'locked': locked,
   'image_url': 'https://example.test/$id.png',
-  'board_image_url': 'https://example.test/$id.png',
+  'masked_url': 'https://example.test/$id-cutout.png',
   'position': {
     'x': role == 'top' ? .08 : .46,
     'y': role == 'footwear' ? .62 : .12,

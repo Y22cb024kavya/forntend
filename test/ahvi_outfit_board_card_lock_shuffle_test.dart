@@ -30,7 +30,10 @@ Map<String, dynamic> _item(
   'role': slot,
   'source': 'wardrobe',
   'image_url': 'https://example.test/$id.png',
-  'board_image_url': 'https://example.test/$id.png',
+  'masked_url': 'https://example.test/$id-cutout.png',
+  // Transparent cutout for the style_asset resolver path (asset items read
+  // transparent_url/asset_cutout_url, not masked_url). Inert for wardrobe items.
+  'transparent_url': 'https://example.test/$id-cutout.png',
   'locked': locked,
   'position': {
     'x': x,
@@ -192,12 +195,21 @@ void main() {
       final board = _board();
       board['title'] = 'Image audit board';
       final top = (board['board_items'] as List).first as Map<String, dynamic>;
-      top['board_image_url'] = 'https://example.test/white-board.png';
+      // Untrusted board image (raw original only, no cutout provenance) so the
+      // wardrobe map's catalog image is the authoritative source.
+      top.remove('masked_url');
+      top.remove('transparent_url');
       top['image_url'] = 'https://example.test/original.jpg';
 
       await _pumpCard(
         tester,
         board: board,
+        wardrobeById: {
+          'anchor': {
+            r'$id': 'anchor',
+            'normalized_url': 'https://example.test/catalog_anchor.jpg',
+          },
+        },
         shuffleCall: (state) async => _success(state),
       );
       await tester.tap(find.byKey(const ValueKey<String>('lock-shoe-1')));
@@ -295,7 +307,9 @@ void main() {
       savedTop['image_url'],
       isNot('https://example.test/catalog_anchor.jpg'),
     );
-    expect(savedTop['source_kind'], 'original');
+    // Stale catalog removed; item reverts to its own masked cutout.
+    expect(savedTop['source_kind'],
+        anyOf('validated_cutout', 'legacy_masked_cutout'));
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

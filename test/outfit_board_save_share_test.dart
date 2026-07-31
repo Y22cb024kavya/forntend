@@ -24,18 +24,21 @@ Map<String, dynamic> _direction() => {
       'item_id': 'shirt-1',
       'role': 'top',
       'image_url': 'https://x/shirt.png',
+      'masked_url': 'https://x/shirt-cutout.png',
     },
     {
       'name': 'Navy chinos',
       'item_id': 'chino-1',
       'role': 'bottom',
       'image_url': 'https://x/chino.png',
+      'masked_url': 'https://x/chino-cutout.png',
     },
     {
       'name': 'Brown loafers',
       'item_id': 'loafer-1',
       'role': 'footwear',
       'image_url': 'https://x/loafer.png',
+      'masked_url': 'https://x/loafer-cutout.png',
     },
   ],
 };
@@ -129,7 +132,7 @@ void main() {
       expect(captured, isNotNull);
       expect(captured!['occasion'], 'office_fits');
       expect(captured!['title'], 'Office Look');
-      expect(captured!['imageUrl'], 'https://x/shirt.png');
+      expect(captured!['imageUrl'], 'https://x/shirt-cutout.png');
       expect(captured!['desc'], 'Sharp and balanced.');
       expect(
         (captured!['itemIds'] as List),

@@ -272,7 +272,12 @@ final _direction = <String, dynamic>{
         z: 3,
       ),
       'category': 'bag',
-      'board_status': 'original',
+      // Opaque catalog accessory: no cutout exists, only a garment-only
+      // normalized/catalog image. Board-safe (catalog_fallback) → one frame,
+      // never promoted to cutout_ready.
+      'board_image_url': null,
+      'board_status': 'catalog_fallback',
+      'normalized_url': 'https://example.test/bag-1.png',
     },
   ],
   'why_it_works': 'Warm festive color with a clean traditional silhouette.',

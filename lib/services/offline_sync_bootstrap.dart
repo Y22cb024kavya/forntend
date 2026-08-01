@@ -29,12 +29,14 @@ class _OfflineSyncBootstrapState extends State<OfflineSyncBootstrap> {
   }
 
   Future<void> _bootstrap() async {
-    if (_initStarted) return;
+    if (!mounted || _initStarted) return;
     _initStarted = true;
     final cache = context.read<OfflineCache>();
     final appwrite = context.read<AppwriteService>();
     final user = await appwrite.getCurrentUser();
+    if (!mounted) return;
     await cache.init(userId: user?.$id);
+    if (!mounted) return;
     appwrite.attachOfflineWriteThrough(
       onWardrobe: (items) => cache.setWardrobe(items),
       onSavedBoards: (occasion, docs) =>
@@ -44,23 +46,25 @@ class _OfflineSyncBootstrapState extends State<OfflineSyncBootstrap> {
   }
 
   Future<void> _maybeSync() async {
-    if (_syncInflight) return;
-    if (!mounted) return;
+    if (_syncInflight || !mounted) return;
     final connectivity = context.read<ConnectivityWatcher>();
     if (!connectivity.isOnline) return;
     final appwrite = context.read<AppwriteService>();
-    final user = await appwrite.getCurrentUser();
-    if (user == null) return;
-    final cache = context.read<OfflineCache>();
-    cache.setUser(user.$id);
-    if (_lastSyncedUserId == user.$id) return;
-
     _syncInflight = true;
     try {
-      await _runSync(cache, appwrite);
-      _lastSyncedUserId = user.$id;
-    } catch (e) {
-      debugPrint('OfflineSyncBootstrap sync error: $e');
+      final user = await appwrite.getCurrentUser();
+      if (!mounted || user == null) return;
+      final cache = context.read<OfflineCache>();
+      cache.setUser(user.$id);
+      if (_lastSyncedUserId == user.$id) return;
+
+      try {
+        await _runSync(cache, appwrite);
+        if (!mounted) return;
+        _lastSyncedUserId = user.$id;
+      } catch (e) {
+        debugPrint('OfflineSyncBootstrap sync error: $e');
+      }
     } finally {
       _syncInflight = false;
     }

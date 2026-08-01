@@ -136,6 +136,17 @@ class EditorialBoardLayoutEngine {
     return h.clamp(0.0, maxHeight);
   }
 
+  static double _boxHeightForItem(
+    StyleBoardItem item,
+    double boxWidth,
+    double maxHeight,
+  ) {
+    final aspectRatio = item.role == BoardItemRole.accessory
+        ? _accessoryAspectRatio(item)
+        : _arForRole(item.role);
+    return (boxWidth * aspectRatio).clamp(0.0, maxHeight);
+  }
+
   static EditorialLayoutResult _classicThreePlusAccessory({
     required StyleBoardItem top,
     required StyleBoardItem bottom,
@@ -192,62 +203,48 @@ class EditorialBoardLayoutEngine {
       // One editorial composition, not three product rows: the top leads from
       // upper-left, the trousers form a vertical counterweight, and footwear
       // closes the diagonal near the bottom.
-      final topW = width * (itemCount <= 4 ? 0.44 : 0.33);
+      final topW = width * (itemCount <= 4 ? 0.48 : 0.37);
       placements.add(
         BoardItemPlacement(
           item: top,
-          x: width * 0.06,
+          x: width * 0.05,
           y: height * 0.06,
           width: topW,
-          height: _boxHeight(BoardItemRole.top, topW, height * 0.43),
+          height: _boxHeight(BoardItemRole.top, topW, height * 0.46),
           rotation: 0,
           zIndex: 2,
         ),
       );
-      final botW = width * (itemCount <= 4 ? 0.36 : 0.32);
+      final botW = width * (itemCount <= 4 ? 0.40 : 0.35);
       placements.add(
         BoardItemPlacement(
           item: bottom,
-          x: width * (itemCount <= 4 ? 0.52 : 0.45),
-          y: height * (itemCount <= 4 ? 0.22 : 0.25),
+          x: width * (itemCount <= 4 ? 0.50 : 0.46),
+          y: height * (itemCount <= 4 ? 0.20 : 0.24),
           width: botW,
-          height: _boxHeight(BoardItemRole.bottom, botW, height * 0.53),
+          height: _boxHeight(BoardItemRole.bottom, botW, height * 0.58),
           rotation: 0,
           zIndex: 1,
         ),
       );
     }
 
-    final footW = width * (itemCount <= 4 ? 0.33 : 0.32);
+    final footW = width * (itemCount <= 4 ? 0.30 : 0.29);
     placements.add(
       BoardItemPlacement(
         item: footwear,
-        x: width * 0.10,
-        y: height * 0.68,
+        x: width * 0.12,
+        y: height * 0.72,
         width: footW,
-        height: _boxHeight(BoardItemRole.footwear, footW, height * 0.22),
+        height: _boxHeight(BoardItemRole.footwear, footW, height * 0.18),
         rotation: 0,
         zIndex: 3,
       ),
     );
 
     for (var i = 0; i < math.min(accessories.length, 2); i++) {
-      final bag = _isBagAccessory(accessories[i]);
-      final accW = width * (bag ? 0.27 : (itemCount <= 4 ? 0.14 : 0.19));
       placements.add(
-        BoardItemPlacement(
-          item: accessories[i],
-          x: width * (bag ? 0.69 : (itemCount <= 4 ? 0.79 : 0.75)),
-          y: height * (0.08 + i * 0.22),
-          width: accW,
-          height: _boxHeight(
-            BoardItemRole.accessory,
-            accW,
-            height * (bag ? 0.25 : 0.17),
-          ),
-          rotation: 0,
-          zIndex: 4,
-        ),
+        _placeAccessory(accessories[i], index: i, width: width, height: height),
       );
     }
 
@@ -257,11 +254,95 @@ class EditorialBoardLayoutEngine {
     );
   }
 
-  static bool _isBagAccessory(StyleBoardItem item) {
-    final value = '${item.category} ${item.name}'.toLowerCase();
-    return RegExp(
+  static _AccessoryKind _accessoryKind(StyleBoardItem item) {
+    final value = [
+      item.accessoryType,
+      item.category,
+      item.subCategory,
+      item.boardRole,
+      item.slot,
+      item.name,
+    ].join(' ').toLowerCase();
+    if (RegExp(
       r'\b(bag|handbag|tote|clutch|purse|satchel|backpack)\b',
-    ).hasMatch(value);
+    ).hasMatch(value)) {
+      return _AccessoryKind.bag;
+    }
+    if (RegExp(r'\b(belt|waistband|waist belt)\b').hasMatch(value)) {
+      return _AccessoryKind.belt;
+    }
+    if (RegExp(r'\b(watch|timepiece)\b').hasMatch(value)) {
+      return _AccessoryKind.watch;
+    }
+    if (RegExp(
+      r'\b(jewellery|jewelry|necklace|bracelet|ring|earring|earrings)\b',
+    ).hasMatch(value)) {
+      return _AccessoryKind.jewellery;
+    }
+    if (RegExp(r'\b(headwear|hat|cap|beanie|turban)\b').hasMatch(value)) {
+      return _AccessoryKind.headwear;
+    }
+    if (RegExp(r'\b(scarf|stole|shawl)\b').hasMatch(value)) {
+      return _AccessoryKind.scarf;
+    }
+    return _AccessoryKind.generic;
+  }
+
+  static double _accessoryAspectRatio(StyleBoardItem item) =>
+      switch (_accessoryKind(item)) {
+        _AccessoryKind.belt => 0.34,
+        _AccessoryKind.watch || _AccessoryKind.jewellery => 0.86,
+        _AccessoryKind.headwear || _AccessoryKind.scarf => 0.72,
+        _AccessoryKind.bag => 0.82,
+        _AccessoryKind.generic => 0.92,
+      };
+
+  static BoardItemPlacement _placeAccessory(
+    StyleBoardItem item, {
+    required int index,
+    required double width,
+    required double height,
+    bool compact = false,
+  }) {
+    final kind = _accessoryKind(item);
+    final widthFraction = switch (kind) {
+      _AccessoryKind.bag => compact ? 0.20 : 0.27,
+      _AccessoryKind.belt => compact ? 0.18 : 0.24,
+      _AccessoryKind.headwear || _AccessoryKind.scarf => 0.18,
+      _AccessoryKind.watch || _AccessoryKind.jewellery => 0.11,
+      _AccessoryKind.generic => compact ? 0.14 : 0.16,
+    };
+    final xFraction = switch (kind) {
+      _AccessoryKind.bag => 0.68,
+      _AccessoryKind.belt => 0.58,
+      _AccessoryKind.headwear || _AccessoryKind.scarf => 0.70,
+      _AccessoryKind.watch || _AccessoryKind.jewellery => 0.80,
+      _AccessoryKind.generic => 0.78,
+    };
+    final yFraction = switch (kind) {
+      _AccessoryKind.bag => 0.08 + index * 0.24,
+      _AccessoryKind.belt => 0.48 + index * 0.16,
+      _AccessoryKind.headwear || _AccessoryKind.scarf => 0.05 + index * 0.16,
+      _AccessoryKind.watch || _AccessoryKind.jewellery => 0.40 + index * 0.14,
+      _AccessoryKind.generic => 0.10 + index * 0.20,
+    };
+    final boxWidth = width * widthFraction;
+    final maxHeight = switch (kind) {
+      _AccessoryKind.bag => height * 0.26,
+      _AccessoryKind.belt => height * 0.10,
+      _AccessoryKind.headwear || _AccessoryKind.scarf => height * 0.16,
+      _AccessoryKind.watch || _AccessoryKind.jewellery => height * 0.12,
+      _AccessoryKind.generic => height * 0.16,
+    };
+    return BoardItemPlacement(
+      item: item,
+      x: width * xFraction,
+      y: height * yFraction,
+      width: boxWidth,
+      height: _boxHeightForItem(item, boxWidth, maxHeight),
+      rotation: 0,
+      zIndex: 4,
+    );
   }
 
   static EditorialLayoutResult _dressFocused({
@@ -272,14 +353,14 @@ class EditorialBoardLayoutEngine {
     required double width,
     required double height,
   }) {
-    final dressW = width * 0.80;
+    final dressW = width * 0.78;
     final placements = <BoardItemPlacement>[
       BoardItemPlacement(
         item: dress,
         x: width * 0.10,
         y: height * 0.04,
         width: dressW,
-        height: _boxHeight(BoardItemRole.dress, dressW, height * 0.80),
+        height: _boxHeight(BoardItemRole.dress, dressW, height * 0.82),
         rotation: 0.01,
         zIndex: 2,
       ),
@@ -301,14 +382,14 @@ class EditorialBoardLayoutEngine {
     }
 
     if (footwear != null) {
-      final footW = width * 0.44;
+      final footW = width * 0.34;
       placements.add(
         BoardItemPlacement(
           item: footwear,
-          x: width * 0.06,
-          y: height * 0.71,
+          x: width * 0.12,
+          y: height * 0.76,
           width: footW,
-          height: _boxHeight(BoardItemRole.footwear, footW, height * 0.20),
+          height: _boxHeight(BoardItemRole.footwear, footW, height * 0.16),
           rotation: -0.02,
           zIndex: 3,
         ),
@@ -316,16 +397,13 @@ class EditorialBoardLayoutEngine {
     }
 
     for (var i = 0; i < math.min(accessories.length, 3); i++) {
-      final accW = width * 0.20;
       placements.add(
-        BoardItemPlacement(
-          item: accessories[i],
-          x: width * (0.70 - (i % 2) * 0.16),
-          y: height * (0.66 + (i ~/ 2) * 0.14),
-          width: accW,
-          height: _boxHeight(BoardItemRole.accessory, accW, height * 0.18),
-          rotation: i.isEven ? 0.05 : -0.04,
-          zIndex: 4,
+        _placeAccessory(
+          accessories[i],
+          index: i,
+          width: width,
+          height: height,
+          compact: true,
         ),
       );
     }
@@ -357,20 +435,15 @@ class EditorialBoardLayoutEngine {
       placements.add(mainTemplates[i].place(mainItems[i], width, height));
     }
 
-    final accessoryTemplates = <_Template>[
-      const _Template(0.56, 0.70, 0.20, 0.05, 5),
-      const _Template(0.78, 0.70, 0.20, -0.04, 5),
-      const _Template(0.56, 0.84, 0.20, -0.02, 5),
-      const _Template(0.78, 0.84, 0.20, 0.03, 5),
-    ];
-
-    for (
-      var i = 0;
-      i < math.min(accessories.length, accessoryTemplates.length);
-      i++
-    ) {
+    for (var i = 0; i < math.min(accessories.length, 4); i++) {
       placements.add(
-        accessoryTemplates[i].place(accessories[i], width, height),
+        _placeAccessory(
+          accessories[i],
+          index: i,
+          width: width,
+          height: height,
+          compact: true,
+        ),
       );
     }
 
@@ -397,7 +470,18 @@ class EditorialBoardLayoutEngine {
 
     final placements = <BoardItemPlacement>[];
     for (var i = 0; i < math.min(items.length, templates.length); i++) {
-      placements.add(templates[i].place(items[i], width, height));
+      final item = items[i];
+      placements.add(
+        item.role == BoardItemRole.accessory
+            ? _placeAccessory(
+                item,
+                index: i,
+                width: width,
+                height: height,
+                compact: true,
+              )
+            : templates[i].place(item, width, height),
+      );
     }
 
     return EditorialLayoutResult(
@@ -606,8 +690,8 @@ class _Template {
   /// so the contained cutout fills the box; capped to the lower canvas band.
   BoardItemPlacement place(StyleBoardItem item, double width, double height) {
     final boxW = width * w;
-    final boxH = EditorialBoardLayoutEngine._boxHeight(
-      item.role,
+    final boxH = EditorialBoardLayoutEngine._boxHeightForItem(
+      item,
       boxW,
       height * 0.46,
     );
@@ -622,3 +706,5 @@ class _Template {
     );
   }
 }
+
+enum _AccessoryKind { bag, belt, watch, jewellery, headwear, scarf, generic }

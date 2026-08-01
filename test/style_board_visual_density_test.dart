@@ -5,6 +5,7 @@
 // live in visual_board_85_phase1_test.dart.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
 import 'package:myapp/style_board/board_models.dart';
 import 'package:myapp/style_board/editorial_board_layout_engine.dart';
 import 'package:myapp/style_board/editorial_board_widgets.dart';
@@ -32,13 +33,13 @@ void main() {
   group('role visual scale constants', () {
     test('every role stays within safe zoom bounds', () {
       double s(BoardItemRole r) => editorialVisualScaleForRole(r);
-      expect(s(BoardItemRole.top), inInclusiveRange(1.20, 1.30));
-      expect(s(BoardItemRole.bottom), inInclusiveRange(1.15, 1.25));
-      expect(s(BoardItemRole.footwear), inInclusiveRange(1.45, 1.55));
-      expect(s(BoardItemRole.dress), inInclusiveRange(1.15, 1.25));
-      expect(s(BoardItemRole.outerwear), inInclusiveRange(1.15, 1.25));
-      expect(s(BoardItemRole.accessory), inInclusiveRange(1.15, 1.25));
-      expect(s(BoardItemRole.unknown), inInclusiveRange(1.0, 1.15));
+      expect(s(BoardItemRole.top), inInclusiveRange(1.10, 1.20));
+      expect(s(BoardItemRole.bottom), inInclusiveRange(1.05, 1.18));
+      expect(s(BoardItemRole.footwear), inInclusiveRange(1.30, 1.38));
+      expect(s(BoardItemRole.dress), inInclusiveRange(1.05, 1.18));
+      expect(s(BoardItemRole.outerwear), inInclusiveRange(1.05, 1.15));
+      expect(s(BoardItemRole.accessory), inInclusiveRange(1.0, 1.15));
+      expect(s(BoardItemRole.unknown), inInclusiveRange(1.0, 1.12));
       // Never shrink.
       for (final r in BoardItemRole.values) {
         expect(s(r), greaterThanOrEqualTo(1.0));
@@ -89,9 +90,9 @@ void main() {
       double widthFor(BoardItemRole role) =>
           placements.singleWhere((p) => p.item.role == role).width / w;
 
-      expect(widthFor(BoardItemRole.top), inInclusiveRange(.43, .45));
-      expect(widthFor(BoardItemRole.bottom), inInclusiveRange(.35, .37));
-      expect(widthFor(BoardItemRole.footwear), inInclusiveRange(.32, .34));
+      expect(widthFor(BoardItemRole.top), inInclusiveRange(.47, .49));
+      expect(widthFor(BoardItemRole.bottom), inInclusiveRange(.39, .41));
+      expect(widthFor(BoardItemRole.footwear), inInclusiveRange(.29, .31));
 
       double topOf(BoardItemRole role) =>
           placements.singleWhere((p) => p.item.role == role).y / h;
@@ -153,30 +154,30 @@ void main() {
       double roleWidth(List<BoardItemPlacement> items, BoardItemRole role) =>
           items.singleWhere((p) => p.item.role == role).width / w;
 
-      expect(roleWidth(four, BoardItemRole.top), inInclusiveRange(.43, .45));
-      expect(roleWidth(four, BoardItemRole.bottom), inInclusiveRange(.35, .37));
+      expect(roleWidth(four, BoardItemRole.top), inInclusiveRange(.47, .49));
+      expect(roleWidth(four, BoardItemRole.bottom), inInclusiveRange(.39, .41));
       expect(
         roleWidth(four, BoardItemRole.footwear),
-        inInclusiveRange(.32, .34),
+        inInclusiveRange(.29, .31),
       );
       final fourAccessory = four.singleWhere(
         (p) => p.item.role == BoardItemRole.accessory,
       );
-      expect(fourAccessory.width / w, inInclusiveRange(.13, .15));
+      expect(fourAccessory.width / w, inInclusiveRange(.15, .17));
       expect(fourAccessory.x, greaterThanOrEqualTo(0));
       expect(fourAccessory.x + fourAccessory.width, lessThanOrEqualTo(w));
-      expect(roleWidth(five, BoardItemRole.top), inInclusiveRange(.32, .34));
-      expect(roleWidth(five, BoardItemRole.bottom), inInclusiveRange(.31, .33));
+      expect(roleWidth(five, BoardItemRole.top), inInclusiveRange(.36, .38));
+      expect(roleWidth(five, BoardItemRole.bottom), inInclusiveRange(.34, .36));
       expect(
         roleWidth(five, BoardItemRole.footwear),
-        inInclusiveRange(.31, .33),
+        inInclusiveRange(.28, .31),
       );
       final accessoryWidths = five
           .where((p) => p.item.role == BoardItemRole.accessory)
           .map((p) => p.width / w)
           .toList();
       expect(accessoryWidths, hasLength(2));
-      expect(accessoryWidths, everyElement(closeTo(.19, .01)));
+      expect(accessoryWidths, everyElement(closeTo(.16, .01)));
     });
 
     test('bag is a medium support while small accessories stay accents', () {
@@ -213,8 +214,58 @@ void main() {
       final watch = placements.singleWhere((p) => p.item.id == 'watch-1');
 
       expect(bag.width / w, inInclusiveRange(.26, .28));
-      expect(watch.width / w, inInclusiveRange(.18, .20));
+      expect(watch.width / w, inInclusiveRange(.10, .12));
       expect(bag.width, greaterThan(watch.width));
+    });
+
+    test('accessory sub-roles keep semantic geometry', () {
+      final board = StyleBoardData(
+        boardId: 'accessory-subroles',
+        revision: 1,
+        title: 'Accessory sub-roles',
+        items: [
+          _item(BoardItemRole.top),
+          _item(BoardItemRole.bottom),
+          _item(BoardItemRole.footwear),
+          StyleBoardItem(
+            id: 'belt-1',
+            name: 'Leather belt',
+            category: 'accessory',
+            accessoryType: 'belt',
+            imageUrl: 'https://example.test/belt.png',
+            role: BoardItemRole.accessory,
+          ),
+          StyleBoardItem(
+            id: 'headwear-1',
+            name: 'Wool cap',
+            category: 'headwear',
+            accessoryType: 'headwear',
+            imageUrl: 'https://example.test/cap.png',
+            role: BoardItemRole.accessory,
+          ),
+        ],
+      );
+      final placements = EditorialBoardLayoutEngine.resolve(
+        board,
+        width: w,
+        height: h,
+      ).placements;
+      final belt = placements.singleWhere((p) => p.item.id == 'belt-1');
+      final headwear = placements.singleWhere((p) => p.item.id == 'headwear-1');
+
+      expect(belt.height / belt.width, closeTo(.34, .02));
+      expect(belt.width / w, inInclusiveRange(.23, .25));
+      expect(headwear.y, lessThan(belt.y));
+      expect(headwear.width, lessThan(belt.width));
+    });
+
+    test('display copy truncates at a word or sentence boundary', () {
+      final copy = editorialSentenceSafeCopy(
+        'A long styling sentence that must end cleanly without cutting a word in half.',
+        maxCharacters: 42,
+      );
+      expect(copy, 'A long styling sentence that must end…');
+      expect(copy, isNot(endsWith('in')));
     });
 
     test('dress-led boards use the dress as the visual hero', () {

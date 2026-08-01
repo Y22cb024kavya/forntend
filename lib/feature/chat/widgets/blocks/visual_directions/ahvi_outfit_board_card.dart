@@ -29,6 +29,50 @@ import 'package:myapp/util/wardrobe_image_resolver.dart';
 typedef OutfitBoardMessageSender = void Function(String message);
 typedef OutfitBoardTap = void Function(Map<String, dynamic> board);
 
+const double editorialBoardHeaderHeight = 30;
+const double editorialBoardContextHeight = 72;
+const double editorialBoardReasoningHeight = 108;
+const double editorialBoardActionHeight = 48;
+const double editorialBoardMutationHeight = 52;
+
+/// Reserves the visual canvas independently from copy length and action state.
+double editorialBoardCanvasHeightForWidth(double width) {
+  final safeWidth = width.isFinite && width > 0 ? width : 320.0;
+  return (safeWidth * 0.68).clamp(194.0, 270.0).toDouble();
+}
+
+double editorialBoardCardHeightForWidth(
+  double width, {
+  bool includeMutationBar = false,
+}) {
+  final canvasHeight = editorialBoardCanvasHeightForWidth(width);
+  final actionHeight =
+      editorialBoardActionHeight +
+      (includeMutationBar ? editorialBoardMutationHeight : 0);
+  return math.max(
+    includeMutationBar ? 520.0 : 480.0,
+    editorialBoardHeaderHeight +
+        editorialBoardContextHeight +
+        canvasHeight +
+        editorialBoardReasoningHeight +
+        actionHeight,
+  );
+}
+
+/// Keeps bounded display copy at a word or sentence boundary instead of using
+/// a fading paint effect that can leave a visibly incomplete thought.
+String editorialSentenceSafeCopy(String value, {required int maxCharacters}) {
+  final text = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (text.length <= maxCharacters) return text;
+  final limit = math.min(maxCharacters, text.length);
+  for (var i = limit - 1; i >= (limit * 0.55).floor(); i--) {
+    if ('.!?'.contains(text[i])) return text.substring(0, i + 1).trim();
+  }
+  final wordEnd = text.lastIndexOf(' ', limit);
+  final end = wordEnd > 0 ? wordEnd : limit;
+  return '${text.substring(0, end).trimRight()}…';
+}
+
 enum BoardInteractionMode { recommendation, styleThis, buildOutfit }
 
 extension BoardInteractionModeName on BoardInteractionMode {
@@ -531,7 +575,10 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
 
     return SizedBox(
       width: widget.width,
-      height: math.max(460, widget.width * 1.35),
+      height: editorialBoardCardHeightForWidth(
+        widget.width,
+        includeMutationBar: _controller != null,
+      ),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: theme.colorScheme.surface,
@@ -553,15 +600,26 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                   key: _shareBoundaryKey,
                   child: Column(
                     children: [
-                      _PremiumBoardHeader(mode: mode),
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: widget.onTapBoard == null
-                            ? null
-                            : () => widget.onTapBoard!(_currentDirection),
-                        child: OutfitContextStrip(model: _model),
+                      SizedBox(
+                        height: editorialBoardHeaderHeight,
+                        child: _PremiumBoardHeader(mode: mode),
                       ),
-                      Expanded(
+                      SizedBox(
+                        height: editorialBoardContextHeight,
+                        child: ClipRect(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: widget.onTapBoard == null
+                                ? null
+                                : () => widget.onTapBoard!(_currentDirection),
+                            child: OutfitContextStrip(model: _model),
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        height: editorialBoardCanvasHeightForWidth(
+                          widget.width,
+                        ),
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: widget.onTapBoard == null
@@ -589,7 +647,12 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                           ),
                         ),
                       ),
-                      OutfitReasoningStrip(model: _model),
+                      SizedBox(
+                        height: editorialBoardReasoningHeight,
+                        child: ClipRect(
+                          child: OutfitReasoningStrip(model: _model),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -837,7 +900,7 @@ class OutfitContextStrip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              model.title,
+              editorialSentenceSafeCopy(model.title, maxCharacters: 88),
               textAlign: TextAlign.left,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -849,17 +912,27 @@ class OutfitContextStrip extends StatelessWidget {
             ),
             if (model.chips.isNotEmpty || model.wardrobeMatchPct != null) ...[
               const SizedBox(height: 5),
-              Wrap(
-                spacing: 6,
-                runSpacing: 5,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  if (model.wardrobeMatchPct != null)
-                    _WardrobeMatchPill(pct: model.wardrobeMatchPct!),
-                  ...model.chips
-                      .take(3)
-                      .map((chip) => _ContextChip(label: chip)),
-                ],
+              SizedBox(
+                height: 20,
+                child: FittedBox(
+                  alignment: Alignment.centerLeft,
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (model.wardrobeMatchPct != null)
+                        _WardrobeMatchPill(pct: model.wardrobeMatchPct!),
+                      ...model.chips
+                          .take(3)
+                          .map(
+                            (chip) => Padding(
+                              padding: const EdgeInsets.only(left: 6),
+                              child: _ContextChip(label: chip),
+                            ),
+                          ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ],
@@ -881,12 +954,17 @@ class OutfitReasoningStrip extends StatelessWidget {
     }
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final why = editorialSentenceSafeCopy(
+      model.intelligenceText,
+      maxCharacters: 180,
+    );
+    final tip = editorialSentenceSafeCopy(model.stylingTip, maxCharacters: 150);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 9),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (model.intelligenceText.isNotEmpty) ...[
+          if (why.isNotEmpty) ...[
             Text(
               'WHY IT WORKS',
               style: theme.textTheme.labelSmall?.copyWith(
@@ -898,10 +976,10 @@ class OutfitReasoningStrip extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              model.intelligenceText,
+              why,
               key: const ValueKey('style-why-it-works'),
-              maxLines: 3,
-              overflow: TextOverflow.fade,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colors.onSurface,
                 fontWeight: FontWeight.w500,
@@ -909,7 +987,7 @@ class OutfitReasoningStrip extends StatelessWidget {
               ),
             ),
           ],
-          if (model.stylingTip.isNotEmpty) ...[
+          if (tip.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(
               'STYLING TIP',
@@ -922,10 +1000,10 @@ class OutfitReasoningStrip extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              model.stylingTip,
+              tip,
               key: const ValueKey('style-styling-tip'),
               maxLines: 2,
-              overflow: TextOverflow.fade,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colors.onSurfaceVariant,
                 fontStyle: FontStyle.italic,
@@ -958,7 +1036,8 @@ class _ContextChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        maxLines: 2,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: theme.textTheme.labelSmall?.copyWith(
           color: colors.onSurfaceVariant,
           fontSize: 9.5,

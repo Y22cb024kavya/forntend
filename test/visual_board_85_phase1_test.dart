@@ -432,8 +432,87 @@ void main() {
       tester.getTopLeft(why).dy,
       greaterThan(tester.getTopLeft(canvas).dy),
     );
-    expect(tester.widget<Text>(why).maxLines, 3);
+    expect(tester.widget<Text>(why).maxLines, 2);
     expect(tester.widget<Text>(tip).maxLines, 2);
+  });
+
+  testWidgets('recommendation cards reserve equal outer and canvas heights', (
+    tester,
+  ) async {
+    final directions = [
+      for (var index = 0; index < 3; index++)
+        {
+          ..._direction,
+          'board_id': '00000000-0000-4000-8000-00000000000$index',
+          'direction_name': 'Board $index',
+          'style_archetype': 'Board $index',
+        },
+    ];
+    await _pumpBoard(
+      tester,
+      use85Layout: true,
+      directions: directions,
+      width: 320,
+    );
+
+    final cards = find.byType(AhviOutfitBoardCard);
+    final canvases = find.byKey(
+      const ValueKey<String>('editorial-outfit-canvas'),
+    );
+    expect(cards, findsNWidgets(3));
+    expect(canvases, findsNWidgets(3));
+    final cardHeights = [
+      for (var i = 0; i < 3; i++) tester.getSize(cards.at(i)).height,
+    ];
+    final canvasHeights = [
+      for (var i = 0; i < 3; i++) tester.getSize(canvases.at(i)).height,
+    ];
+    expect(cardHeights, everyElement(closeTo(cardHeights.first, 0.01)));
+    expect(canvasHeights, everyElement(closeTo(canvasHeights.first, 0.01)));
+    expect(
+      canvasHeights.first,
+      closeTo(editorialBoardCanvasHeightForWidth(320), 0.01),
+    );
+  });
+
+  testWidgets('long copy cannot shrink the canvas or use fading overflow', (
+    tester,
+  ) async {
+    await _pumpBoard(
+      tester,
+      use85Layout: true,
+      width: 320,
+      direction: {
+        ..._direction,
+        'direction_name':
+            'A very long editorial title that remains readable and bounded',
+        'style_archetype':
+            'A very long editorial title that remains readable and bounded',
+        'why_it_works':
+            'The warm silhouette balances the occasion with an easy proportion that should end at a clean boundary.',
+        'styling_tip':
+            'Keep the supporting accents deliberate and let the main garment lead the composition through the evening.',
+      },
+    );
+
+    final canvas = find.byKey(const ValueKey('editorial-outfit-canvas'));
+    final why = tester.widget<Text>(
+      find.byKey(const ValueKey('style-why-it-works')),
+    );
+    final tip = tester.widget<Text>(
+      find.byKey(const ValueKey('style-styling-tip')),
+    );
+    expect(
+      tester.getSize(canvas).height,
+      closeTo(editorialBoardCanvasHeightForWidth(320), 0.01),
+    );
+    expect(why.maxLines, 2);
+    expect(tip.maxLines, 2);
+    expect(why.overflow, TextOverflow.ellipsis);
+    expect(tip.overflow, TextOverflow.ellipsis);
+    expect(why.data, isNot(endsWith('fade')));
+    expect(tip.data, anyOf(endsWith('…'), endsWith('.')));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('cutouts stay unframed and opaque accessory gets one frame', (

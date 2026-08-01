@@ -14,20 +14,50 @@ import 'style_board_network_image.dart';
 double editorialVisualScaleForRole(BoardItemRole role) {
   switch (role) {
     case BoardItemRole.top:
-      return 1.24;
+      return 1.16;
     case BoardItemRole.bottom:
-      return 1.18;
-    case BoardItemRole.dress:
-      return 1.20;
-    case BoardItemRole.outerwear:
-      return 1.18;
-    case BoardItemRole.footwear:
-      return 1.48; // shoes carry the most transparent padding
-    case BoardItemRole.accessory:
-      return 1.20; // bags / jewellery collapse into accessory
-    case BoardItemRole.unknown:
       return 1.12;
+    case BoardItemRole.dress:
+      return 1.12;
+    case BoardItemRole.outerwear:
+      return 1.10;
+    case BoardItemRole.footwear:
+      return 1.34; // shoes carry the most transparent padding
+    case BoardItemRole.accessory:
+      return 1.10;
+    case BoardItemRole.unknown:
+      return 1.08;
   }
+}
+
+double editorialVisualScaleForItem(StyleBoardItem item) {
+  if (item.role != BoardItemRole.accessory) {
+    return editorialVisualScaleForRole(item.role);
+  }
+  final value = [
+    item.accessoryType,
+    item.category,
+    item.subCategory,
+    item.boardRole,
+    item.slot,
+    item.name,
+  ].join(' ').toLowerCase();
+  if (RegExp(
+    r'\b(bag|handbag|tote|clutch|purse|satchel|backpack)\b',
+  ).hasMatch(value)) {
+    return 1.08;
+  }
+  if (RegExp(
+    r'\b(belt|watch|timepiece|jewellery|jewelry|necklace|bracelet|ring|earring)\b',
+  ).hasMatch(value)) {
+    return 1.02;
+  }
+  if (RegExp(
+    r'\b(headwear|hat|cap|beanie|turban|scarf|stole|shawl)\b',
+  ).hasMatch(value)) {
+    return 1.08;
+  }
+  return editorialVisualScaleForRole(item.role);
 }
 
 /// Zoom anchor per role. Bottoms anchor to the top so the waistband stays put
@@ -118,7 +148,7 @@ class EditorialBoardItem extends StatelessWidget {
         key: item.hasStableIdentity
             ? ValueKey<String>('vscale-${item.itemId}')
             : null,
-        scale: shouldFrame ? 1 : editorialVisualScaleForRole(item.role),
+        scale: shouldFrame ? 1 : editorialVisualScaleForItem(item),
         alignment: editorialAlignmentForRole(item.role),
         filterQuality: FilterQuality.high,
         child: content,

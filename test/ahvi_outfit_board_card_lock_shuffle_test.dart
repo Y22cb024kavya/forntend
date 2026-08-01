@@ -318,6 +318,8 @@ void main() {
   ) async {
     final parsed = parseAhviResponse({
       'success': true,
+      'route': 'build_outfit',
+      'board_policy': 'allow',
       'style_boards': [_board()],
     });
     final block = parsed.blocks.singleWhere(

@@ -19,6 +19,7 @@ import 'package:myapp/feature/chat/widgets/ahvi_processing_bubble.dart';
 import 'package:myapp/models/calendar_actions.dart';
 import 'package:myapp/services/backend_service.dart';
 import 'package:myapp/services/chat_response_renderer_registry.dart';
+import 'package:myapp/services/ahvi_response_policy.dart';
 import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
 import 'package:myapp/widgets/ahvi_module_card.dart';
@@ -761,6 +762,8 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
   bool _chipsVisible = true;
   bool _chatHasText = false;
   Attachment? _pendingAttachment;
+  final AhviSessionGenerationGuard _responseGuard =
+      AhviSessionGenerationGuard();
 
   final List<_ChatSession> _history = [];
   String? _currentSessionId;
@@ -881,6 +884,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
   void _startNewChat() {
     _saveCurrentSession();
     _closeDrawer(); // close the in-sheet panel only — NOT the modal sheet
+    _responseGuard.invalidate();
     setState(() {
       _currentSessionId = DateTime.now().millisecondsSinceEpoch.toString();
       _messages.clear();
@@ -888,6 +892,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       _runningMemory = '';
       _chipsVisible = true;
       _chatHasText = false;
+      _typing = false;
       _inputController.clear();
       _messages.add(_SheetMessage(textKey: _config.greetingKey, isUser: false));
     });
@@ -896,6 +901,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
   void _loadSession(_ChatSession session) {
     _saveCurrentSession();
     _closeDrawer(); // close the in-sheet panel only — NOT the modal sheet
+    _responseGuard.invalidate();
     setState(() {
       _currentSessionId = session.id;
       _messages
@@ -914,12 +920,14 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
               .where((m) => (m['content'] ?? '').trim().isNotEmpty),
         );
       _chipsVisible = false;
+      _typing = false;
     });
     _scrollToBottom();
   }
 
   @override
   void dispose() {
+    _responseGuard.invalidate();
     WidgetsBinding.instance.removeObserver(this);
     _saveCurrentSession(); // safety net if the sheet is swiped away mid-chat
     _inputFocusNode.dispose();
@@ -1275,10 +1283,8 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           'reminder. Please try again.',
         );
       }
-    } catch (err) {
-      debugPrint(
-        'AHVI_MED_CHAT_REMINDER_SCHEDULE_ERROR $err',
-      );
+    } catch (_) {
+      debugPrint('AHVI_MED_CHAT_REMINDER_SCHEDULE_ERROR');
 
       _addAssistantReply(
         'I found $medName, but could not schedule the '
@@ -1292,6 +1298,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
     final trimmed = text.trim();
     if (trimmed.isEmpty && _pendingAttachment == null) return;
     if (_typing) return;
+    final responseToken = _responseGuard.capture(_currentSessionId ?? '');
     final attachment = _pendingAttachment;
     final prompt = [
       if (trimmed.isNotEmpty) trimmed,
@@ -1379,6 +1386,31 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       final interpretedOccasion = _occasionFromStylePrompt(
         resolvedStylePrompt.isNotEmpty ? resolvedStylePrompt : query,
       );
+      final styleActionContext = styleModules.contains(widget.moduleContext)
+          ? styleActionContextFromValue(
+              trimmed,
+              occasion: interpretedOccasion ?? '',
+              sessionId: _currentSessionId ?? '',
+              previousPairingTarget:
+                  (_lastStyleContext?['previous_pairing_target'] ?? '')
+                      .toString(),
+            )
+          : null;
+      final styleContext = <String, dynamic>{
+        ...?styleActionContext?.toJson(),
+        if (isClarificationAnswer) ...{
+          'original_prompt': pendingClarificationPrompt,
+          'clarification': trimmed,
+          'resolved_prompt': clarificationResolvedPrompt,
+        } else if (isClosestStyleAction) ...{
+          if (originalStylePrompt.isNotEmpty)
+            'original_prompt': originalStylePrompt,
+          if (resolvedStylePrompt.isNotEmpty)
+            'resolved_prompt': resolvedStylePrompt,
+          if (interpretedOccasion != null)
+            'interpreted_occasion': interpretedOccasion,
+        },
+      };
       final isMediReminderQuestion =
           widget.moduleContext.toLowerCase() == 'medi' &&
           _isReminderQuestion(trimmed);
@@ -1414,7 +1446,9 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
         styleAction: isClosestStyleAction ? 'show_closest_option' : null,
         action: isClosestStyleAction
             ? 'show_closest_option'
-            : (isClarificationAnswer ? 'clarification_selected' : null),
+            : (isClarificationAnswer
+                  ? 'clarification_selected'
+                  : styleActionContext?.action),
         clarification: isClarificationAnswer ? trimmed : null,
         previousPrompt: isClarificationAnswer
             ? pendingClarificationPrompt
@@ -1426,22 +1460,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
             : isClosestStyleAction && resolvedStylePrompt.isNotEmpty
             ? resolvedStylePrompt
             : null,
-        styleContext: isClarificationAnswer
-            ? {
-          'original_prompt': pendingClarificationPrompt,
-          'clarification': trimmed,
-          'resolved_prompt': clarificationResolvedPrompt,
-        }
-            : isClosestStyleAction
-            ? {
-          if (originalStylePrompt.isNotEmpty)
-            'original_prompt': originalStylePrompt,
-          if (resolvedStylePrompt.isNotEmpty)
-            'resolved_prompt': resolvedStylePrompt,
-          if (interpretedOccasion != null)
-            'interpreted_occasion': interpretedOccasion,
-        }
-            : null,
+        styleContext: styleContext.isEmpty ? null : styleContext,
         lastStyleContext: _lastStyleContext,
         showClosestOption: isClosestStyleAction,
         allowClosestOption: isClosestStyleAction,
@@ -1461,7 +1480,13 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
         'respModule=${response['module'] ?? response['domain'] ?? ''} '
         'intent=${response['intent'] ?? ''}',
       );
-      if (!mounted) return;
+      if (!mounted ||
+          !_responseGuard.accepts(
+            responseToken,
+            _currentSessionId ?? '',
+          )) {
+        return;
+      }
       final refreshTarget =
       (response['refresh'] ?? response['data']?['refresh'])
           ?.toString()
@@ -1472,6 +1497,10 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           (refreshTarget == widget.moduleContext.toLowerCase() ||
               refreshTarget == 'medi')) {
         await widget.onRefresh?.call();
+        if (!mounted ||
+            !_responseGuard.accepts(responseToken, _currentSessionId ?? '')) {
+          return;
+        }
       }
 
       final rawMessage = response['message'];
@@ -1483,7 +1512,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           .trim();
       final aiText = message.isNotEmpty
           ? message
-          : 'AHVI returned an empty response. Please try again.';
+           : AhviClientCopy.emptyResponse;
       final suppressReminderCreationResponse =
           isMediReminderQuestion && _asksForReminderCreationDetails(aiText);
       final guardedAiText = suppressReminderCreationResponse
@@ -1494,13 +1523,21 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       if (updatedMemory != null) _runningMemory = updatedMemory.toString();
       final _lsc = _styleBlockFromResponse(response, 'last_style_context');
       if (_lsc != null) _lastStyleContext = _lsc;
+      final responsePolicy = AhviResponsePolicy.fromResponse(response);
+      final textOnlyResponse =
+          responsePolicy.isSafetySensitive ||
+          (responsePolicy.hasCanonicalRoute &&
+              !responsePolicy.canRenderBoards(response));
       final selection = AhviChatResponseRendererRegistry.select(response);
-      final visualPackingCard =
-          AhviChatResponseRendererRegistry.packingCard(response);
-      final typedModuleCard =
-          AhviChatResponseRendererRegistry.typedModuleCard(response);
+      final visualPackingCard = textOnlyResponse
+          ? null
+          : AhviChatResponseRendererRegistry.packingCard(response);
+      final typedModuleCard = textOnlyResponse
+          ? null
+          : AhviChatResponseRendererRegistry.typedModuleCard(response);
       final visualPayload = _VisualDirectionPayload.fromResponse(response);
-      final visualBoard = !visualPayload.hasDirections &&
+      final visualBoard = !textOnlyResponse &&
+              !visualPayload.hasDirections &&
               AhviVisualBoard.isVisualBoard(response)
           ? AhviVisualBoard.fromJson(response)
           : null;
@@ -1508,12 +1545,14 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           selection.kind == AhviChatRendererKind.moduleCard ||
           selection.kind == AhviChatRendererKind.visualPackingChecklist ||
           selection.kind == AhviChatRendererKind.visualBoard;
-      final moduleCards = _moduleCardsFromSheetResponse(response)
-          .where((card) =>
-              card['type']?.toString() != 'visual_packing_checklist' &&
-              card['visual_sections'] is! List &&
-              card['visualSections'] is! List)
-          .toList(growable: false);
+      final moduleCards = textOnlyResponse
+          ? const <Map<String, dynamic>>[]
+          : _moduleCardsFromSheetResponse(response)
+                .where((card) =>
+                    card['type']?.toString() != 'visual_packing_checklist' &&
+                    card['visual_sections'] is! List &&
+                    card['visualSections'] is! List)
+                .toList(growable: false);
       final boardPayload = _StyleBoardPayload.fromResponse(response);
       final gapPayload = _WardrobeGapPayload.fromResponse(response);
       // Clarification lifecycle: a rendered board/cards resolves any pending
@@ -1528,20 +1567,23 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       } else if (isClarificationResponse) {
         _clarificationResolvedByCards = false;
       }
-      final visualInspiration = _styleBlockFromResponse(
-        response,
-        'visual_inspiration_board',
-      );
-      final missingPiece = _styleBlockFromResponse(
-        response,
-        'missing_piece_intelligence',
-      );
-      final transitionPlan = _styleBlockFromResponse(response, 'transition_plan');
+      final visualInspiration = textOnlyResponse
+          ? null
+          : _styleBlockFromResponse(response, 'visual_inspiration_board');
+      final missingPiece = responsePolicy.route == 'missing_pieces'
+          ? _styleBlockFromResponse(response, 'missing_piece_intelligence')
+          : null;
+      final transitionPlan = textOnlyResponse
+          ? null
+          : _styleBlockFromResponse(response, 'transition_plan');
       final rawStylistReasoning = _styleBlockFromResponse(response, 'stylist_reasoning');
-      final stylistReasoning = visualPayload.hasDirections || boardPayload.hasBoards
+      final stylistReasoning = textOnlyResponse ||
+              visualPayload.hasDirections ||
+              boardPayload.hasBoards
           ? null
           : rawStylistReasoning;
-      final displayModuleCards = suppressReminderCreationResponse ||
+      final displayModuleCards = textOnlyResponse ||
+              suppressReminderCreationResponse ||
               suppressGenericRenderer ||
               typedModuleCard != null ||
               visualPackingCard != null
@@ -1552,7 +1594,9 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           _styleBlockFromResponse(response, 'occasion_advice');
       final displayText = isClosestStyleAction && !boardPayload.hasBoards
           ? "I couldn't build even a closest option from the available wardrobe slots."
-          : gapPayload.active && gapPayload.message.trim().isNotEmpty
+          : !textOnlyResponse &&
+                gapPayload.active &&
+                gapPayload.message.trim().isNotEmpty
           ? gapPayload.message.trim()
           : guardedAiText;
 
@@ -1594,9 +1638,13 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       });
       _scrollToBottom();
       _saveCurrentSession();
-    } catch (err) {
-      if (!mounted) return;
-      final fallback = 'AHVI request failed: $err';
+    } catch (_) {
+      debugPrint('AHVI_STYLIST_REQUEST_FAILED');
+      if (!mounted ||
+          !_responseGuard.accepts(responseToken, _currentSessionId ?? '')) {
+        return;
+      }
+      final fallback = AhviClientCopy.requestError;
       setState(() {
         _typing = false;
         _messages.add(_SheetMessage(text: fallback, isUser: false));
@@ -2248,27 +2296,9 @@ class _StyleBoardPayload {
 ({String path, List<Map<String, dynamic>> boards}) selectStyleBoardAlias(
   Map<String, dynamic> response,
 ) {
-  final data = response['data'] is Map
-      ? Map<String, dynamic>.from(response['data'] as Map)
-      : <String, dynamic>{};
-  final candidates = <({String path, Object? value})>[
-    (path: 'data.rendered_boards', value: data['rendered_boards']),
-    (path: 'rendered_boards', value: response['rendered_boards']),
-    (path: 'style_boards', value: response['style_boards']),
-    (path: 'data.style_boards', value: data['style_boards']),
-    (path: 'cards', value: response['cards']),
-    (path: 'data.cards', value: data['cards']),
-    (path: 'data.outfits', value: data['outfits']),
-    (path: 'outfits', value: response['outfits']),
-  ];
-
-  for (final candidate in candidates) {
-    final boards = _mapList(candidate.value);
-    if (boards.isNotEmpty) {
-      return (path: candidate.path, boards: boards);
-    }
-  }
-  return (path: '', boards: const []);
+  final collection = AhviResponsePolicy.fromResponse(response)
+      .boardCollection(response);
+  return (path: collection.path, boards: collection.boards);
 }
 
 class _VisualDirectionPayload {

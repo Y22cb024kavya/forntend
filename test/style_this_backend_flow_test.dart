@@ -51,6 +51,9 @@ Map<String, dynamic> _boardItem(
 
 Map<String, dynamic> _successfulResponse() => {
   'success': true,
+  'route': 'style_this',
+  'board_policy': 'allow',
+  'anchor_item': {'item_id': _anchor.id},
   'visual_directions': [
     {
       'board_id': 'style-board-stable-1',

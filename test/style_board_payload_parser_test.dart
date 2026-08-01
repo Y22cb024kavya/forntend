@@ -12,8 +12,9 @@ Map<String, dynamic> _board(String id) => {
 
 void main() {
   Map<dynamic, dynamic> adaptedItem(Map<String, dynamic> item) {
-    final parsed = parseAhviResponse({
-      'rendered_boards': [
+      final parsed = parseAhviResponse({
+        'route': 'wardrobe_style',
+        'rendered_boards': [
         {
           'board_id': 'provenance-board',
           'items': [item],
@@ -30,6 +31,7 @@ void main() {
   group('Style Me board alias parsing', () {
     test('accepts root style_boards', () {
       final selected = selectStyleBoardAlias({
+        'route': 'wardrobe_style',
         'style_boards': [_board('style')],
       });
 
@@ -39,6 +41,7 @@ void main() {
 
     test('accepts root rendered_boards', () {
       final selected = selectStyleBoardAlias({
+        'route': 'visual_inspiration',
         'rendered_boards': [_board('rendered')],
       });
 
@@ -48,6 +51,7 @@ void main() {
 
     test('accepts data.style_boards', () {
       final selected = selectStyleBoardAlias({
+        'route': 'wardrobe_style',
         'data': {
           'style_boards': [_board('nested-style')],
         },
@@ -59,6 +63,7 @@ void main() {
 
     test('data.rendered_boards is the highest valid alias', () {
       final selected = selectStyleBoardAlias({
+        'route': 'visual_inspiration',
         'cards': [_board('card')],
         'style_boards': [_board('style')],
         'rendered_boards': [_board('root-rendered')],
@@ -74,6 +79,7 @@ void main() {
     test('mirrored aliases select one list without duplicating boards', () {
       final board = _board('same-board');
       final selected = selectStyleBoardAlias({
+        'route': 'visual_inspiration',
         'cards': [board],
         'style_boards': [board],
         'data': {
@@ -88,6 +94,7 @@ void main() {
 
     test('cards remains a fallback', () {
       final selected = selectStyleBoardAlias({
+        'route': 'visual_inspiration',
         'cards': [_board('card')],
       });
 
@@ -96,6 +103,7 @@ void main() {
 
     test('data.outfits remains a fallback', () {
       final selected = selectStyleBoardAlias({
+        'route': 'wardrobe_style',
         'data': {
           'outfits': [_board('outfit')],
         },
@@ -106,6 +114,7 @@ void main() {
 
     test('invalid and empty higher aliases fall through', () {
       final selected = selectStyleBoardAlias({
+        'route': 'visual_inspiration',
         'rendered_boards': 'encoded-json-is-not-supported',
         'style_boards': const [],
         'cards': const ['not-a-map'],
@@ -121,17 +130,21 @@ void main() {
     test('generated Style aliases use canonical visual directions', () {
       for (final response in [
         {
+          'route': 'visual_inspiration',
           'data': {
             'rendered_boards': [_board('nested-rendered')],
           },
         },
         {
+          'route': 'visual_inspiration',
           'rendered_boards': [_board('rendered')],
         },
         {
+          'route': 'visual_inspiration',
           'style_boards': [_board('style')],
         },
         {
+          'route': 'visual_inspiration',
           'data': {
             'outfits': [_board('outfit')],
           },
@@ -147,6 +160,7 @@ void main() {
     test('visual directions take precedence over generated boards', () {
       expect(
         styleResponseRendererKindForTesting({
+          'route': 'visual_inspiration',
           'visual_directions': [
             {'title': 'Direction'},
           ],
@@ -192,6 +206,7 @@ void main() {
 
     test('composite rendered board retains a canonical visual item', () {
       final response = {
+        'route': 'visual_inspiration',
         'rendered_boards': [
           {
             'board_id': 'composite-1',

@@ -2,12 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:myapp/feature/chat/models/ahvi_response_block.dart';
 import 'package:myapp/models/ahvi_visual_board_model.dart';
 import 'package:myapp/services/ahvi_response_parser.dart';
+import 'package:myapp/services/ahvi_response_policy.dart';
 import 'package:myapp/widgets/ahvi_module_card.dart';
 
 AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   debugPrint('AHVI_RESPONSE_KEYS: ${response.keys.toList()}');
 
   final parsed = AhviResponse.fromMap(response);
+  final responsePolicy = AhviResponsePolicy.fromResponse(response);
   final rawMessage = response['message'];
   final data = _dataMap(response);
   final text =
@@ -46,17 +48,22 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
     'ENABLE_VISUAL_BOARD_85_LAYOUT',
     defaultValue: true,
   );
-  var visualDirections = _extractVisualDirections(response, data);
+  var visualDirections = responsePolicy.canRenderBoards(response)
+      ? _extractVisualDirections(response, data)
+      : <Map<String, dynamic>>[];
   // Style This ships its boards under top-level `style_directions` (not
   // `visual_directions`). Adapt them into the canonical visualDirections shape
   // so parseAhviResponse → AhviBlockRenderer → VisualDirectionCarousel →
   // AhviOutfitBoardCard renders them exactly like normal directions. Only runs
   // when there are no normal visual_directions, so that path is untouched.
-  if (visualDirections.isEmpty && !_looksLikeModuleResponse(response, data)) {
+  if (visualDirections.isEmpty &&
+      responsePolicy.canRenderBoards(response) &&
+      responsePolicy.hasValidatedAnchorIn(response) &&
+      !_looksLikeModuleResponse(response, data)) {
     final styleDirections = _extractStyleThisDirections(response, data);
     if (styleDirections.isNotEmpty) {
       final anchor = _anchorItemMap(response, data);
-      final responsePolicy = _validSourcePolicy(
+      final sourcePolicy = _validSourcePolicy(
         response['source_policy'] ?? data['source_policy'],
       );
       var index = 0;
@@ -66,9 +73,10 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
               dir,
               anchor,
               index++,
-              responsePolicy,
+              sourcePolicy,
             ),
           )
+          .map((board) => responsePolicy.decorateBoard(board, response))
           .toList();
       debugPrint(
         'AHVI_STYLE_DIRECTION_ADAPTER source_field=style_directions '
@@ -82,8 +90,10 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   // style_boards (e.g. "use my wardrobe" / weak_occasion_match), convert them
   // to the visual_directions shape so the look is consistent everywhere.
   var convertedWardrobeBoards = false;
-  if (visualDirections.isEmpty && !_looksLikeModuleResponse(response, data)) {
-    final wardrobeBoards = _extractStyleBoards(response, data);
+  if (visualDirections.isEmpty &&
+      responsePolicy.canRenderBoards(response) &&
+      !_looksLikeModuleResponse(response, data)) {
+    final wardrobeBoards = responsePolicy.boardCollection(response).boards;
     if (wardrobeBoards.isNotEmpty) {
       visualDirections = wardrobeBoards.map(_styleBoardToDirection).toList();
       convertedWardrobeBoards = true;
@@ -91,15 +101,17 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   }
   final hasVisualDirections = visualDirections.isNotEmpty;
   final hasVisualBoard =
-      AhviVisualBoard.isVisualBoard(response) ||
+      responsePolicy.canRenderBoards(response) &&
+      (AhviVisualBoard.isVisualBoard(response) ||
       response['visual_board'] != null ||
       response['visualBoard'] != null ||
       data['visual_board'] != null ||
-      data['visualBoard'] != null;
+      data['visualBoard'] != null);
 
   // Visual inspiration board.
   final visualInspiration = _extractVisualInspiration(response, data);
-  if (visualInspiration.isNotEmpty &&
+  if (responsePolicy.canRenderBoards(response) &&
+      visualInspiration.isNotEmpty &&
       !(kVisualBoard85Enabled && (hasVisualDirections || hasVisualBoard))) {
     blocks.add(
       AhviResponseBlock(
@@ -123,7 +135,7 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
     );
   }
 
-  if (AhviVisualBoard.isVisualBoard(response)) {
+  if (hasVisualBoard && AhviVisualBoard.isVisualBoard(response)) {
     blocks.add(
       AhviResponseBlock(
         type: AhviBlockType.visualBoard,
@@ -132,7 +144,7 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
     );
   } else {
     final visualBoard = response['visual_board'] ?? response['visualBoard'];
-    if (visualBoard is Map) {
+    if (hasVisualBoard && visualBoard is Map) {
       final boardMap = Map<String, dynamic>.from(visualBoard);
       blocks.add(
         AhviResponseBlock(
@@ -158,7 +170,10 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   final planBlock = _extractPlanBlock(response, data);
   if (planBlock != null) blocks.add(planBlock);
 
-  final sharedModuleCard = hasVisualDirections
+  final suppressStructuredCards =
+      responsePolicy.hasCanonicalRoute &&
+      !responsePolicy.canRenderBoards(response);
+  final sharedModuleCard = hasVisualDirections || suppressStructuredCards
       ? null
       : AhviModuleCard.fromResponse(response);
   if (sharedModuleCard != null) {
@@ -169,11 +184,13 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
       ),
     );
   } else {
-    final moduleCards = _extractModuleCards(
-      response,
-      data,
-      suppressVisualDirectionCards: hasVisualDirections,
-    );
+    final moduleCards = suppressStructuredCards
+        ? const <Map<String, dynamic>>[]
+        : _extractModuleCards(
+            response,
+            data,
+            suppressVisualDirectionCards: hasVisualDirections,
+          );
     if (moduleCards.isNotEmpty) {
       blocks.add(
         AhviResponseBlock(
@@ -186,8 +203,10 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
     }
   }
 
-  if (!_looksLikeModuleResponse(response, data) && !convertedWardrobeBoards) {
-    final styleBoards = _extractStyleBoards(response, data);
+  if (responsePolicy.canRenderBoards(response) &&
+      !_looksLikeModuleResponse(response, data) &&
+      !convertedWardrobeBoards) {
+    final styleBoards = responsePolicy.boardCollection(response).boards;
     if (styleBoards.isNotEmpty) {
       blocks.add(
         AhviResponseBlock(
@@ -566,26 +585,6 @@ Map<String, dynamic> _styleBoardToDirection(Map<String, dynamic> board) {
     'board_items': boardItems,
     'hero_piece': boardItems.isNotEmpty ? boardItems.first['name'] : null,
   };
-}
-
-List<Map<String, dynamic>> _extractStyleBoards(
-  Map<String, dynamic> response,
-  Map<String, dynamic> data,
-) {
-  for (final value in [
-    data['rendered_boards'],
-    response['rendered_boards'],
-    response['style_boards'],
-    data['style_boards'],
-    response['cards'],
-    data['cards'],
-    data['outfits'],
-    response['outfits'],
-  ]) {
-    final boards = _mapList(value);
-    if (boards.isNotEmpty) return boards;
-  }
-  return const [];
 }
 
 List<Map<String, dynamic>> _extractModuleCards(

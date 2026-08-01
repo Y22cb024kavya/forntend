@@ -55,6 +55,7 @@ void main() {
   test('preserves existing visual and style renderer precedence', () {
     expect(
       AhviChatResponseRendererRegistry.select({
+        'route': 'visual_inspiration',
         'visual_board': {
           'response_type': 'visual_board',
           'board_type': 'diet_plan',
@@ -65,6 +66,7 @@ void main() {
     );
     expect(
       AhviChatResponseRendererRegistry.select({
+        'route': 'visual_inspiration',
         'visual_directions': [
           {'title': 'Soft layers'},
         ],
@@ -73,6 +75,7 @@ void main() {
     );
     expect(
       AhviChatResponseRendererRegistry.select({
+        'route': 'visual_inspiration',
         'style_boards': [
           {'title': 'Weekend'},
         ],

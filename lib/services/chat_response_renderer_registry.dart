@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:myapp/models/ahvi_visual_board_model.dart';
+import 'package:myapp/services/ahvi_response_policy.dart';
 import 'package:myapp/widgets/ahvi_module_card.dart';
 
 enum AhviChatRendererKind {
@@ -39,6 +40,7 @@ class AhviChatResponseRendererRegistry {
 
   static AhviChatRendererSelection select(Map<String, dynamic> response) {
     final data = _map(response['data']);
+    final policy = AhviResponsePolicy.fromResponse(response);
     final responseType = _firstText([
       response['response_type'],
       response['type'],
@@ -60,26 +62,36 @@ class AhviChatResponseRendererRegistry {
 
     AhviChatRendererKind kind;
     String reason;
-    if (_packingCard(response, data) != null) {
+    if ((policy.hasCanonicalRoute && !policy.canRenderBoards(response) ||
+            policy.isSafetySensitive) &&
+        _hasStyleVisualPayload(response, data)) {
+      kind = AhviChatRendererKind.text;
+      reason = policy.isSafetySensitive
+          ? 'safety_text_first'
+          : 'canonical_board_policy_suppressed';
+    } else if (_packingCard(response, data) != null) {
       kind = AhviChatRendererKind.visualPackingChecklist;
       reason = 'visual_sections';
-    } else if (AhviVisualBoard.isVisualBoard(response) ||
+    } else if (policy.canRenderBoards(response) &&
+        (AhviVisualBoard.isVisualBoard(response) ||
         response['visual_board'] is Map ||
         response['visualBoard'] is Map ||
         data['visual_board'] is Map ||
-        data['visualBoard'] is Map) {
+        data['visualBoard'] is Map)) {
       kind = AhviChatRendererKind.visualBoard;
       reason = 'visual_board';
     } else if (AhviModuleCard.isModuleCard(response)) {
       kind = AhviChatRendererKind.moduleCard;
       reason = 'typed_module_card';
-    } else if (_hasList(response['visual_directions']) ||
+    } else if (policy.canRenderBoards(response) &&
+        (_hasList(response['visual_directions']) ||
         _hasList(data['visual_directions']) ||
         _hasList(response['visualDirections']) ||
-        _hasList(data['visualDirections'])) {
+        _hasList(data['visualDirections']))) {
       kind = AhviChatRendererKind.visualDirections;
       reason = 'visual_directions';
-    } else if (_hasStyleBoards(response, data)) {
+    } else if (policy.canRenderBoards(response) &&
+        _hasStyleBoards(response, data)) {
       kind = AhviChatRendererKind.styleBoard;
       reason = 'style_board_alias';
     } else if (_isCalendarPlan(response, data)) {
@@ -213,6 +225,22 @@ class AhviChatResponseRendererRegistry {
     data['rendered_boards'],
     data['outfits'],
   ].any(_hasList);
+
+  static bool _hasStyleVisualPayload(
+    Map<String, dynamic> response,
+    Map<String, dynamic> data,
+  ) {
+    return _hasStyleBoards(response, data) ||
+        _hasList(response['visual_directions']) ||
+        _hasList(data['visual_directions']) ||
+        _hasList(response['visualDirections']) ||
+        _hasList(data['visualDirections']) ||
+        AhviVisualBoard.isVisualBoard(response) ||
+        response['visual_board'] is Map ||
+        response['visualBoard'] is Map ||
+        data['visual_board'] is Map ||
+        data['visualBoard'] is Map;
+  }
 
   static bool _isCalendarPlan(
     Map<String, dynamic> response,

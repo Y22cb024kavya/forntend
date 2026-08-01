@@ -23,6 +23,7 @@ import 'package:myapp/services/ahvi_response_parser.dart';
 import 'package:myapp/services/ahvi_speech_service.dart';
 import 'package:myapp/services/backend_service.dart';
 import 'package:myapp/services/chat_response_renderer_registry.dart';
+import 'package:myapp/services/ahvi_response_policy.dart';
 import 'package:myapp/style_board/saved_board_persistence.dart';
 import 'package:myapp/skincare.dart' as skincare_page;
 import 'package:myapp/fitness_page.dart' as fitness_page;
@@ -483,30 +484,31 @@ bool _isBoardActionPhrase(String value) {
 }
 
 List<dynamic> _extractStyleBoardsFromResponse(Map<String, dynamic> response) {
-  if ((response['type'] ?? '').toString().toLowerCase() == 'module_response') {
-    return const [];
-  }
-  final data = response['data'] is Map
-      ? Map<String, dynamic>.from(response['data'] as Map)
-      : <String, dynamic>{};
-
-  for (final value in [
-    response['style_boards'],
-    data['outfits'],
-    data['rendered_boards'],
-  ]) {
-    final boards = _mapDynamicBoards(value);
-    if (boards.isNotEmpty) return boards;
-  }
-  return const [];
+  return AhviResponsePolicy.fromResponse(response)
+      .boardCollection(response)
+      .boards;
 }
 
-List<dynamic> _mapDynamicBoards(dynamic value) {
-  if (value is! List) return const [];
-  return value
-      .whereType<Map>()
-      .map((item) => Map<String, dynamic>.from(item))
-      .toList();
+List<dynamic> _visibleResponseChips(
+  List<dynamic> chips,
+  AhviResponsePolicy policy,
+) {
+  if (policy.styleCtasAllowed) return chips;
+  const blocked = {
+    'use my wardrobe',
+    'use wardrobe',
+    'show visual inspiration',
+    'visual inspiration',
+    'find missing pieces',
+    'missing pieces',
+    'style this',
+    'build outfit',
+  };
+  return chips.where((chip) {
+    final parsed = AhviChip.fromDynamic(chip);
+    return !blocked.contains(parsed.value.toLowerCase().trim()) &&
+        !blocked.contains(parsed.label.toLowerCase().trim());
+  }).toList(growable: false);
 }
 
 String _blockText(dynamic value, String fallback) {
@@ -1025,6 +1027,8 @@ class _ChatScreenState extends State<ChatScreen>
   final Map<String, List<TextEditingController>> _checklistAddCtrlsByTitle = {};
   final Map<String, bool> _checklistSavedByTitle = {};
   Map<String, dynamic> _lastPlanPackContext = const {};
+  final AhviSessionGenerationGuard _responseGuard =
+      AhviSessionGenerationGuard();
 
   // ── Voice ──────────────────────────────────────────────────────────────────
   bool _isListening = false;
@@ -1233,6 +1237,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   void _startNewChat() {
     _scaffoldKey.currentState?.closeDrawer(); // close drawer only, not the screen
+    _responseGuard.invalidate();
     setState(() {
       _currentSessionId = DateTime.now().millisecondsSinceEpoch.toString();
       _messages
@@ -1241,12 +1246,14 @@ class _ChatScreenState extends State<ChatScreen>
       _chatHistory.clear();
       _runningMemory = '';
       _lastStyleContext = null;
+      _isTyping = false;
     });
     _scrollToBottom();
   }
 
   void _loadSession(_ChatSession session) {
     _scaffoldKey.currentState?.closeDrawer(); // close drawer only, not the screen
+    _responseGuard.invalidate();
     setState(() {
       _currentSessionId = session.id;
       _chatHistory
@@ -1269,6 +1276,7 @@ class _ChatScreenState extends State<ChatScreen>
       }
       _runningMemory = '';
       _lastStyleContext = null;
+      _isTyping = false;
     });
     _scrollToBottom();
   }
@@ -1349,6 +1357,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _requestMoreStyleBoards(String chip) async {
+    final responseToken = _responseGuard.capture(_currentSessionId);
     final sourceIndex = _lastAssistantWithBoardsIndex();
     final sourceCards = sourceIndex == null
         ? const <dynamic>[]
@@ -1384,7 +1393,10 @@ class _ChatScreenState extends State<ChatScreen>
         excludeStyleSignatures: exclude,
         requestedBoardCount: 3,
       );
-      if (!mounted) return;
+      if (!mounted ||
+          !_responseGuard.accepts(responseToken, _currentSessionId)) {
+        return;
+      }
 
       final newBoards = _extractStyleBoardsFromResponse(response);
       final parsed = AhviResponse.fromMap(response);
@@ -1442,18 +1454,25 @@ class _ChatScreenState extends State<ChatScreen>
               : "I've shown the strongest options from this wardrobe.",
         });
       });
-    } catch (e) {
-      if (!mounted) return;
+    } catch (_) {
+      debugPrint('AHVI_CHAT_MORE_OPTIONS_FAILED');
+      if (!mounted ||
+          !_responseGuard.accepts(responseToken, _currentSessionId)) {
+        return;
+      }
       setState(
             () => _messages.add(
           _ChatMessage(
-            text: '${AppLocalizations.t(context, 'chat_error_prefix')}: $e',
+            text: AhviClientCopy.requestError,
             isMe: false,
           ),
         ),
       );
     } finally {
-      if (mounted) setState(() => _isTyping = false);
+      if (mounted &&
+          _responseGuard.accepts(responseToken, _currentSessionId)) {
+        setState(() => _isTyping = false);
+      }
       // Save regardless of success/failure so the user message (and any
       // error bubble) is never silently lost from history.
       _saveCurrentSession();
@@ -1473,6 +1492,7 @@ class _ChatScreenState extends State<ChatScreen>
     final queryText = chipText ?? _chatController.text.trim();
     final visibleText = displayText ?? queryText;
     if (queryText.isEmpty || visibleText.isEmpty) return;
+    final responseToken = _responseGuard.capture(_currentSessionId);
     _chatController.clear();
     setState(() {
       _messages.add(_ChatMessage(text: visibleText, isMe: true));
@@ -1518,6 +1538,36 @@ class _ChatScreenState extends State<ChatScreen>
           : resolvedStylePrompt;
       final interpretedOccasion =
       resolvedStylePrompt.toLowerCase().contains('beach') ? 'beach' : null;
+      final styleActionContext = isStyleModule
+          ? (styleActionContextFromValue(
+                    visibleText,
+                    originalRequest: _lastStyleActionBaseIntent(),
+                    occasion: interpretedOccasion ?? '',
+                    sessionId: _currentSessionId,
+                    previousPairingTarget:
+                        (_lastStyleContext?['previous_pairing_target'] ?? '')
+                            .toString(),
+                  ) ??
+              styleActionContextFromValue(
+                queryText,
+                originalRequest: _lastStyleActionBaseIntent(),
+                occasion: interpretedOccasion ?? '',
+                sessionId: _currentSessionId,
+              ))
+          : null;
+      final styleContext = <String, dynamic>{
+        ...?styleActionContext?.toJson(),
+        if (isClarificationAnswer) ...{
+          'original_prompt': pendingClarificationPrompt,
+          'clarification': visibleText,
+          'resolved_prompt': clarificationResolvedPrompt,
+        } else if (isClosestAction && resolvedStylePrompt.isNotEmpty) ...{
+          'original_prompt': originalStylePrompt,
+          'resolved_prompt': resolvedStylePrompt,
+          if (interpretedOccasion != null)
+            'interpreted_occasion': interpretedOccasion,
+        },
+      };
       // Only style / wardrobe / daily_wear flows go through /api/text which
       // builds boards. Every other module (home, utilities, fitness, diet,
       // skincare, medi, bills, calendar) goes through the shared module chat
@@ -1542,7 +1592,9 @@ class _ChatScreenState extends State<ChatScreen>
           styleAction: isClosestAction ? 'show_closest_option' : null,
           action: isClosestAction
               ? 'show_closest_option'
-              : (isClarificationAnswer ? 'clarification_selected' : null),
+              : (isClarificationAnswer
+                    ? 'clarification_selected'
+                    : styleActionContext?.action),
           clarification: isClarificationAnswer ? visibleText : null,
           previousPrompt: isClarificationAnswer
               ? pendingClarificationPrompt
@@ -1554,20 +1606,7 @@ class _ChatScreenState extends State<ChatScreen>
               : isClosestAction && resolvedStylePrompt.isNotEmpty
               ? resolvedStylePrompt
               : null,
-          styleContext: isClarificationAnswer
-              ? {
-            'original_prompt': pendingClarificationPrompt,
-            'clarification': visibleText,
-            'resolved_prompt': clarificationResolvedPrompt,
-          }
-              : isClosestAction && resolvedStylePrompt.isNotEmpty
-              ? {
-            'original_prompt': originalStylePrompt,
-            'resolved_prompt': resolvedStylePrompt,
-            if (interpretedOccasion != null)
-              'interpreted_occasion': interpretedOccasion,
-          }
-              : null,
+          styleContext: styleContext.isEmpty ? null : styleContext,
           lastStyleContext: _lastStyleContext,
           showClosestOption: isClosestAction,
           allowClosestOption: isClosestAction,
@@ -1577,6 +1616,7 @@ class _ChatScreenState extends State<ChatScreen>
         response = await backend.sendModuleChat(
           domain: _module == 'daily_wear' ? 'style' : _module,
           message: backendQueryText,
+          context: styleContext.isEmpty ? null : styleContext,
           chatHistory: List<Map<String, String>>.from(_chatHistory),
         );
       } else {
@@ -1587,7 +1627,10 @@ class _ChatScreenState extends State<ChatScreen>
           chatHistory: List<Map<String, String>>.from(_chatHistory),
         );
       }
-      if (!mounted) return;
+      if (!mounted ||
+          !_responseGuard.accepts(responseToken, _currentSessionId)) {
+        return;
+      }
       if (response['updated_memory'] != null) {
         _runningMemory = response['updated_memory'];
       }
@@ -1595,12 +1638,19 @@ class _ChatScreenState extends State<ChatScreen>
       // next follow-up keeps it. A new pairing response replaces the old one.
       final lsc = _extractLastStyleContext(response);
       if (lsc != null) _lastStyleContext = lsc;
+      final responsePolicy = AhviResponsePolicy.fromResponse(response);
+      final textOnlyResponse =
+          responsePolicy.hasCanonicalRoute &&
+          !responsePolicy.canRenderBoards(response);
       final parsedResponse = parseAhviResponse(response);
-      final visualBoard = AhviVisualBoard.isVisualBoard(response)
+      final visualBoard = responsePolicy.canRenderBoards(response) &&
+              AhviVisualBoard.isVisualBoard(response)
           ? AhviVisualBoard.fromJson(response)
           : null;
-      final sharedModuleCard = AhviModuleCard.fromResponse(response);
-      final moduleCard = sharedModuleCard == null
+      final sharedModuleCard = textOnlyResponse
+          ? null
+          : AhviModuleCard.fromResponse(response);
+      final moduleCard = !textOnlyResponse && sharedModuleCard == null
           ? _moduleCardFromResponse(response)
           : null;
       final isModuleResponse = _looksLikeModuleCards(response);
@@ -1618,7 +1668,9 @@ class _ChatScreenState extends State<ChatScreen>
           _looksLikeStyleClarification(clarificationMsg)) {
         _clarificationResolvedByCards = false;
       }
-      final moduleCards = isModuleResponse && sharedModuleCard == null
+      final moduleCards = !textOnlyResponse &&
+              isModuleResponse &&
+              sharedModuleCard == null
           ? _moduleCardsFromResponse(response)
           : const <Map<String, dynamic>>[];
       final responseData = response['data'];
@@ -1641,8 +1693,11 @@ class _ChatScreenState extends State<ChatScreen>
       }
       var aiText = parsedResponse.text.trim().isNotEmpty
           ? parsedResponse.text
-          : AppLocalizations.t(context, 'chat_connection_error');
-      var customChips = parsedResponse.chips;
+          : AhviClientCopy.connectionError;
+      var customChips = _visibleResponseChips(
+        parsedResponse.chips,
+        responsePolicy,
+      );
 
       // PATCH 5: STYLE THIS CHIP SAFETY - Replace hard failure message and add actions
       if (aiText.contains("couldn't build a complete style board") ||
@@ -1655,6 +1710,7 @@ class _ChatScreenState extends State<ChatScreen>
           {'label': 'Add wardrobe item', 'value': 'Add wardrobe item'},
         ];
       }
+      customChips = _visibleResponseChips(customChips, responsePolicy);
 
       final closestEmptyFallback = isClosestAction && responseBoards.isEmpty
           ? "I couldn't build even a closest option from the available wardrobe slots."
@@ -1683,18 +1739,25 @@ class _ChatScreenState extends State<ChatScreen>
           ),
         );
       });
-    } catch (e) {
-      if (!mounted) return;
+    } catch (_) {
+      debugPrint('AHVI_CHAT_REQUEST_FAILED');
+      if (!mounted ||
+          !_responseGuard.accepts(responseToken, _currentSessionId)) {
+        return;
+      }
       setState(
             () => _messages.add(
           _ChatMessage(
-            text: '${AppLocalizations.t(context, 'chat_error_prefix')}: $e',
+            text: AhviClientCopy.requestError,
             isMe: false,
           ),
         ),
       );
     } finally {
-      if (mounted) setState(() => _isTyping = false);
+      if (mounted &&
+          _responseGuard.accepts(responseToken, _currentSessionId)) {
+        setState(() => _isTyping = false);
+      }
       // Save regardless of success/failure so the user message (and any
       // error bubble) is never silently lost from history.
       _saveCurrentSession();
@@ -1801,6 +1864,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   @override
   void dispose() {
+    _responseGuard.invalidate();
     WidgetsBinding.instance.removeObserver(this);
     // Fire-and-forget: catches the case where the user backs out of the
     // screen quickly, before the async write from a prior send completes.

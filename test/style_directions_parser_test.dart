@@ -22,6 +22,7 @@ Map<String, dynamic> _styleThisResponse({
   List<Map<String, dynamic>>? directions,
 }) => {
       'success': true,
+      'route': 'style_this',
       'mode': 'style_this',
       'anchor_item': anchor ??
           {
@@ -123,6 +124,7 @@ void main() {
       () {
     final response = {
       'success': true,
+      'route': 'visual_inspiration',
       'visual_directions': [
         {
           'board_id': 'rec-board-1',
@@ -229,13 +231,8 @@ void main() {
     expect(_hasVisualDirections(parsed), isFalse);
   });
 
-  test('missing anchor_item leaves anchor id unset (contract layer retries)',
-      () {
+  test('missing anchor_item suppresses Style This boards', () {
     final resp = _styleThisResponse(anchor: const {})..remove('anchor_item');
-    final dir = _directionsOf(parseAhviResponse(resp)).single;
-    // Still stamped as style_this, but no anchor id → modal contract fails →
-    // existing retry state (asserted in the modal-level tests).
-    expect(dir['scenario'], 'style_this');
-    expect(dir.containsKey('anchor_item_id'), isFalse);
+    expect(_hasVisualDirections(parseAhviResponse(resp)), isFalse);
   });
 }

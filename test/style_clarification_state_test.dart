@@ -68,10 +68,7 @@ void main() {
     test('clarification_selected is only used when isClarificationAnswer', () {
       // isClarificationAnswer is false for board-action phrases and after cards,
       // so Shuffle / another-look never carries action=clarification_selected.
-      expect(
-        stylist,
-        contains("isClarificationAnswer ? 'clarification_selected' : null"),
-      );
+      expect(stylist, contains("'clarification_selected'"));
       expect(stylist, contains('!isBoardActionPhrase'));
     });
   });

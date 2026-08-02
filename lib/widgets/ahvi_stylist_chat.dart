@@ -2367,6 +2367,12 @@ String styleResponseRendererKindForTesting(Map<String, dynamic> response) {
   return 'text';
 }
 
+@visibleForTesting
+int styleBoardCountForTesting(Map<String, dynamic> response) =>
+    _StyleBoardViewModel.fromPayload(
+      _StyleBoardPayload.fromResponse(response),
+    ).length;
+
 bool _isModuleResponse(Map<String, dynamic> response) {
   final type = (response['type'] ?? '').toString().toLowerCase();
   final module = (response['module'] ?? response['domain'] ?? '')
@@ -3135,6 +3141,7 @@ class _StyleBoardCarousel extends StatelessWidget {
 }
 
 class _StyleBoardViewModel {
+  final String? boardId;
   final String title;
   final String? styleArchetype;
   final String? boardRole;
@@ -3147,6 +3154,7 @@ class _StyleBoardViewModel {
   final List<Map<String, dynamic>> items;
 
   const _StyleBoardViewModel({
+    this.boardId,
     required this.title,
     this.styleArchetype,
     this.boardRole,
@@ -3214,7 +3222,15 @@ class _StyleBoardViewModel {
       return merged;
     }
 
-    String boardSignature(String title, List<Map<String, dynamic>> items) {
+    String boardSignature(
+      String title,
+      List<Map<String, dynamic>> items,
+      String? boardId,
+    ) {
+      final stableBoardId = boardId?.trim();
+      if (stableBoardId != null && stableBoardId.isNotEmpty) {
+        return 'board:$stableBoardId';
+      }
       final names =
           items
               .map(
@@ -3240,7 +3256,7 @@ class _StyleBoardViewModel {
         privateWearFiltered++;
         return;
       }
-      final signature = boardSignature(board.title, board.items);
+      final signature = boardSignature(board.title, board.items, board.boardId);
       if (signature.isEmpty || seen.add(signature)) {
         boards.add(board);
       } else {
@@ -3253,6 +3269,9 @@ class _StyleBoardViewModel {
     for (final board in payload.renderedBoards) {
       addBoard(
         _StyleBoardViewModel(
+          boardId: _nullableText(
+            board['board_id'] ?? board['boardId'] ?? board['id'],
+          ),
           title: _text(
             board['label'] ?? board['title'] ?? board['name'],
             'AHVI Style Board',
@@ -3295,6 +3314,9 @@ class _StyleBoardViewModel {
       for (final card in payload.cards) {
         addBoard(
           _StyleBoardViewModel(
+            boardId: _nullableText(
+              card['board_id'] ?? card['boardId'] ?? card['id'],
+            ),
             title: _text(
               card['title'] ?? card['name'] ?? card['label'],
               'Styled Look',
@@ -3327,6 +3349,9 @@ class _StyleBoardViewModel {
       for (final outfit in payload.outfits) {
         addBoard(
           _StyleBoardViewModel(
+            boardId: _nullableText(
+              outfit['board_id'] ?? outfit['boardId'] ?? outfit['id'],
+            ),
             title: _text(
               outfit['title'] ?? outfit['name'] ?? outfit['label'],
               'Styled Look',

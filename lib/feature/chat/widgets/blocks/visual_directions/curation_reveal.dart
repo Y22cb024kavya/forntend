@@ -161,13 +161,17 @@ class _LoaderCard extends StatelessWidget {
               Icon(Icons.auto_awesome_rounded,
                   size: 18, color: t.accent.primary),
               const SizedBox(width: 8),
-              Text(
-                'CURATING YOUR LOOKS',
-                style: TextStyle(
-                  color: t.mutedText,
-                  fontSize: 11.5,
-                  letterSpacing: 2.4,
-                  fontWeight: FontWeight.w800,
+              Expanded(
+                child: Text(
+                  'CURATING YOUR LOOKS',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: t.mutedText,
+                    fontSize: 11.5,
+                    letterSpacing: 2.4,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],

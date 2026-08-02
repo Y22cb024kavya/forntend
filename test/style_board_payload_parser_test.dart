@@ -92,6 +92,30 @@ void main() {
       expect(selected.boards, hasLength(1));
     });
 
+    test('distinct board ids remain distinct when item signatures match', () {
+      Map<String, dynamic> board(String id) => {
+        'board_id': id,
+        'title': 'Smart Casual',
+        'items': [
+          {'item_id': 'shared-shirt', 'name': 'White Shirt'},
+        ],
+      };
+
+      expect(
+        styleBoardCountForTesting({
+          'route': 'visual_inspiration',
+          'data': {
+            'rendered_boards': [
+              board('board-1'),
+              board('board-2'),
+              board('board-3'),
+            ],
+          },
+        }),
+        3,
+      );
+    });
+
     test('cards remains a fallback', () {
       final selected = selectStyleBoardAlias({
         'route': 'visual_inspiration',

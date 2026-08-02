@@ -44,7 +44,7 @@ void main() {
                     moduleContext: '  StYlE  ',
                     contextData: contextData,
                     onRefresh: onRefresh,
-                    initialPrompt: '   ',
+                    initialPrompt: null,
                   ).then((_) => completed++);
                 },
                 child: const Text('Open chat'),
@@ -69,7 +69,7 @@ void main() {
       expect(chat.contextData, same(contextData));
       expect(chat.rootContext, same(launchContext));
       expect(chat.onRefresh, same(onRefresh));
-      expect(chat.initialPrompt, '   ');
+      expect(chat.initialPrompt, isNull);
       expect(chat.isFullScreen, isTrue);
       expect(
         find.byKey(const ValueKey('ahvi-chat-modal-drag-handle')),

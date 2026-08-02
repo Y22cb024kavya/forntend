@@ -404,9 +404,14 @@ const _prepareChips = [
 typedef _ClockState = ({String greeting, String date});
 
 class Screen4 extends StatefulWidget {
-  const Screen4({super.key, this.onShellNavTap});
+  const Screen4({
+    super.key,
+    this.onShellNavTap,
+    this.loadContextSignals = true,
+  });
 
   final ValueChanged<int>? onShellNavTap;
+  final bool loadContextSignals;
 
   @override
   State<Screen4> createState() => _Screen4State();
@@ -430,6 +435,8 @@ class _Screen4State extends State<Screen4>
       });
     }
     _cachedAccent = newAccent;
+
+    if (!widget.loadContextSignals) return;
 
     // ✅ FIX: Defer heavy operations until AFTER frame completes
     // This prevents blocking the back-nav animation (Wardrobe → Home)
@@ -1343,11 +1350,11 @@ class _Screen4State extends State<Screen4>
       }
     });
 
-    _fetchUserProfile();
+    if (widget.loadContextSignals) _fetchUserProfile();
 
     // ── 🌦️📅👗🏃 Kick off all context signal fetches ─────────────────────────
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || !widget.loadContextSignals) return;
       _fetchWeatherSignalImproved(); // 🆕 Use improved weather fetch
       _fetchCalendarSignal();
       _fetchWardrobeSignal();
@@ -3493,10 +3500,9 @@ class _Screen4State extends State<Screen4>
                             _AnimatedPressable(
                               liftY: -3.0,
                               scalePressed: 0.93,
-                              onTap: () => _openChatWithPrompt(
-                                'Suggest an outfit for today.',
-                              ),
+                              onTap: () => _openModuleChat('style'),
                               child: Container(
+                                key: const ValueKey('home-style-me-cta'),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 16,
                                   vertical: 10,

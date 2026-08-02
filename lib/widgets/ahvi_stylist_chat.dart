@@ -30,7 +30,6 @@ import 'package:myapp/models/ahvi_visual_board_model.dart';
 import 'package:myapp/widgets/ahvi_visual_board.dart';
 import 'package:myapp/feature/chat/widgets/blocks/ahvi_block_renderer.dart'
     show
-        VisualInspirationCard,
         MissingPieceIntelligenceCard,
         TransitionPlanCard,
         StylistReasoningCard,
@@ -1516,6 +1515,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       final boardPayload = _StyleBoardPayload.fromResponse(response);
       final boardSelection = selectStyleBoardAlias(response);
       final diagnosticSelection = AhviStyleDiagnostics.selectAlias(response);
+      final canonicalBoardCollection = responsePolicy.boardCollection(response);
       final gapPayload = _WardrobeGapPayload.fromResponse(response);
       // Clarification lifecycle: a rendered board/cards resolves any pending
       // clarification; a fresh clarification response re-arms it.
@@ -1569,11 +1569,14 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           ? gapPayload.message.trim()
           : guardedAiText;
 
-      final parserInputCount =
-          visualPayload.directions.length + diagnosticSelection.boards.length;
-      final parserAcceptedCount =
-          visualPayload.directions.length +
-          (boardPayload.hasBoards ? boardSelection.boards.length : 0);
+      final parserInputCount = visualPayload.hasDirections
+          ? visualPayload.directions.length
+          : canonicalBoardCollection.rawCount;
+      final parserAcceptedCount = visualPayload.hasDirections
+          ? visualPayload.directions.length
+          : boardPayload.hasBoards
+          ? boardSelection.boards.length
+          : 0;
       final policyRejectedCount =
           responsePolicy.hasCanonicalRoute &&
               !responsePolicy.canRenderBoards(response)
@@ -1595,7 +1598,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
         parserAcceptedCount: parserAcceptedCount,
         policyRejectedCount: policyRejectedCount,
         invalidContractCount: invalidContractCount,
-        dedupDroppedCount: 0,
+        dedupDroppedCount: canonicalBoardCollection.dedupDroppedCount,
         finalRenderedCount: visualPayload.directions.length,
         staleResponseDiscardedCount: _staleResponseDiscardedCount,
         promptCategory: responsePolicy.action.isEmpty
@@ -1605,6 +1608,23 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           diagnosticSelection.boards,
         ),
       );
+      if (responsePolicy.route == 'build_outfit' ||
+          responsePolicy.interactionMode == 'build_outfit') {
+        final buildBoards = visualPayload.hasDirections
+            ? visualPayload.directions
+            : boardSelection.boards;
+        AhviStyleDiagnostics.logBuildOutfitContract(
+          correlationId: diagnosticCorrelationId,
+          response: response,
+          boards: buildBoards,
+          finalRenderedCount: buildBoards.length,
+          failureReason: buildBoards.isEmpty
+              ? (response['success'] == false
+                    ? 'backend_failure'
+                    : 'no_renderable_outfit')
+              : 'none',
+        );
+      }
 
       setState(() {
         _typing = false;
@@ -2300,21 +2320,11 @@ class _StyleBoardPayload {
       );
     }
     return _StyleBoardPayload(
-      cards:
-          selectedPath == 'style_boards' ||
-              selectedPath == 'data.style_boards' ||
-              selectedPath == 'cards' ||
-              selectedPath == 'data.cards'
-          ? selectedBoards
-          : const [],
-      renderedBoards:
-          selectedPath == 'data.rendered_boards' ||
-              selectedPath == 'rendered_boards'
-          ? selectedBoards
-          : const [],
-      outfits: selectedPath == 'data.outfits' || selectedPath == 'outfits'
-          ? selectedBoards
-          : const [],
+      // The selected alias is already normalized by AhviResponsePolicy. Keep
+      // one canonical board collection so no alias is silently dropped.
+      cards: const [],
+      renderedBoards: selectedBoards,
+      outfits: const [],
       boardId: response['board_ids']?.toString(),
     );
   }
@@ -2515,13 +2525,11 @@ class _WardrobeGapPayload {
           "I can start with inspiration first, then suggest missing pieces from your wardrobe.";
     }
 
-    final backendChips = _mapList(response['chips']);
+    final backendChips = _mapList(
+      filterDeprecatedVisibleStyleActions(response['chips']),
+    );
     final chips = (isBackendGap && backendChips.isEmpty)
         ? const <Map<String, dynamic>>[
-            {
-              'label': 'Show visual inspiration',
-              'value': 'Show visual inspiration',
-            },
             {'label': 'Find missing pieces', 'value': 'Find missing pieces'},
             {'label': 'Add wardrobe item', 'value': 'Add wardrobe item'},
           ]
@@ -2680,14 +2688,8 @@ class _Bubble extends StatelessWidget {
         // "Visual Inspiration" card in the chat stream. Its reasoning is still
         // reachable by tapping the board (AhviOutfitBoardDetailSheet). When no
         // board is present we keep the card so the content is never lost.
-        if (msg.visualInspiration != null &&
-            !(kVisualBoard85Enabled &&
-                (msg.visualDirectionPayload != null ||
-                    msg.boardPayload != null)))
-          VisualInspirationCard(
-            data: msg.visualInspiration!,
-            onSendMessage: onPrompt,
-          ),
+        // Standalone Visual Inspiration is no longer a product entry point.
+        // Internal visual-direction data still renders through the board path.
         if (msg.stylistReasoning != null)
           StylistReasoningCard(data: msg.stylistReasoning!),
         if (msg.visualDirectionPayload != null)
@@ -2867,7 +2869,8 @@ class _SheetModuleCards extends StatelessWidget {
                       ),
                     ),
               ],
-              if (ctaLabel.isNotEmpty) ...[
+              if (ctaLabel.isNotEmpty &&
+                  !isDeprecatedVisibleStyleAction(cta)) ...[
                 const SizedBox(height: 8),
                 GestureDetector(
                   onTap: ctaValue.isEmpty ? null : () => onPrompt(ctaValue),
@@ -3207,7 +3210,9 @@ class _StyleBoardViewModel {
       }
 
       addItems(
-        source['items'] ??
+        source['board_items'] ??
+            source['boardItems'] ??
+            source['items'] ??
             source['wardrobe_items'] ??
             source['wardrobeItems'] ??
             source['pieces'],

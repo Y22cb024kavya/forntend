@@ -105,6 +105,7 @@ void main() {
       await _pumpHome(tester, backend, _RecordingNavigatorObserver());
       await tester.tap(find.byKey(const ValueKey('home-style-me-cta')));
       await _waitForChat(tester);
+      expect(find.text('Show visual inspiration'), findsNothing);
 
       await _submit(tester, 'What should I wear to a coffee date?');
       expect(find.textContaining('coffee date'), findsWidgets);
@@ -130,6 +131,7 @@ void main() {
         'What should I wear to a coffee date?',
         'Show visual inspiration for a smart casual weekend.',
       ]);
+      expect(backend.actions, ['', '']);
       expect(tester.takeException(), isNull);
       await _drainHomeBackground(tester);
     },
@@ -282,6 +284,7 @@ class _TestLocalizationsDelegate
 class _HomeStyleBackend extends BackendService {
   final Duration responseDelay;
   final List<String> requests = [];
+  final List<String> actions = [];
 
   _HomeStyleBackend({this.responseDelay = Duration.zero})
     : super(appwriteService: AppwriteService());
@@ -321,6 +324,7 @@ class _HomeStyleBackend extends BackendService {
     bool allowGenericAssetsInMainBoard = true,
   }) async {
     requests.add(query);
+    actions.add(action ?? styleAction ?? '');
     if (responseDelay > Duration.zero) {
       await Future<void>.delayed(responseDelay);
     }
@@ -369,12 +373,15 @@ class _HomeStyleBackend extends BackendService {
 
   Map<String, dynamic> _visualResponse() => {
     'type': 'stylist_advice',
-    'route': 'visual_inspiration',
-    'mode': 'visual_inspiration',
-    'action': 'visual_inspiration',
+    'route': 'style_advice',
+    'mode': 'style_advice',
     'board_policy': 'recommendation',
     'interaction_mode': 'recommendation',
-    'outfits': [_board('board-1'), _board('board-2'), _board('board-3')],
+    'visual_directions': [
+      _board('board-1'),
+      _board('board-2'),
+      _board('board-3'),
+    ],
   };
 
   Map<String, dynamic> _board(String id) => {

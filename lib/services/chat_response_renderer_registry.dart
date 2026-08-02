@@ -74,26 +74,28 @@ class AhviChatResponseRendererRegistry {
       reason = 'visual_sections';
     } else if (policy.canRenderBoards(response) &&
         (AhviVisualBoard.isVisualBoard(response) ||
-        response['visual_board'] is Map ||
-        response['visualBoard'] is Map ||
-        data['visual_board'] is Map ||
-        data['visualBoard'] is Map)) {
+            response['visual_board'] is Map ||
+            response['visualBoard'] is Map ||
+            data['visual_board'] is Map ||
+            data['visualBoard'] is Map)) {
       kind = AhviChatRendererKind.visualBoard;
       reason = 'visual_board';
+    } else if (policy.canRenderBoards(response) &&
+        (_hasList(response['visual_directions']) ||
+            _hasList(data['visual_directions']) ||
+            _hasList(response['visualDirections']) ||
+            _hasList(data['visualDirections']) ||
+            _hasList(response['style_directions']) ||
+            _hasList(data['style_directions']))) {
+      kind = AhviChatRendererKind.visualDirections;
+      reason = 'canonical_style_directions';
+    } else if (policy.canRenderBoards(response) &&
+        policy.boardCollection(response).isValid) {
+      kind = AhviChatRendererKind.styleBoard;
+      reason = 'canonical_board_alias';
     } else if (AhviModuleCard.isModuleCard(response)) {
       kind = AhviChatRendererKind.moduleCard;
       reason = 'typed_module_card';
-    } else if (policy.canRenderBoards(response) &&
-        (_hasList(response['visual_directions']) ||
-        _hasList(data['visual_directions']) ||
-        _hasList(response['visualDirections']) ||
-        _hasList(data['visualDirections']))) {
-      kind = AhviChatRendererKind.visualDirections;
-      reason = 'visual_directions';
-    } else if (policy.canRenderBoards(response) &&
-        _hasStyleBoards(response, data)) {
-      kind = AhviChatRendererKind.styleBoard;
-      reason = 'style_board_alias';
     } else if (_isCalendarPlan(response, data)) {
       kind = AhviChatRendererKind.calendarPlan;
       reason = 'calendar_plan_contract';

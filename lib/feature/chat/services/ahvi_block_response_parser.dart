@@ -69,12 +69,8 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
       var index = 0;
       visualDirections = styleDirections
           .map(
-            (dir) => _styleDirectionToCanonical(
-              dir,
-              anchor,
-              index++,
-              sourcePolicy,
-            ),
+            (dir) =>
+                _styleDirectionToCanonical(dir, anchor, index++, sourcePolicy),
           )
           .map((board) => responsePolicy.decorateBoard(board, response))
           .toList();
@@ -103,10 +99,10 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   final hasVisualBoard =
       responsePolicy.canRenderBoards(response) &&
       (AhviVisualBoard.isVisualBoard(response) ||
-      response['visual_board'] != null ||
-      response['visualBoard'] != null ||
-      data['visual_board'] != null ||
-      data['visualBoard'] != null);
+          response['visual_board'] != null ||
+          response['visualBoard'] != null ||
+          data['visual_board'] != null ||
+          data['visualBoard'] != null);
 
   // Visual inspiration board.
   final visualInspiration = _extractVisualInspiration(response, data);
@@ -243,7 +239,9 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
 
   return AhviParsedResponse(
     text: text,
-    chips: parsed.chips.map((chip) => chip.toJson()).toList(),
+    chips: filterDeprecatedVisibleStyleActions(
+      parsed.chips.map((chip) => chip.toJson()).toList(),
+    ).whereType<Map>().map((chip) => Map<String, dynamic>.from(chip)).toList(),
     blocks: blocks,
     boardId: response['board_ids']?.toString(),
     packId: response['pack_ids']?.toString(),

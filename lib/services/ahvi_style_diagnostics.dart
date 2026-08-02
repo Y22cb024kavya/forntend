@@ -16,8 +16,11 @@ class AhviStyleDiagnostics {
       'data.rendered_boards': _listCount(data['rendered_boards']),
       'rendered_boards': _listCount(response['rendered_boards']),
       'style_boards': _listCount(response['style_boards']),
+      'data.style_boards': _listCount(data['style_boards']),
       'data.outfits': _listCount(data['outfits']),
       'outfits': _listCount(response['outfits']),
+      'data.outfit': data['outfit'] is Map ? 1 : 0,
+      'outfit': response['outfit'] is Map ? 1 : 0,
       'cards': _listCount(response['cards']),
       'visual_directions': _listCount(response['visual_directions']),
       'data.visual_directions': _listCount(data['visual_directions']),
@@ -140,8 +143,11 @@ class AhviStyleDiagnostics {
       'alias_data_rendered_boards=${aliases['data.rendered_boards']} '
       'alias_rendered_boards=${aliases['rendered_boards']} '
       'alias_style_boards=${aliases['style_boards']} '
+      'alias_data_style_boards=${aliases['data.style_boards']} '
       'alias_data_outfits=${aliases['data.outfits']} '
-      'alias_outfits=${aliases['outfits']} alias_cards=${aliases['cards']} '
+      'alias_outfits=${aliases['outfits']} '
+      'alias_data_outfit=${aliases['data.outfit']} alias_outfit=${aliases['outfit']} '
+      'alias_cards=${aliases['cards']} '
       'alias_visual_directions=${aliases['visual_directions']} '
       'alias_data_visual_directions=${aliases['data.visual_directions']} '
       'alias_style_directions=${aliases['style_directions']} '
@@ -230,6 +236,41 @@ class AhviStyleDiagnostics {
       'expected_transparent=${_boolOrUnknown(first['expected_transparent'])} '
       'requires_frame=${_boolOrUnknown(first['requires_frame'])} '
       'failed_predicates=${failed.isEmpty ? 'none' : failed.map(_safe).join(',')}',
+    );
+  }
+
+  static void logBuildOutfitContract({
+    required String correlationId,
+    required Map<String, dynamic> response,
+    required List<Map<String, dynamic>> boards,
+    required int finalRenderedCount,
+    String failureReason = 'none',
+  }) {
+    final data = _asMap(response['data']);
+    final outfitPresent =
+        response['outfit'] is Map ||
+        data['outfit'] is Map ||
+        response['outfits'] is List ||
+        data['outfits'] is List ||
+        boards.isNotEmpty;
+    final firstItems = boards.isEmpty
+        ? const <dynamic>[]
+        : boards.first['board_items'] ??
+              boards.first['boardItems'] ??
+              boards.first['items'] ??
+              const <dynamic>[];
+    debugPrint(
+      'AHVI_BUILD_OUTFIT_CONTRACT '
+      'correlation_id=${_safe(correlationId)} '
+      'request_mode=${_safe(response['request_mode'] ?? response['action'])} '
+      'response_mode=${_safe(response['mode'] ?? data['mode'])} '
+      'success=${response['success'] != false} '
+      'outfit_present=$outfitPresent '
+      'item_count=${_listCount(firstItems)} '
+      'normalized_payload_type=${_safe(response['type'] ?? data['type'])} '
+      'interaction_mode=${_safe(response['interaction_mode'] ?? data['interaction_mode'])} '
+      'final_rendered_count=$finalRenderedCount '
+      'failure_reason=${_safe(failureReason)}',
     );
   }
 

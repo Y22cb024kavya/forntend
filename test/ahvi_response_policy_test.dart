@@ -29,6 +29,7 @@ void main() {
       final response = _response(
         route: 'style_advice',
         extra: {
+          'board_policy': 'none',
           'style_boards': [_board('advice')],
         },
       );
@@ -77,6 +78,52 @@ void main() {
       expect(controls.lock, isFalse);
       expect(controls.shuffle, isFalse);
       expect(controls.undo, isFalse);
+    });
+
+    test('canonical Style advice can authorize internal visual directions', () {
+      final response = _response(
+        route: 'style_advice',
+        extra: {
+          'board_policy': 'recommendation',
+          'visual_directions': [_board('direction-1')],
+          'cards': [_board('generic-card')],
+        },
+      );
+
+      final policy = AhviResponsePolicy.fromResponse(response);
+      expect(policy.canRenderBoards(response), isTrue);
+      expect(
+        AhviChatResponseRendererRegistry.select(response).kind,
+        AhviChatRendererKind.visualDirections,
+      );
+      expect(policy.controlsFor(response).like, isTrue);
+    });
+
+    test('alias selection prefers complete boards and deduplicates IDs', () {
+      final response = _response(
+        route: 'style_advice',
+        extra: {
+          'board_policy': 'recommendation',
+          'data': {
+            'rendered_boards': [_board('incomplete')],
+          },
+          'style_boards': [
+            _board('complete-1'),
+            _board('complete-1'),
+            _board('complete-2'),
+          ],
+        },
+      );
+
+      final collection = AhviResponsePolicy.fromResponse(
+        response,
+      ).boardCollection(response);
+      expect(collection.path, 'style_boards');
+      expect(collection.boards.map((board) => board['board_id']), [
+        'complete-1',
+        'complete-2',
+      ]);
+      expect(collection.dedupDroppedCount, 1);
     });
 
     test('wardrobe style preserves ownership-backed board policy', () {
@@ -214,7 +261,7 @@ void main() {
   });
 
   group('typed Style action context', () {
-    test('preserves original occasion and session', () {
+    test('does not create a deprecated Visual Inspiration action', () {
       final context = styleActionContextFromValue(
         'Show Visual Inspiration',
         originalRequest: 'office dinner',
@@ -222,11 +269,14 @@ void main() {
         sessionId: 'session-1',
       );
 
-      expect(context, isNotNull);
-      expect(context!.action, 'show_visual_inspiration');
-      expect(context.originalRequest, 'office dinner');
-      expect(context.occasion, 'office');
-      expect(context.sessionId, 'session-1');
+      expect(context, isNull);
+      expect(
+        filterDeprecatedVisibleStyleActions([
+          {'label': 'Show visual inspiration'},
+          {'label': 'Use my wardrobe'},
+        ]),
+        hasLength(1),
+      );
     });
 
     test('Use My Wardrobe carries typed action and context', () {

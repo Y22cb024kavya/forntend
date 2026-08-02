@@ -382,9 +382,6 @@ bool _isStyleActionChip(String value) {
       text == 'use wardrobe' ||
       text == 'use_wardrobe' ||
       text == 'from my wardrobe' ||
-      text == 'show visual inspiration' ||
-      text == 'visual inspiration' ||
-      text == 'show_visual_inspiration' ||
       text == 'find missing pieces' ||
       text == 'missing pieces' ||
       text == 'find_missing_pieces' ||
@@ -398,8 +395,6 @@ String _stripStyleActionPrefix(String value) {
     'use my wardrobe for ',
     'use wardrobe for ',
     'from my wardrobe for ',
-    'show visual inspiration for ',
-    'visual inspiration for ',
     'find missing pieces for ',
     'missing pieces for ',
     'find this for ',
@@ -493,7 +488,8 @@ List<dynamic> _visibleResponseChips(
   List<dynamic> chips,
   AhviResponsePolicy policy,
 ) {
-  if (policy.styleCtasAllowed) return chips;
+  final visible = filterDeprecatedVisibleStyleActions(chips);
+  if (policy.styleCtasAllowed) return visible;
   const blocked = {
     'use my wardrobe',
     'use wardrobe',
@@ -504,7 +500,7 @@ List<dynamic> _visibleResponseChips(
     'style this',
     'build outfit',
   };
-  return chips.where((chip) {
+  return visible.where((chip) {
     final parsed = AhviChip.fromDynamic(chip);
     return !blocked.contains(parsed.value.toLowerCase().trim()) &&
         !blocked.contains(parsed.label.toLowerCase().trim());
@@ -1331,11 +1327,6 @@ class _ChatScreenState extends State<ChatScreen>
         text == 'find this') {
       return 'Find missing pieces for $baseIntent';
     }
-    if (text == 'show visual inspiration' ||
-        text == 'visual inspiration' ||
-        text == 'show_visual_inspiration') {
-      return 'Show visual inspiration for $baseIntent';
-    }
     return value;
   }
 
@@ -1705,7 +1696,6 @@ class _ChatScreenState extends State<ChatScreen>
           aiText.contains("I couldn't build a reliable style board")) {
         aiText = "I can match this look with your wardrobe where possible and suggest the missing pieces.";
         customChips = [
-          {'label': 'Show inspiration anyway', 'value': 'Show visual inspiration'},
           {'label': 'Find missing pieces', 'value': 'Find missing pieces'},
           {'label': 'Add wardrobe item', 'value': 'Add wardrobe item'},
         ];

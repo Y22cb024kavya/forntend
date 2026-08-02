@@ -22,8 +22,15 @@ const Set<String> ahviBoardSuppressedRoutes = {
 class AhviBoardCollection {
   final String path;
   final List<Map<String, dynamic>> boards;
+  final int rawCount;
+  final int dedupDroppedCount;
 
-  const AhviBoardCollection({required this.path, required this.boards});
+  const AhviBoardCollection({
+    required this.path,
+    required this.boards,
+    this.rawCount = 0,
+    this.dedupDroppedCount = 0,
+  });
 
   bool get isValid => boards.isNotEmpty;
 }
@@ -140,7 +147,11 @@ class AhviResponsePolicy {
       !isSafetySensitive && route != 'diagnosis_request';
 
   bool get boardRouteAuthorized =>
-      ahviBoardAuthorizedRoutes.contains(route) && _boardPolicyAllows;
+      (ahviBoardAuthorizedRoutes.contains(route) ||
+          (route == 'style_advice' &&
+              boardPolicy.isNotEmpty &&
+              _boardPolicyAllows)) &&
+      _boardPolicyAllows;
 
   bool hasValidatedAnchorIn(Map<String, dynamic> response) {
     final data = _asMap(response['data']);
@@ -174,7 +185,9 @@ class AhviResponsePolicy {
     final canSave = mayRenderBoards && anchorValid;
     final canShare = mayRenderBoards && anchorValid;
     final isRecommendation =
-        route == 'visual_inspiration' || route == 'wardrobe_style';
+        route == 'visual_inspiration' ||
+        route == 'wardrobe_style' ||
+        (route == 'style_advice' && boardRouteAuthorized);
     final isStyleThis = route == 'style_this';
     final isBuildOutfit = route == 'build_outfit';
     return AhviResponseControls(
@@ -231,18 +244,58 @@ class AhviResponsePolicy {
       (path: 'rendered_boards', value: response['rendered_boards']),
       (path: 'style_boards', value: response['style_boards']),
       (path: 'data.style_boards', value: data['style_boards']),
-      (path: 'cards', value: response['cards']),
-      (path: 'data.cards', value: data['cards']),
       (path: 'data.outfits', value: data['outfits']),
       (path: 'outfits', value: response['outfits']),
+      (path: 'data.visual_directions', value: data['visual_directions']),
+      (path: 'visual_directions', value: response['visual_directions']),
+      (path: 'data.style_directions', value: data['style_directions']),
+      (path: 'style_directions', value: response['style_directions']),
+      (path: 'data.outfit', value: data['outfit']),
+      (path: 'outfit', value: response['outfit']),
+      // Cards remain a compatibility fallback, never the preferred board
+      // renderer when a canonical board alias is available.
+      (path: 'cards', value: response['cards']),
+      (path: 'data.cards', value: data['cards']),
     ];
-    for (final candidate in candidates) {
-      final boards = _mapList(
-        candidate.value,
-      ).map((board) => decorateBoard(board, response)).toList(growable: false);
-      if (boards.isNotEmpty) {
-        return AhviBoardCollection(path: candidate.path, boards: boards);
-      }
+    final ranked =
+        <
+          ({
+            String path,
+            List<Map<String, dynamic>> boards,
+            int rawCount,
+            int dedupDroppedCount,
+            int score,
+            int order,
+          })
+        >[];
+    for (var index = 0; index < candidates.length; index++) {
+      final candidate = candidates[index];
+      final rawBoards = _asList(candidate.value);
+      final normalized = _normalizeBoards(rawBoards);
+      if (normalized.boards.isEmpty) continue;
+      ranked.add((
+        path: candidate.path,
+        boards: normalized.boards
+            .map((board) => decorateBoard(board, response))
+            .toList(growable: false),
+        rawCount: rawBoards.length,
+        dedupDroppedCount: normalized.dedupDroppedCount,
+        score: _boardCollectionScore(normalized.boards),
+        order: index,
+      ));
+    }
+    if (ranked.isNotEmpty) {
+      ranked.sort((a, b) {
+        final score = b.score.compareTo(a.score);
+        return score == 0 ? a.order.compareTo(b.order) : score;
+      });
+      final selected = ranked.first;
+      return AhviBoardCollection(
+        path: selected.path,
+        boards: selected.boards,
+        rawCount: selected.rawCount,
+        dedupDroppedCount: selected.dedupDroppedCount,
+      );
     }
     return const AhviBoardCollection(path: '', boards: []);
   }
@@ -325,6 +378,116 @@ class AhviResponsePolicy {
   }
 
   static bool _truthy(dynamic value) => _boolValue(value) == true;
+
+  static List<Map<String, dynamic>> _asList(dynamic value) {
+    if (value is List) return _mapList(value);
+    if (value is Map) return [Map<String, dynamic>.from(value)];
+    return const [];
+  }
+
+  static ({List<Map<String, dynamic>> boards, int dedupDroppedCount})
+  _normalizeBoards(List<Map<String, dynamic>> rawBoards) {
+    final boards = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    var dedupDroppedCount = 0;
+    for (var index = 0; index < rawBoards.length; index++) {
+      final raw = rawBoards[index];
+      final board = <String, dynamic>{...raw};
+      final items = _asList(
+        raw['board_items'] ??
+            raw['boardItems'] ??
+            raw['items'] ??
+            raw['pieces'] ??
+            raw['composition_items'],
+      );
+      if (!board.containsKey('board_items') && items.isNotEmpty) {
+        board['board_items'] = items;
+      }
+      if (!board.containsKey('title') &&
+          (board['name'] ?? board['label'] ?? board['direction_name']) !=
+              null) {
+        board['title'] =
+            board['name'] ?? board['label'] ?? board['direction_name'];
+      }
+      final boardId = _firstText([
+        board['board_id'],
+        board['boardId'],
+        board['id'],
+      ]);
+      if (boardId.isNotEmpty && !board.containsKey('board_id')) {
+        board['board_id'] = boardId;
+      }
+      final identity = boardId.isNotEmpty
+          ? 'id:$boardId'
+          : _fallbackBoardIdentity(board, index);
+      if (!seen.add(identity)) {
+        dedupDroppedCount++;
+        continue;
+      }
+      boards.add(board);
+    }
+    return (boards: boards, dedupDroppedCount: dedupDroppedCount);
+  }
+
+  static int _boardCollectionScore(List<Map<String, dynamic>> boards) {
+    var score = boards.length * 100;
+    for (final board in boards) {
+      final items = _asList(board['board_items'] ?? board['items']);
+      if (items.isNotEmpty) score += 20;
+      if (_firstText([
+        board['board_id'],
+        board['boardId'],
+        board['id'],
+      ]).isNotEmpty) {
+        score += 10;
+      }
+      if (_firstText([
+        board['title'],
+        board['name'],
+        board['label'],
+      ]).isNotEmpty) {
+        score += 5;
+      }
+    }
+    return score;
+  }
+
+  static String _fallbackBoardIdentity(Map<String, dynamic> board, int index) {
+    final title = _firstText([board['title'], board['name'], board['label']]);
+    final items = _asList(board['board_items'] ?? board['items'])
+        .map(
+          (item) => _firstText([
+            item['item_id'],
+            item['id'],
+            item[r'$id'],
+            item['name'],
+            item['label'],
+          ]),
+        )
+        .where((value) => value.isNotEmpty)
+        .join('|');
+    if (title.isEmpty && items.isEmpty) return 'missing:$index';
+    return 'fallback:${title.toLowerCase()}|$items';
+  }
+}
+
+/// Deprecated product entry points are filtered at the action boundary only.
+/// Internal `visual_directions` and visual board payloads remain untouched.
+bool isDeprecatedVisibleStyleAction(Object? value) {
+  final text = value is Map
+      ? (value['label'] ?? value['title'] ?? value['action'] ?? value['value'])
+            .toString()
+      : value?.toString() ?? '';
+  final normalized = text.trim().toLowerCase().replaceAll('_', ' ');
+  return normalized == 'visual inspiration' ||
+      normalized.startsWith('show visual inspiration') ||
+      normalized == 'show moodboard' ||
+      normalized.startsWith('show moodboard ');
+}
+
+List<dynamic> filterDeprecatedVisibleStyleActions(Object? value) {
+  if (value is! List) return const [];
+  return value.where((item) => !isDeprecatedVisibleStyleAction(item)).toList();
 }
 
 class StyleActionContext {
@@ -387,10 +550,6 @@ StyleActionContext? styleActionContextFromValue(
       normalized.startsWith('use my wardrobe for ')) {
     action = 'use_my_wardrobe';
     wardrobeOverride = true;
-  } else if (normalized == 'show visual inspiration' ||
-      normalized == 'visual inspiration' ||
-      normalized.startsWith('show visual inspiration for ')) {
-    action = 'show_visual_inspiration';
   } else if (normalized == 'find missing pieces' ||
       normalized == 'missing pieces' ||
       normalized == 'find this' ||
@@ -411,7 +570,6 @@ StyleActionContext? styleActionContextFromValue(
       'use my wardrobe for ',
       'use wardrobe for ',
       'from my wardrobe for ',
-      'show visual inspiration for ',
       'find missing pieces for ',
       'style this for ',
       'build outfit for ',

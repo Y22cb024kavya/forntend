@@ -1,3 +1,5 @@
+import 'package:myapp/services/ahvi_response_policy.dart';
+
 class AhviChip {
   final String label;
   final String value;
@@ -90,7 +92,9 @@ class AhviResponse {
     final rawQuickActions = response['quick_actions'] is List
         ? response['quick_actions'] as List
         : const [];
-    final chipSource = rawQuickActions.isNotEmpty ? rawQuickActions : rawChips;
+    final chipSource = filterDeprecatedVisibleStyleActions(
+      rawQuickActions.isNotEmpty ? rawQuickActions : rawChips,
+    );
 
     return AhviResponse(
       messageText: _messageText(response),

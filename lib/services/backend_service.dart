@@ -7,6 +7,7 @@ import 'package:myapp/models/calendar_actions.dart';
 import 'package:myapp/models/calendar_event_record.dart';
 import 'package:myapp/models/home_today_summary.dart';
 import 'package:myapp/services/appwrite_service.dart';
+import 'package:myapp/services/ahvi_response_policy.dart';
 import 'package:myapp/services/ahvi_style_diagnostics.dart';
 import 'package:myapp/services/location_context_service.dart';
 import 'package:myapp/util/safe_text.dart';
@@ -426,9 +427,9 @@ class BackendService {
 
   Map<String, dynamic> _normalizeChatResponse(Map<String, dynamic> data) {
     var cleanText = _messageText(data);
-    var extractedChips = List<dynamic>.from(data['chips'] as List? ?? []);
-    final quickActions = List<dynamic>.from(
-      data['quick_actions'] as List? ?? const [],
+    var extractedChips = filterDeprecatedVisibleStyleActions(data['chips']);
+    final quickActions = filterDeprecatedVisibleStyleActions(
+      data['quick_actions'],
     );
     if (quickActions.isNotEmpty) {
       extractedChips = quickActions;
@@ -670,8 +671,19 @@ class BackendService {
             moduleContext: moduleContext,
             userProfile: userProfile,
             styleAction: styleAction,
+            action: action,
+            clarification: clarification,
+            sessionId: sessionId,
+            previousPrompt: previousPrompt,
+            resolvedPrompt: resolvedPrompt,
+            currentLookId: currentLookId,
+            styleContext: styleContext,
+            lastStyleContext: lastStyleContext,
             excludeStyleSignatures: excludeStyleSignatures,
             requestedBoardCount: requestedBoardCount,
+            showClosestOption: showClosestOption,
+            allowClosestOption: allowClosestOption,
+            closest: closest,
             useWardrobe: useWardrobe,
             wardrobeFirst: wardrobeFirst,
             assetPolicy: assetPolicy,
@@ -736,7 +748,7 @@ class BackendService {
 
       final fallback = _honestChatFallback(reason, moduleContext);
       return {
-        'error': 'Backend fallback ($reason): $e',
+        'error': 'Backend fallback ($reason)',
         'message': {'role': 'assistant', 'content': fallback},
         'message_text': fallback,
         'chips': [

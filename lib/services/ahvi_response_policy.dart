@@ -105,8 +105,19 @@ class AhviResponsePolicy {
 
     final signals = _asMap(value('conversation_signals'));
     final policy = value('board_policy');
+    var resolvedRoute = _normalize(value('route'));
+    if (resolvedRoute.isEmpty) {
+      for (final candidate in [value('mode'), value('intent')]) {
+        final normalized = _normalize(candidate);
+        if (ahviBoardAuthorizedRoutes.contains(normalized) ||
+            ahviBoardSuppressedRoutes.contains(normalized)) {
+          resolvedRoute = normalized;
+          break;
+        }
+      }
+    }
     return AhviResponsePolicy(
-      route: _normalize(value('route')),
+      route: resolvedRoute,
       mode: _normalize(value('mode')),
       intent: _normalize(value('intent')),
       action: _normalize(value('action')),
@@ -196,10 +207,12 @@ class AhviResponsePolicy {
       share: canShare,
       like: isRecommendation,
       dislike: isRecommendation,
-      lock: isMutableBoard &&
+      lock:
+          isMutableBoard &&
           (isBuildOutfit || (_backendCanLock ?? true)) &&
           anchorValid,
-      shuffle: isMutableBoard &&
+      shuffle:
+          isMutableBoard &&
           (isBuildOutfit || (_backendCanShuffle ?? true)) &&
           anchorValid,
       undo: isMutableBoard && anchorValid,
@@ -241,6 +254,23 @@ class AhviResponsePolicy {
 
   AhviBoardCollection boardCollection(Map<String, dynamic> response) {
     if (!canRenderBoards(response)) {
+      final predicates = <String>[];
+      if (!hasCanonicalRoute) predicates.add('route_missing');
+      if (!boardRouteAuthorized) predicates.add('board_route_unauthorized');
+      if (!_boardPolicyAllows) predicates.add('board_policy_rejected');
+      if (isSafetySensitive) predicates.add('safety_sensitive');
+      if (route == 'style_this' && !hasValidatedAnchorIn(response)) {
+        predicates.add('anchor_invalid');
+      }
+      debugPrint(
+        'AHVI_LIVE_STYLE_REJECTION '
+        'source_file=ahvi_response_policy.dart function=boardCollection '
+        'resolved_route=${route.isEmpty ? 'none' : route} '
+        'board_policy=${boardPolicy.isEmpty ? 'none' : boardPolicy} '
+        'selected_alias=none raw_count=0 accepted_count=0 rejected_count=0 '
+        'rejection_predicates=${predicates.isEmpty ? 'unknown' : predicates.join(',')} '
+        'final_renderer=none final_rendered_count=0',
+      );
       return const AhviBoardCollection(path: '', boards: []);
     }
     final data = _asMap(response['data']);
@@ -295,6 +325,27 @@ class AhviResponsePolicy {
         return score == 0 ? a.order.compareTo(b.order) : score;
       });
       final selected = ranked.first;
+      final firstBoard = selected.boards.isEmpty
+          ? const <String, dynamic>{}
+          : selected.boards.first;
+      final firstItems = _asList(
+        firstBoard['board_items'] ?? firstBoard['items'],
+      );
+      final firstItem = firstItems.isEmpty
+          ? const <String, dynamic>{}
+          : firstItems.first;
+      debugPrint(
+        'AHVI_LIVE_STYLE_NORMALIZER '
+        'source_file=ahvi_response_policy.dart function=boardCollection '
+        'resolved_route=${route.isEmpty ? 'none' : route} '
+        'board_policy=${boardPolicy.isEmpty ? 'none' : boardPolicy} '
+        'selected_alias=${selected.path} raw_count=${selected.rawCount} '
+        'accepted_count=${selected.boards.length} '
+        'rejected_count=${selected.rawCount - selected.boards.length} '
+        'rejection_predicates=none '
+        'first_board_keys=${firstBoard.keys.join(',')} '
+        'first_item_keys=${firstItem.keys.join(',')}',
+      );
       return AhviBoardCollection(
         path: selected.path,
         boards: selected.boards,
@@ -302,6 +353,15 @@ class AhviResponsePolicy {
         dedupDroppedCount: selected.dedupDroppedCount,
       );
     }
+    debugPrint(
+      'AHVI_LIVE_STYLE_NORMALIZER '
+      'source_file=ahvi_response_policy.dart function=boardCollection '
+      'resolved_route=${route.isEmpty ? 'none' : route} '
+      'board_policy=${boardPolicy.isEmpty ? 'none' : boardPolicy} '
+      'selected_alias=none raw_count=0 accepted_count=0 rejected_count=0 '
+      'rejection_predicates=no_valid_board_alias first_board_keys=none '
+      'first_item_keys=none',
+    );
     return const AhviBoardCollection(path: '', boards: []);
   }
 
@@ -317,6 +377,7 @@ class AhviResponsePolicy {
       'render_boards',
       'recommendation',
       'ownership_backed',
+      'wardrobe',
       'style_this',
       'build_outfit',
     }.contains(boardPolicy);

@@ -1516,7 +1516,40 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       final boardSelection = selectStyleBoardAlias(response);
       final diagnosticSelection = AhviStyleDiagnostics.selectAlias(response);
       final canonicalBoardCollection = responsePolicy.boardCollection(response);
+      final liveFirstBoard = boardSelection.boards.isEmpty
+          ? const <String, dynamic>{}
+          : boardSelection.boards.first;
+      final liveFirstItems =
+          liveFirstBoard['board_items'] ?? liveFirstBoard['items'];
+      final liveFirstItem = liveFirstItems is List && liveFirstItems.isNotEmpty
+          ? liveFirstItems.first
+          : const <String, dynamic>{};
       final gapPayload = _WardrobeGapPayload.fromResponse(response);
+      final liveRejectionPredicates = <String>[];
+      if (!responsePolicy.hasCanonicalRoute) {
+        liveRejectionPredicates.add('route_missing');
+      }
+      if (!responsePolicy.boardRouteAuthorized) {
+        liveRejectionPredicates.add('board_route_unauthorized');
+      }
+      if (responsePolicy.isSafetySensitive) {
+        liveRejectionPredicates.add('safety_sensitive');
+      }
+      debugPrint(
+        'AHVI_LIVE_STYLE_HANDLER '
+        'source_file=ahvi_stylist_chat.dart function=_sendMessage '
+        'resolved_route=${responsePolicy.route.isEmpty ? 'none' : responsePolicy.route} '
+        'board_policy=${responsePolicy.boardPolicy.isEmpty ? 'none' : responsePolicy.boardPolicy} '
+        'selected_alias=${canonicalBoardCollection.path.isEmpty ? 'none' : canonicalBoardCollection.path} '
+        'raw_count=${canonicalBoardCollection.rawCount} '
+        'accepted_count=${boardSelection.boards.length} '
+        'rejected_count=${canonicalBoardCollection.rawCount - boardSelection.boards.length} '
+        'rejection_predicates=${liveRejectionPredicates.isEmpty ? 'none' : liveRejectionPredicates.join(',')} '
+        'first_board_keys=${liveFirstBoard.isEmpty ? 'none' : liveFirstBoard.keys.join(',')} '
+        'first_item_keys=${liveFirstItem is Map && liveFirstItem.isNotEmpty ? liveFirstItem.keys.join(',') : 'none'} '
+        'final_renderer=${boardSelection.boards.isNotEmpty ? 'canonical_editorial_style' : selection.renderer} '
+        'final_rendered_count=${boardSelection.boards.length}',
+      );
       // Clarification lifecycle: a rendered board/cards resolves any pending
       // clarification; a fresh clarification response re-arms it.
       final bool renderedBoards =
@@ -2919,6 +2952,12 @@ class _VisualDirectionCards extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final width = math.min(MediaQuery.sizeOf(context).width - 72, 318.0);
+    debugPrint(
+      'AHVI_LIVE_STYLE_RENDERER '
+      'source_file=ahvi_stylist_chat.dart function=_VisualDirectionCards.build '
+      'selected_renderer=VisualDirectionCarousel/AhviOutfitBoardCard '
+      'final_rendered_count=${payload.directions.length}',
+    );
     AhviStyleDiagnostics.logBoardRender(
       correlationId: diagnosticCorrelationId ?? 'unknown',
       parserInputCount: payload.directions.length,

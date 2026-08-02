@@ -9,7 +9,6 @@ import 'package:myapp/theme/accent_palette.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/wardrobe.dart';
 import 'package:myapp/widgets/ahvi_item_detail_modal.dart';
-import 'package:myapp/widgets/build_outfit_screen.dart';
 import 'package:myapp/widgets/style_boards.dart';
 
 const _accent = AccentPalette(
@@ -71,6 +70,20 @@ Map<String, dynamic> _successfulResponse() => {
       ],
     },
   ],
+};
+
+Map<String, dynamic> _successfulBuildResponse() => {
+  'success': true,
+  'outfit': {
+    'board_id': 'build-board-stable-1',
+    'revision': 1,
+    'source_policy': 'wardrobe',
+    'title': 'Sharp Layers',
+    'items': [_boardItem(_anchor.id, 'top')],
+    'can_lock': true,
+    'can_shuffle': true,
+    'anchor_locked': true,
+  },
 };
 
 void main() {
@@ -153,18 +166,13 @@ void main() {
             required requestedScenario,
             requestAnchorItem,
             occasion,
-          }) async => _successfulResponse(),
+          }) async => _successfulBuildResponse(),
     );
 
     await tester.tap(find.text('Build'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(BuildOutfitScreen), findsOneWidget);
-    final screen = tester.widget<BuildOutfitScreen>(
-      find.byType(BuildOutfitScreen),
-    );
-    expect(screen.selectedItem.id, _anchor.id);
-    expect(screen.allItems.single.id, _anchor.id);
+    expect(find.byType(AhviOutfitBoardCard), findsOneWidget);
     expect(find.textContaining('coming soon'), findsNothing);
     expect(tester.takeException(), isNull);
   });

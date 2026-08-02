@@ -33,7 +33,6 @@ import 'package:myapp/feature/chat/services/ahvi_processing_message.dart';
 import 'package:myapp/feature/chat/widgets/ahvi_processing_bubble.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/visual_direction_carousel.dart';
-import 'build_outfit_screen.dart'; // ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ BUILD OUTFIT SCREEN
 
 // ============================================================
 // SEMANTIC COLORS
@@ -430,16 +429,8 @@ class _ItemDetailModal extends StatelessWidget {
   // Both show a loading spinner, then a result sheet, and never dead-end.
   // ============================================================
   void _onBuildOutfit(BuildContext context, WardrobeItem item) {
-    Navigator.of(
-      context,
-    ).pop(); // item detail modal close ÃƒÂ Ã‚Â°Ã…Â¡ÃƒÂ Ã‚Â±Ã¢â‚¬Â¡ÃƒÂ Ã‚Â°Ã‚Â¯ÃƒÂ Ã‚Â°Ã‚Â¿
-    showBuildOutfitSheet(
-      context,
-      selectedItem: item,
-      allItems: allItems,
-      onStyleSelected:
-          onBuildOutfit, // optional callback (caller provided ÃƒÂ Ã‚Â°Ã¢â‚¬Â¦ÃƒÂ Ã‚Â°Ã‚Â¯ÃƒÂ Ã‚Â°Ã‚Â¿ÃƒÂ Ã‚Â°Ã‚Â¤ÃƒÂ Ã‚Â±Ã¢â‚¬Â¡ trigger ÃƒÂ Ã‚Â°Ã¢â‚¬Â¦ÃƒÂ Ã‚Â°Ã‚ÂµÃƒÂ Ã‚Â±Ã‚ÂÃƒÂ Ã‚Â°Ã‚Â¤ÃƒÂ Ã‚Â±Ã‚ÂÃƒÂ Ã‚Â°Ã¢â‚¬Å¡ÃƒÂ Ã‚Â°Ã‚Â¦ÃƒÂ Ã‚Â°Ã‚Â¿)
-    );
+    Navigator.of(context).pop();
+    unawaited(_runStyleCta(context, item, mode: 'build_outfit'));
   }
 
   Future<void> _runStyleCta(
@@ -536,6 +527,29 @@ class _ItemDetailModal extends StatelessWidget {
       if (rootNav.canPop()) rootNav.pop(); // always dismiss the spinner
       debugPrint('AHVI_MODAL_GUARD close flow=styleCta');
     }
+
+    final resultData = result?['data'] is Map
+        ? Map<String, dynamic>.from(result!['data'] as Map)
+        : const <String, dynamic>{};
+    final resultOutfit = result?['outfit'] ?? resultData['outfit'];
+    final resultItems = resultOutfit is Map
+        ? (resultOutfit['items'] ??
+              resultOutfit['board_items'] ??
+              resultOutfit['boardItems'])
+        : null;
+    debugPrint(
+      'AHVI_LIVE_STYLE_HANDLER '
+      'source_file=ahvi_item_detail_modal.dart function=_performStyleRequest '
+      'resolved_route=$mode board_policy=wardrobe '
+      'selected_alias=${resultOutfit is Map ? 'outfit' : 'none'} '
+      'raw_count=${resultOutfit is Map ? 1 : 0} '
+      'accepted_count=${resultOutfit is Map ? 1 : 0} rejected_count=0 '
+      'rejection_predicates=none '
+      'first_board_keys=${resultOutfit is Map ? resultOutfit.keys.join(',') : 'none'} '
+      'first_item_keys=${resultItems is List && resultItems.isNotEmpty && resultItems.first is Map ? (resultItems.first as Map).keys.join(',') : 'none'} '
+      'final_renderer=${mode == 'build_outfit' && resultOutfit is Map ? 'canonical_editorial_style' : 'pending'} '
+      'final_rendered_count=${resultOutfit is Map ? 1 : 0}',
+    );
 
     if (!appContext.mounted) return;
     if (timedOut) {

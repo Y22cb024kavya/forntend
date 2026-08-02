@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:myapp/services/appwrite_service.dart';
+import 'package:myapp/services/ahvi_style_diagnostics.dart';
 import 'package:myapp/feature/chat/services/ahvi_processing_message.dart';
 import 'package:myapp/feature/chat/services/fashion_item_filter.dart';
 import 'package:myapp/feature/chat/services/saved_boards_store.dart';
@@ -323,20 +324,21 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
             state.lockedItemIds.contains(item.itemId);
       }).length;
       debugPrint(
-        'AHVI_STYLE_THIS_ANCHOR anchor_item_id=$anchorItemId '
+        'AHVI_STYLE_THIS_ANCHOR '
+        'anchor_item_id=${AhviStyleDiagnostics.maskIdentifier(anchorItemId)} '
         'anchor_present=${originatingItem != null} '
-        'initial_locked_ids=${initialLockedIds.join(",")} '
+        'initial_locked_count=${initialLockedIds.length} '
         'supporting_locked_count=$supportingLockedCount',
       );
     }
     final failedPredicates = state.failedContractPredicates;
     debugPrint(
       'AHVI_BOARD_CONTRACT_CHECK '
-      'board_id=${state.boardId} '
+      'board_id=${AhviStyleDiagnostics.maskIdentifier(state.boardId)} '
       'board_id_ok=${state.boardIdOk} '
       'revision=${state.revision} '
       'revision_ok=${state.revisionOk} '
-      'source_policy=${state.sourcePolicy.isEmpty ? "<missing>" : state.sourcePolicy} '
+      'source_policy_present=${state.sourcePolicy.isNotEmpty} '
       'source_policy_ok=${state.sourcePolicyOk} '
       'item_count=${state.items.length} '
       'stable_item_ids_ok=${state.stableItemIdsOk} '
@@ -360,7 +362,7 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
     final controlsEnabled = modeAllowsMutation && state.canLock;
     debugPrint(
       'AHVI_BOARD_INTERACTION_MODE '
-      'board_id=${state.boardId} '
+      'board_id=${AhviStyleDiagnostics.maskIdentifier(state.boardId)} '
       'mode=${_interactionMode.wireName} '
       'lock=$controlsEnabled '
       'shuffle=${controlsEnabled && state.canShuffle} '

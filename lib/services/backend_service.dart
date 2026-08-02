@@ -6,6 +6,7 @@ import 'package:myapp/config/env.dart';
 import 'package:myapp/models/calendar_event_record.dart';
 import 'package:myapp/models/home_today_summary.dart';
 import 'package:myapp/services/appwrite_service.dart';
+import 'package:myapp/services/ahvi_style_diagnostics.dart';
 import 'package:myapp/services/location_context_service.dart';
 import 'package:myapp/util/safe_text.dart';
 
@@ -38,15 +39,12 @@ class PrepPlanRequest {
   final Map<String, dynamic> context;
 }
 
-PrepPlanRequest prepPlanCardRequest(String adaptiveHint) => PrepPlanRequest(
-  'planner',
-  'Help me prep and plan my day.',
-  {
-    'context_hint': adaptiveHint,
-    'source': 'home_prep_plan_card',
-    'requested_action': 'plan_day',
-  },
-);
+PrepPlanRequest prepPlanCardRequest(String adaptiveHint) =>
+    PrepPlanRequest('planner', 'Help me prep and plan my day.', {
+      'context_hint': adaptiveHint,
+      'source': 'home_prep_plan_card',
+      'requested_action': 'plan_day',
+    });
 
 Object? _jsonSafe(Object? value) {
   if (value == null || value is String || value is num || value is bool) {
@@ -101,17 +99,6 @@ Map<String, dynamic> enrichBackendPayloadWithLocation(
           ..['location_context'] = Map<String, dynamic>.from(locationContext);
   }
   return enriched;
-}
-
-String _styleChatSnippet(Object? value, [int max = 900]) {
-  try {
-    final text = value is String ? value : jsonEncode(_jsonSafe(value));
-    final flat = text.replaceAll('\n', ' | ');
-    return truncateSafeText(flat, max);
-  } catch (_) {
-    final fallback = value.toString().replaceAll('\n', ' | ');
-    return truncateSafeText(fallback, max);
-  }
 }
 
 class BackendRequestException implements Exception {
@@ -520,6 +507,7 @@ class BackendService {
     bool allowGenericAssetsInMainBoard = true,
   }) async {
     final startedAt = DateTime.now();
+    final diagnosticCorrelationId = AhviStyleDiagnostics.nextCorrelationId();
     try {
       final authedUserId = await _currentUserId();
       var wardrobeForRequest = fetchedWardrobe;
@@ -591,7 +579,9 @@ class BackendService {
         includeUserProfile: true,
       );
       debugPrint(
-        'style_chat.endpoint=/api/text payload=${_styleChatSnippet(requestPayload)}',
+        'AHVI_STYLE_REQUEST correlation_id=$diagnosticCorrelationId '
+        'endpoint=/api/text module=${moduleContext.trim().toLowerCase()} '
+        'action=${(action ?? styleAction ?? 'none').trim().toLowerCase()}',
       );
 
       final response = await http
@@ -607,53 +597,29 @@ class BackendService {
 
       if (response.statusCode == 200) {
         debugPrint('style_chat.status_code=${response.statusCode}');
-        debugPrint(
-          'style_chat.response_body=${_styleChatSnippet(response.body)}',
-        );
         Map<String, dynamic> data;
         try {
           data = await compute(_parseJsonMap, response.body);
         } catch (parseErr) {
           debugPrint(
-            'AHVI_BACKEND_PARSE_ERR endpoint=/api/text err=$parseErr '
-            'body_len=${response.body.length} '
-            'body_head=${truncateSafeText(response.body, 400)}',
+            'AHVI_BACKEND_PARSE_ERR endpoint=/api/text '
+            'error_type=${parseErr.runtimeType} '
+            'body_len=${response.body.length}',
           );
           rethrow;
         }
-
-        void logBoardContract(String label, dynamic value) {
-          if (value is! List || value.isEmpty || value.first is! Map) {
-            debugPrint('AHVI_RAW_BOARD_CONTRACT alias=$label count=0');
-            return;
-          }
-
-          final board = Map<String, dynamic>.from(value.first as Map);
-
-          debugPrint(
-            'AHVI_RAW_BOARD_CONTRACT '
-            'alias=$label '
-            'count=${value.length} '
-            'board_id=${board['board_id'] ?? board['boardId'] ?? '<missing>'} '
-            'revision=${board['revision'] ?? '<missing>'} '
-            'source_policy=${board['source_policy'] ?? board['sourcePolicy'] ?? '<missing>'} '
-            'id=${board['id'] ?? '<missing>'} '
-            'occasion=${board['occasion'] ?? '<missing>'}',
-          );
-        }
-
-        final nestedData = data['data'] is Map
-            ? Map<String, dynamic>.from(data['data'] as Map)
-            : <String, dynamic>{};
-
-        logBoardContract('cards', data['cards']);
-        logBoardContract('style_boards', data['style_boards']);
-        logBoardContract('visual_directions', data['visual_directions']);
-        logBoardContract('data.outfits', nestedData['outfits']);
-        logBoardContract('data.rendered_boards', nestedData['rendered_boards']);
-        logBoardContract(
-          'data.visual_directions',
-          nestedData['visual_directions'],
+        AhviStyleDiagnostics.logResponse(
+          correlationId: diagnosticCorrelationId,
+          response: data,
+          selectedAlias: 'backend_unselected',
+          selectedRawCount: 0,
+          parserInputCount: 0,
+          parserAcceptedCount: 0,
+          policyRejectedCount: 0,
+          invalidContractCount: 0,
+          dedupDroppedCount: 0,
+          finalRenderedCount: 0,
+          staleResponseDiscardedCount: 0,
         );
 
         if (data['ok'] == false || data['success'] == false) {
@@ -714,35 +680,33 @@ class BackendService {
       }
 
       debugPrint(
-        'AHVI_BACKEND_FAIL endpoint=/api/text status=${response.statusCode} body=${response.body}',
+        'AHVI_BACKEND_FAIL endpoint=/api/text status=${response.statusCode}',
       );
       debugPrint('style_chat.status_code=${response.statusCode}');
-      debugPrint(
-        'style_chat.response_body=${_styleChatSnippet(response.body)}',
-      );
       try {
         final data = await compute(_parseJsonMap, response.body);
         if (data['error'] != null || data['message'] != null) {
           return _normalizeChatResponse(data);
         }
       } catch (_) {}
-      throw Exception(
-        'Failed to get AI response: ${response.statusCode} ${response.body}',
-      );
+      throw Exception('Failed to get AI response: ${response.statusCode}');
     } catch (e, st) {
       final failedAfter =
           DateTime.now().difference(startedAt).inMilliseconds / 1000;
-      debugPrint('AHVI_BACKEND_EXCEPTION endpoint=/api/text error=$e');
       debugPrint(
-        'style_chat.exception_type=${e.runtimeType} endpoint=/api/text error=$e',
+        'AHVI_BACKEND_EXCEPTION endpoint=/api/text '
+        'error_type=${e.runtimeType}',
+      );
+      debugPrint(
+        'style_chat.exception_type=${e.runtimeType} endpoint=/api/text',
       );
       if (e is TimeoutException ||
           e.toString().toLowerCase().contains('timeout')) {
         debugPrint('style_chat.timeout endpoint=/api/text seconds=120');
       }
-      debugPrint('AHVI_BACKEND_EXCEPTION stack=$st');
+      debugPrint('AHVI_BACKEND_EXCEPTION stack_type=${st.runtimeType}');
       debugPrint(
-        'AHVI_FAILURE_AFTER endpoint=/api/text seconds=${failedAfter.toStringAsFixed(2)} error=$e',
+        'AHVI_FAILURE_AFTER endpoint=/api/text seconds=${failedAfter.toStringAsFixed(2)}',
       );
 
       final errStr = e.toString().toLowerCase();
@@ -819,6 +783,7 @@ class BackendService {
   }) async {
     final module = canonicalModuleChatDomain(domain);
     final query = message.trim();
+    final diagnosticCorrelationId = AhviStyleDiagnostics.nextCorrelationId();
     try {
       final authedUserId = await _currentUserId();
       if (query.isEmpty) {
@@ -837,7 +802,10 @@ class BackendService {
         return _normalizeChatResponse({
           'message': {'role': 'assistant', 'content': comingSoon},
           'message_text': comingSoon,
-          'chips': const ['Suggest an outfit for today', 'Style capsule wardrobe'],
+          'chips': const [
+            'Suggest an outfit for today',
+            'Style capsule wardrobe',
+          ],
           'quick_actions': const ['Suggest an outfit for today'],
           'type': 'module_response',
         });
@@ -895,7 +863,8 @@ class BackendService {
         includeUserProfile: true,
       );
       debugPrint(
-        'style_chat.endpoint=/api/module-chat payload=${_styleChatSnippet(modulePayload)}',
+        'AHVI_STYLE_REQUEST correlation_id=$diagnosticCorrelationId '
+        'endpoint=/api/module-chat module=$module action=none',
       );
       final response = await http
           .post(
@@ -914,10 +883,21 @@ class BackendService {
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         debugPrint('style_chat.status_code=${response.statusCode}');
-        debugPrint(
-          'style_chat.response_body=${_styleChatSnippet(response.body)}',
-        );
         final data = await compute(_parseJsonMap, response.body);
+        AhviStyleDiagnostics.logResponse(
+          correlationId: diagnosticCorrelationId,
+          response: data,
+          selectedAlias: 'module_unselected',
+          selectedRawCount: 0,
+          parserInputCount: 0,
+          parserAcceptedCount: 0,
+          policyRejectedCount: 0,
+          invalidContractCount: 0,
+          dedupDroppedCount: 0,
+          finalRenderedCount: 0,
+          staleResponseDiscardedCount: 0,
+          promptCategory: module,
+        );
         final text = _messageText(data);
         debugPrint(
           'AHVI_MODULE_CHAT_OK module=$module seconds=${moduleElapsed.toStringAsFixed(2)} '
@@ -934,26 +914,23 @@ class BackendService {
 
       debugPrint(
         'AHVI_BACKEND_FAIL endpoint=/api/module-chat module=$module '
-        'status=${response.statusCode} seconds=${moduleElapsed.toStringAsFixed(2)} '
-        'body=${response.body}',
+        'status=${response.statusCode} seconds=${moduleElapsed.toStringAsFixed(2)}',
       );
       debugPrint('style_chat.status_code=${response.statusCode}');
-      debugPrint(
-        'style_chat.response_body=${_styleChatSnippet(response.body)}',
-      );
-      throw Exception(
-        'Failed module chat: ${response.statusCode} ${response.body}',
-      );
+      throw Exception('Failed module chat: ${response.statusCode}');
     } catch (e, st) {
-      debugPrint('AHVI_BACKEND_EXCEPTION endpoint=/api/module-chat error=$e');
       debugPrint(
-        'style_chat.exception_type=${e.runtimeType} endpoint=/api/module-chat error=$e',
+        'AHVI_BACKEND_EXCEPTION endpoint=/api/module-chat '
+        'error_type=${e.runtimeType}',
+      );
+      debugPrint(
+        'style_chat.exception_type=${e.runtimeType} endpoint=/api/module-chat',
       );
       if (e is TimeoutException ||
           e.toString().toLowerCase().contains('timeout')) {
         debugPrint('style_chat.timeout endpoint=/api/module-chat seconds=75');
       }
-      debugPrint('AHVI_BACKEND_EXCEPTION stack=$st');
+      debugPrint('AHVI_BACKEND_EXCEPTION stack_type=${st.runtimeType}');
 
       final errStr = e.toString().toLowerCase();
       String reason;
@@ -970,7 +947,7 @@ class BackendService {
 
       final fallback = _honestChatFallback(reason, module);
       return {
-        'error': 'Backend module chat failed ($reason): $e',
+        'error': 'Backend module chat failed ($reason)',
         'message': {'role': 'assistant', 'content': fallback},
         'message_text': fallback,
         'chips': [
@@ -1280,12 +1257,10 @@ class BackendService {
       if (response.statusCode == 200) {
         return await compute(_parseJsonMap, response.body);
       }
-      debugPrint(
-        'styleWardrobeItem failed: ${response.statusCode} - ${response.body}',
-      );
+      debugPrint('AHVI_STYLE_THIS_BACKEND_FAIL status=${response.statusCode}');
       return null;
     } catch (e) {
-      debugPrint('styleWardrobeItem error: $e');
+      debugPrint('AHVI_STYLE_THIS_BACKEND_FAIL error_type=${e.runtimeType}');
       return null;
     }
   }
@@ -1757,9 +1732,9 @@ class BackendService {
     try {
       final userId = await _currentUserId();
       final location = await _locationContext(userId);
-      final uri = Uri.parse('$root/api/home/today-summary').replace(
-        queryParameters: {'location_context': jsonEncode(location)},
-      );
+      final uri = Uri.parse(
+        '$root/api/home/today-summary',
+      ).replace(queryParameters: {'location_context': jsonEncode(location)});
       final headers = await _authHeaders();
       final response = await http
           .get(uri, headers: headers)

@@ -9,6 +9,7 @@ import 'package:myapp/theme/accent_palette.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/wardrobe.dart';
 import 'package:myapp/widgets/ahvi_item_detail_modal.dart';
+import 'package:myapp/widgets/build_outfit_screen.dart';
 import 'package:myapp/widgets/style_boards.dart';
 
 const _accent = AccentPalette(
@@ -120,26 +121,53 @@ void main() {
         expect(find.byType(EditorialBoardCanvas), findsOneWidget);
         expect(find.text('STYLE THIS'), findsOneWidget);
         expect(find.text('1 of 3 items locked'), findsOneWidget);
+        final requestLog = logs.singleWhere(
+          (line) => line.startsWith('AHVI_STYLE_THIS_REQUEST'),
+        );
+        expect(requestLog, contains('correlation_id=style-'));
+        expect(requestLog, contains('anchor_item_id=id-'));
         expect(
-          logs,
-          contains(
-            contains(
-              'AHVI_STYLE_THIS_REQUEST anchor_item_id=${_anchor.id} '
-              'scenario=style_this source_policy=wardrobe',
-            ),
-          ),
+          requestLog,
+          contains('scenario=style_this source_policy=wardrobe'),
         );
         final anchorLog = logs.singleWhere(
           (line) => line.startsWith('AHVI_STYLE_THIS_ANCHOR'),
         );
         expect(anchorLog, contains('anchor_present=true'));
-        expect(anchorLog, contains('initial_locked_ids=${_anchor.id}'));
+        expect(anchorLog, contains('initial_locked_count=1'));
         expect(anchorLog, contains('supporting_locked_count=0'));
       } finally {
         debugPrint = originalDebugPrint;
       }
     },
   );
+
+  testWidgets('Build Outfit CTA invokes the canonical local flow', (
+    tester,
+  ) async {
+    await _pumpItemDetail(
+      tester,
+      styleCall:
+          ({
+            required requestedItemId,
+            required requestedScenario,
+            requestAnchorItem,
+            occasion,
+          }) async => _successfulResponse(),
+    );
+
+    await tester.tap(find.text('Build'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BuildOutfitScreen), findsOneWidget);
+    final screen = tester.widget<BuildOutfitScreen>(
+      find.byType(BuildOutfitScreen),
+    );
+    expect(screen.selectedItem.id, _anchor.id);
+    expect(screen.allItems.single.id, _anchor.id);
+    expect(find.textContaining('coming soon'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('failed Style This response keeps detail open with retry', (
     tester,

@@ -21,6 +21,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/wardrobe.dart'; // WardrobeItem lives here
 import 'package:myapp/services/backend_service.dart'; // styleWardrobeItem
+import 'package:myapp/services/ahvi_style_diagnostics.dart';
 import 'package:myapp/style_board/board_models.dart';
 import 'package:myapp/style_board/board_layout_engine.dart';
 import 'package:myapp/util/wardrobe_image_resolver.dart';
@@ -432,15 +433,6 @@ class _ItemDetailModal extends StatelessWidget {
     Navigator.of(
       context,
     ).pop(); // item detail modal close ÃƒÂ Ã‚Â°Ã…Â¡ÃƒÂ Ã‚Â±Ã¢â‚¬Â¡ÃƒÂ Ã‚Â°Ã‚Â¯ÃƒÂ Ã‚Â°Ã‚Â¿
-    // Build Outfit is stubbed for beta (coming soon).
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Build Outfit is coming soon ✨'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-    return;
-    // ignore: dead_code
     showBuildOutfitSheet(
       context,
       selectedItem: item,
@@ -476,6 +468,7 @@ class _ItemDetailModal extends StatelessWidget {
     required String mode,
   }) async {
     final rootNav = Navigator.of(appContext, rootNavigator: true);
+    final diagnosticCorrelationId = AhviStyleDiagnostics.nextCorrelationId();
 
     // Loading state.
     showDialog<void>(
@@ -503,7 +496,8 @@ class _ItemDetailModal extends StatelessWidget {
       final request =
           styleWardrobeItemCall ?? BackendService().styleWardrobeItem;
       debugPrint(
-        'AHVI_STYLE_THIS_REQUEST anchor_item_id=${item.id} '
+        'AHVI_STYLE_THIS_REQUEST correlation_id=$diagnosticCorrelationId '
+        'anchor_item_id=${AhviStyleDiagnostics.maskIdentifier(item.id)} '
         'scenario=$mode source_policy=wardrobe',
       );
       result = await request(
@@ -555,6 +549,23 @@ class _ItemDetailModal extends StatelessWidget {
     }
 
     if (mode == 'style_this') {
+      final diagnosticDirections = _styleThisDirectionsFromResponse(result);
+      final diagnosticFailures = diagnosticDirections.isEmpty
+          ? [
+              const ['visual_directions'],
+            ]
+          : diagnosticDirections
+                .map(
+                  (direction) => _directionContractFailures(direction, item.id),
+                )
+                .toList(growable: false);
+      AhviStyleDiagnostics.logStyleThisContract(
+        correlationId: diagnosticCorrelationId,
+        response: result,
+        directions: diagnosticDirections,
+        failures: diagnosticFailures,
+        anchorItemId: item.id,
+      );
       final directions = _canonicalStyleThisDirections(result, item.id);
       if (result?['success'] != true || directions.isEmpty) {
         final failedFields = _styleThisContractFailures(result, item.id);
@@ -629,6 +640,19 @@ class _ItemDetailModal extends StatelessWidget {
     return directions;
   }
 
+  List<Map<String, dynamic>> _styleThisDirectionsFromResponse(
+    Map<String, dynamic>? result,
+  ) {
+    if (result == null) return const [];
+    final parsed = parseAhviResponse(result);
+    for (final block in parsed.blocks) {
+      if (block.type == AhviBlockType.visualDirections) {
+        return _asMapList(block.data['directions']);
+      }
+    }
+    return const [];
+  }
+
   List<String> _styleThisContractFailures(
     Map<String, dynamic>? result,
     String anchorItemId,
@@ -691,7 +715,8 @@ class _ItemDetailModal extends StatelessWidget {
     required List<String> failedFields,
   }) {
     debugPrint(
-      'AHVI_STYLE_THIS_CONTRACT_FAILED anchor_item_id=${item.id} '
+      'AHVI_STYLE_THIS_CONTRACT_FAILED '
+      'anchor_item_id=${AhviStyleDiagnostics.maskIdentifier(item.id)} '
       'failed_fields=${failedFields.isEmpty ? "unknown" : failedFields.join(",")}',
     );
     ScaffoldMessenger.maybeOf(appContext)?.showSnackBar(

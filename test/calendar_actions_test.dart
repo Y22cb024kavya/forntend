@@ -67,6 +67,7 @@ void main() {
     expect(action, CalendarQuickAction.prepTomorrow);
     expect(request.context['calendar_action'], 'calendar_prep_tomorrow');
     expect(request.context['requested_plan_type'], 'tomorrow_prep');
+    expect(request.context['target_date'], isNotNull);
   });
 
   test('occasion context does not prefix or override the prep request', () {
@@ -79,6 +80,7 @@ void main() {
     expect(request.message.toLowerCase(), contains('tomorrow'));
     expect(request.context['occasion'], 'Gym');
     expect(request.context['calendar_action'], 'calendar_prep_tomorrow');
+    expect(request.context['target_date'], isNotNull);
   });
 
   test('Plan my day and Prep for tomorrow retain distinct identities', () {

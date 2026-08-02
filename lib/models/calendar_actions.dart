@@ -57,6 +57,7 @@ CalendarQuickAction? calendarPhraseAction(String text) {
   final t = text.trim().toLowerCase();
   const tomorrowPrep = {
     'prep tomorrow',
+    'prep for tomorrow',
     'prepare tomorrow',
     'prep me for tomorrow',
     'prepare me for tomorrow',
@@ -76,17 +77,27 @@ CalendarQuickAction? calendarPhraseAction(String text) {
 CalendarActionRequest calendarActionRequest(
   CalendarQuickAction action, {
   required String occasion,
+  DateTime? now,
 }) {
   assert(action != CalendarQuickAction.viewEvents);
+  final localNow = now ?? DateTime.now();
+  final tomorrow = DateTime(localNow.year, localNow.month, localNow.day + 1);
   return CalendarActionRequest(
     message: action.label,
     context: <String, dynamic>{
       'calendar_action': action.id,
       'requested_plan_type': action.planType,
+      if (action == CalendarQuickAction.prepTomorrow)
+        'target_date': _localDate(tomorrow),
       if (occasion.trim().isNotEmpty) 'occasion': occasion.trim(),
     },
   );
 }
+
+String _localDate(DateTime value) =>
+    '${value.year.toString().padLeft(4, '0')}-'
+    '${value.month.toString().padLeft(2, '0')}-'
+    '${value.day.toString().padLeft(2, '0')}';
 
 class CalendarActionCoordinator {
   bool _calendarNavigationPending = false;

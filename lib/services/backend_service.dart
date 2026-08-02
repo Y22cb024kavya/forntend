@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:myapp/config/env.dart';
+import 'package:myapp/models/calendar_actions.dart';
 import 'package:myapp/models/calendar_event_record.dart';
 import 'package:myapp/models/home_today_summary.dart';
 import 'package:myapp/services/appwrite_service.dart';
@@ -27,11 +28,10 @@ String canonicalModuleChatDomain(String domain, {bool plannerRequest = false}) {
   return plannerAliases.contains(normalized) ? 'planner' : normalized;
 }
 
-/// Home "Prep & Plan" CTA contract. Always invokes the planner with one stable
-/// routing message; the adaptive meal/workout/weekly recommendation rides as
-/// non-routing `context_hint`, so routing is decided by module + action, never
-/// by keywords in the recommendation (which would deflect to Diet/Fitness/
-/// Calendar). See AhviModuleConfig 'planner' + the sheet send path.
+/// Home "Prep & Plan" CTA contract. Always invokes the planner shell with the
+/// structured Tomorrow Prep calendar action; adaptive recommendation text is
+/// non-routing context so it cannot deflect the request to Style, Diet, or
+/// Fitness.
 class PrepPlanRequest {
   const PrepPlanRequest(this.module, this.message, this.context);
   final String module;
@@ -39,12 +39,20 @@ class PrepPlanRequest {
   final Map<String, dynamic> context;
 }
 
-PrepPlanRequest prepPlanCardRequest(String adaptiveHint) =>
-    PrepPlanRequest('planner', 'Help me prep and plan my day.', {
-      'context_hint': adaptiveHint,
-      'source': 'home_prep_plan_card',
-      'requested_action': 'plan_day',
-    });
+PrepPlanRequest prepPlanCardRequest(String adaptiveHint, {DateTime? now}) {
+  final calendarRequest = calendarActionRequest(
+    CalendarQuickAction.prepTomorrow,
+    occasion: '',
+    now: now,
+  );
+  return PrepPlanRequest('planner', calendarRequest.message, {
+    ...calendarRequest.context,
+    'context_hint': adaptiveHint,
+    'source': 'home_prep_plan_card',
+    'requested_action': CalendarQuickAction.prepTomorrow.id,
+    'surface': 'home_prepare',
+  });
+}
 
 Object? _jsonSafe(Object? value) {
   if (value == null || value is String || value is num || value is bool) {

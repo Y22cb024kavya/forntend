@@ -3933,67 +3933,76 @@ class _Screen4State extends State<Screen4>
                           ),
                         ],
                       ),
-                      _AnimatedPressable(
-                        liftY: -2.0,
-                        scalePressed: 0.95,
-                        // "Prep & Plan" always invokes the planner with one
-                        // stable planning request. The adaptive meal/workout/
-                        // weekly recommendation rides along as non-routing
-                        // context_hint so backend routing is decided by the
-                        // explicit module + action, never by keywords in the
-                        // recommendation text (which would deflect to
-                        // Diet/Fitness/Calendar).
-                        onTap: () {
-                          final req = prepPlanCardRequest(content.prompt);
-                          showAhviStylistChatSheet(
-                            context,
-                            moduleContext: req.module,
-                            initialPrompt: req.message,
-                            contextData: req.context,
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [accentColor, accentTertiary],
+                      Semantics(
+                        button: true,
+                        enabled: true,
+                        label: 'Prepare and plan: ${content.cta}',
+                        child: _AnimatedPressable(
+                          liftY: -2.0,
+                          scalePressed: 0.95,
+                          // "Prep & Plan" always invokes the planner with one
+                          // stable planning request. The adaptive meal/workout/
+                          // weekly recommendation rides along as non-routing
+                          // context_hint so backend routing is decided by the
+                          // explicit module + action, never by keywords in the
+                          // recommendation text (which would deflect to
+                          // Diet/Fitness/Calendar).
+                          onTap: () {
+                            final req = prepPlanCardRequest(content.prompt);
+                            showAhviStylistChatSheet(
+                              context,
+                              moduleContext: req.module,
+                              initialPrompt: req.message,
+                              contextData: req.context,
+                            );
+                          },
+                          child: Container(
+                            key: const ValueKey('home-prepare-cta'),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 5,
                             ),
-                            borderRadius: BorderRadius.circular(100),
-                            boxShadow: [
-                              BoxShadow(
-                                color: accentColor.withOpacity(0.38),
-                                blurRadius: 14,
-                                offset: const Offset(0, 4),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [accentColor, accentTertiary],
                               ),
-                            ],
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text(
-                                  AppLocalizations.t(context, 'prep_card_cta'),
-                                  style: TextStyle(
-                                    color: _onAccent,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.1,
+                              borderRadius: BorderRadius.circular(100),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: accentColor.withOpacity(0.38),
+                                  blurRadius: 14,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    AppLocalizations.t(
+                                      context,
+                                      'prep_card_cta',
+                                    ),
+                                    style: TextStyle(
+                                      color: _onAccent,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 0.1,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 1),
-                              Icon(
-                                Icons.arrow_forward_rounded,
-                                color: _onAccent,
-                                size: 8,
-                              ),
-                            ],
+                                const SizedBox(width: 1),
+                                Icon(
+                                  Icons.arrow_forward_rounded,
+                                  color: _onAccent,
+                                  size: 8,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),

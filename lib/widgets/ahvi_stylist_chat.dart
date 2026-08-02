@@ -1386,11 +1386,14 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       final calendarReq = calendarAction == null
           ? null
           : calendarActionRequest(calendarAction, occasion: '');
+      final requestContext = calendarReq == null
+          ? moduleContextData
+          : <String, dynamic>{...calendarReq.context, ...moduleContextData};
       final response = calendarReq != null
           ? await backend.sendModuleChat(
               domain: 'calendar',
               message: calendarReq.message,
-              context: calendarReq.context,
+              context: requestContext,
               chatHistory: List<Map<String, String>>.from(_chatHistory),
             )
           : styleModules.contains(widget.moduleContext) && !isPlanPackRequest

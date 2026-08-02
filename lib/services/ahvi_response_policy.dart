@@ -190,14 +190,19 @@ class AhviResponsePolicy {
         (route == 'style_advice' && boardRouteAuthorized);
     final isStyleThis = route == 'style_this';
     final isBuildOutfit = route == 'build_outfit';
+    final isMutableBoard = isStyleThis || isBuildOutfit;
     return AhviResponseControls(
       save: canSave,
       share: canShare,
       like: isRecommendation,
       dislike: isRecommendation,
-      lock: isStyleThis && (_backendCanLock ?? true) && anchorValid,
-      shuffle: isStyleThis && (_backendCanShuffle ?? true) && anchorValid,
-      undo: isStyleThis && anchorValid,
+      lock: isMutableBoard &&
+          (isBuildOutfit || (_backendCanLock ?? true)) &&
+          anchorValid,
+      shuffle: isMutableBoard &&
+          (isBuildOutfit || (_backendCanShuffle ?? true)) &&
+          anchorValid,
+      undo: isMutableBoard && anchorValid,
       buildOutfit: isBuildOutfit,
     );
   }

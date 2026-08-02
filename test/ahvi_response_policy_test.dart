@@ -234,9 +234,7 @@ void main() {
       expect(styleResponseRendererKindForTesting(response), 'text');
     });
 
-    test(
-      'Build Outfit uses its typed controls instead of recommendation controls',
-      () {
+    test('Build Outfit exposes its mutation controls', () {
         final response = _response(
           route: 'build_outfit',
           extra: {
@@ -250,8 +248,9 @@ void main() {
         expect(controls.buildOutfit, isTrue);
         expect(controls.like, isFalse);
         expect(controls.dislike, isFalse);
-        expect(controls.lock, isFalse);
-        expect(controls.shuffle, isFalse);
+        expect(controls.lock, isTrue);
+        expect(controls.shuffle, isTrue);
+        expect(controls.undo, isTrue);
         expect(
           styleResponseRendererKindForTesting(response),
           'visual_directions',

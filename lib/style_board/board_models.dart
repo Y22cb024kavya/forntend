@@ -469,6 +469,14 @@ enum EditorialLayoutMode {
   outerwearLayered,
   accessoryHeavy,
   generic,
+  premiumOneItem,
+  premiumTwoItem,
+  premiumThreeItem,
+  premiumFourItem,
+  premiumFiveItem,
+  premiumSixItem,
+  premiumSevenItem,
+  premiumEightItem,
   empty,
 }
 

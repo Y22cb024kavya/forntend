@@ -48,6 +48,38 @@ class EditorialBoardCanvas extends StatelessWidget {
           final boardKey =
               '${board.boardId}|${board.revision}|${generated.mode.name}';
           if (_styleRenderDiagnosticKeys.add(boardKey)) {
+            final roleCounts = <String, int>{};
+            var transparentCount = 0;
+            var framedFallbackCount = 0;
+            for (final placement in placements) {
+              final role = placement.item.role.name;
+              roleCounts[role] = (roleCounts[role] ?? 0) + 1;
+              final image = placement.item.resolveImage(
+                surface: 'style_board_bounds',
+              );
+              if (image.expectedTransparent) {
+                transparentCount++;
+              }
+              if (image.requiresFrame) {
+                framedFallbackCount++;
+              }
+            }
+            final sizeBucket = w < 330
+                ? 'narrow'
+                : w < 430
+                ? 'phone'
+                : 'wide';
+            debugPrint(
+              'AHVI_EDITORIAL_BOARD_LAYOUT '
+              'board_fingerprint=${_boardFingerprint(board.boardId)} '
+              'item_count=${board.items.length} display_count=${placements.length} '
+              'template=${generated.mode.name} '
+              'role_counts=${roleCounts.entries.map((e) => '${e.key}:${e.value}').join(',')} '
+              'transparent_count=$transparentCount framed_fallback_count=$framedFallbackCount '
+              'anchor_locked=${lockedItemIds.isNotEmpty} '
+              'overflow_fallback=${board.items.length > placements.length} '
+              'canvas_bucket=$sizeBucket',
+            );
             debugPrint(
               'AHVI_STYLE_BOARD_RENDER board_id=${board.boardId} '
               'revision=${board.revision} mode=${generated.mode.name} '
@@ -56,7 +88,7 @@ class EditorialBoardCanvas extends StatelessWidget {
             for (final placement in placements) {
               final image = placement.item.resolveImage(
                 surface: 'style_board_bounds',
-            );
+              );
               debugPrint(
                 'AHVI_STYLE_ITEM_IMAGE_SELECTED '
                 'item_id=${placement.item.itemId} '
@@ -156,6 +188,15 @@ class EditorialBoardCanvas extends StatelessWidget {
       ),
     );
   }
+}
+
+String _boardFingerprint(String value) {
+  var hash = 2166136261;
+  for (final codeUnit in value.codeUnits) {
+    hash ^= codeUnit;
+    hash = (hash * 16777619) & 0xFFFFFFFF;
+  }
+  return hash.toRadixString(16).padLeft(8, '0');
 }
 
 class _LockedPill extends StatelessWidget {

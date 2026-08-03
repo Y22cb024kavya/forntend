@@ -51,15 +51,6 @@ class EditorialBoardLayoutEngine {
       );
     }
 
-    final top = _firstOf(board.items, BoardItemRole.top);
-    final bottom = _firstOf(board.items, BoardItemRole.bottom);
-    final footwear = _firstOf(board.items, BoardItemRole.footwear);
-    final dress = _firstOf(board.items, BoardItemRole.dress);
-    final outerwear = _firstOf(board.items, BoardItemRole.outerwear);
-    final accessories = board.items
-        .where((e) => e.role == BoardItemRole.accessory)
-        .toList(growable: false);
-
     if (board.items.isEmpty) {
       return const EditorialLayoutResult(
         mode: EditorialLayoutMode.empty,
@@ -67,38 +58,13 @@ class EditorialBoardLayoutEngine {
       );
     }
 
-    final EditorialLayoutResult raw;
-    if (dress != null) {
-      raw = _dressFocused(
-        dress: dress,
-        footwear: footwear,
-        outerwear: outerwear,
-        accessories: accessories,
-        width: width,
-        height: height,
-      );
-    } else if (top != null && bottom != null && footwear != null) {
-      if (accessories.length <= 2) {
-        raw = _classicThreePlusAccessory(
-          top: top,
-          bottom: bottom,
-          footwear: footwear,
-          outerwear: outerwear,
-          accessories: accessories,
-          width: width,
-          height: height,
-        );
-      } else {
-        raw = _accessoryHeavy(
-          mainItems: <StyleBoardItem>[?outerwear, top, bottom, footwear],
-          accessories: accessories,
-          width: width,
-          height: height,
-        );
-      }
-    } else {
-      raw = _generic(items: board.items, width: width, height: height);
-    }
+    // The first eight validated items are the complete visual contract. The
+    // backend order remains untouched; only the canvas placement is bounded.
+    final raw = _premium(
+      items: board.items.take(8).toList(growable: false),
+      width: width,
+      height: height,
+    );
 
     // Enforce safe zones, then sanitize any non-finite/overflowing geometry.
     final safe = _applySafeZone(raw.placements, width, height);
@@ -115,25 +81,377 @@ class EditorialBoardLayoutEngine {
     return EditorialLayoutResult(mode: raw.mode, placements: finalPlacements);
   }
 
-  static StyleBoardItem? _firstOf(
-    List<StyleBoardItem> items,
-    BoardItemRole role,
-  ) {
-    for (final item in items) {
-      if (item.role == role) return item;
+  static EditorialLayoutResult _premium({
+    required List<StyleBoardItem> items,
+    required double width,
+    required double height,
+  }) {
+    final count = items.length;
+    final hasDress = items.any((item) => item.role == BoardItemRole.dress);
+    final hasOuterwear = items.any(
+      (item) => item.role == BoardItemRole.outerwear,
+    );
+    final slots = _premiumSlots(
+      count,
+      hasDress: hasDress,
+      hasOuterwear: hasOuterwear,
+    );
+    final remaining = [...items];
+    final accessoryCount = items
+        .where((item) => item.role == BoardItemRole.accessory)
+        .length;
+    var accessoryIndex = 0;
+    final placements = <BoardItemPlacement>[];
+
+    for (final slot in slots) {
+      if (remaining.isEmpty) break;
+      final item = _takeForRole(remaining, slot.role);
+      if (item == null) continue;
+
+      final placement = item.role == BoardItemRole.accessory && count >= 3
+          ? _placePremiumAccessory(
+              item,
+              index: accessoryIndex++,
+              total: accessoryCount,
+              compact: count >= 6 || hasDress,
+              width: width,
+              height: height,
+            )
+          : (slot.template ??
+                    const _Template(
+                      0.56,
+                      0.46,
+                      0.26,
+                      0.0,
+                      1,
+                      maxHeightFraction: 0.28,
+                    ))
+                .place(item, width, height);
+      placements.add(placement);
     }
-    return null;
+
+    return EditorialLayoutResult(
+      mode: _premiumModeForCount(count),
+      placements: _sorted(placements),
+    );
   }
 
-  /// Box height for [role] at the given box [boxWidth], capped so the box never
-  /// exceeds [maxHeight] of canvas (prevents tall garments overflowing).
-  static double _boxHeight(
-    BoardItemRole role,
-    double boxWidth,
-    double maxHeight,
+  static StyleBoardItem? _takeForRole(
+    List<StyleBoardItem> remaining,
+    BoardItemRole? role,
   ) {
-    final h = boxWidth * _arForRole(role);
-    return h.clamp(0.0, maxHeight);
+    if (remaining.isEmpty) return null;
+    final index = role == null
+        ? 0
+        : remaining.indexWhere((item) => item.role == role);
+    return remaining.removeAt(index < 0 ? 0 : index);
+  }
+
+  static EditorialLayoutMode _premiumModeForCount(int count) => switch (count) {
+    1 => EditorialLayoutMode.premiumOneItem,
+    2 => EditorialLayoutMode.premiumTwoItem,
+    3 => EditorialLayoutMode.premiumThreeItem,
+    4 => EditorialLayoutMode.premiumFourItem,
+    5 => EditorialLayoutMode.premiumFiveItem,
+    6 => EditorialLayoutMode.premiumSixItem,
+    7 => EditorialLayoutMode.premiumSevenItem,
+    _ => EditorialLayoutMode.premiumEightItem,
+  };
+
+  static List<_PremiumSlot> _premiumSlots(
+    int count, {
+    required bool hasDress,
+    required bool hasOuterwear,
+  }) {
+    if (count == 1) {
+      return [
+        _PremiumSlot(
+          const _Template(0.14, 0.04, 0.72, 0.0, 2, maxHeightFraction: 0.82),
+          hasDress ? BoardItemRole.dress : null,
+        ),
+      ];
+    }
+    if (count == 2) {
+      if (hasDress) {
+        return [
+          _PremiumSlot(
+            const _Template(0.10, 0.04, 0.781, 0.0, 2, maxHeightFraction: 0.82),
+            BoardItemRole.dress,
+          ),
+          _PremiumSlot(
+            const _Template(0.08, 0.72, 0.40, 0.0, 3, maxHeightFraction: 0.18),
+            BoardItemRole.footwear,
+          ),
+        ];
+      }
+      return [
+        _PremiumSlot(
+          const _Template(0.05, 0.06, 0.62, 0.0, 2, maxHeightFraction: 0.62),
+          hasDress ? BoardItemRole.dress : null,
+        ),
+        _PremiumSlot(
+          const _Template(0.60, 0.50, 0.30, 0.0, 3, maxHeightFraction: 0.30),
+          hasDress ? BoardItemRole.footwear : null,
+        ),
+      ];
+    }
+    if (hasDress) {
+      return _dressPremiumSlots(count, hasOuterwear: hasOuterwear);
+    }
+    if (hasOuterwear && count >= 4) return _outerwearPremiumSlots(count);
+    return _classicPremiumSlots(count);
+  }
+
+  static List<_PremiumSlot> _classicPremiumSlots(int count) {
+    if (count == 3) {
+      return [
+        _PremiumSlot(
+          const _Template(0.05, 0.06, 0.48, 0.0, 2, maxHeightFraction: 0.46),
+          BoardItemRole.top,
+        ),
+        _PremiumSlot(
+          const _Template(0.50, 0.20, 0.40, 0.0, 1, maxHeightFraction: 0.58),
+          BoardItemRole.bottom,
+        ),
+        _PremiumSlot(
+          const _Template(0.12, 0.72, 0.30, 0.0, 3, maxHeightFraction: 0.18),
+          BoardItemRole.footwear,
+        ),
+      ];
+    }
+    if (count == 4) {
+      return [
+        _PremiumSlot(
+          const _Template(0.05, 0.06, 0.48, 0.0, 2, maxHeightFraction: 0.46),
+          BoardItemRole.top,
+        ),
+        _PremiumSlot(null, BoardItemRole.accessory),
+        _PremiumSlot(
+          const _Template(0.50, 0.20, 0.40, 0.0, 1, maxHeightFraction: 0.58),
+          BoardItemRole.bottom,
+        ),
+        _PremiumSlot(
+          const _Template(0.12, 0.72, 0.30, 0.0, 3, maxHeightFraction: 0.18),
+          BoardItemRole.footwear,
+        ),
+      ];
+    }
+    if (count == 5) {
+      return [
+        _PremiumSlot(
+          const _Template(0.05, 0.06, 0.37, 0.0, 2, maxHeightFraction: 0.46),
+          BoardItemRole.top,
+        ),
+        _PremiumSlot(
+          const _Template(0.46, 0.24, 0.35, 0.0, 1, maxHeightFraction: 0.58),
+          BoardItemRole.bottom,
+        ),
+        _PremiumSlot(
+          const _Template(0.12, 0.72, 0.29, 0.0, 3, maxHeightFraction: 0.18),
+          BoardItemRole.footwear,
+        ),
+        _PremiumSlot(null, BoardItemRole.accessory),
+        _PremiumSlot(null, BoardItemRole.accessory),
+      ];
+    }
+    final core = count >= 7
+        ? <_PremiumSlot>[
+            _PremiumSlot(
+              const _Template(
+                0.04,
+                0.03,
+                0.40,
+                0.0,
+                2,
+                maxHeightFraction: 0.42,
+              ),
+              BoardItemRole.top,
+            ),
+            _PremiumSlot(
+              const _Template(
+                0.46,
+                0.03,
+                0.34,
+                0.0,
+                1,
+                maxHeightFraction: 0.50,
+              ),
+              BoardItemRole.bottom,
+            ),
+            _PremiumSlot(
+              const _Template(
+                0.05,
+                0.57,
+                0.28,
+                0.0,
+                3,
+                maxHeightFraction: 0.18,
+              ),
+              BoardItemRole.footwear,
+            ),
+          ]
+        : <_PremiumSlot>[
+            _PremiumSlot(
+              const _Template(
+                0.04,
+                0.04,
+                0.40,
+                0.0,
+                2,
+                maxHeightFraction: 0.42,
+              ),
+              BoardItemRole.top,
+            ),
+            _PremiumSlot(
+              const _Template(
+                0.44,
+                0.04,
+                0.38,
+                0.0,
+                1,
+                maxHeightFraction: 0.50,
+              ),
+              BoardItemRole.bottom,
+            ),
+            _PremiumSlot(
+              const _Template(
+                0.08,
+                0.62,
+                0.30,
+                0.0,
+                3,
+                maxHeightFraction: 0.18,
+              ),
+              BoardItemRole.footwear,
+            ),
+          ];
+    return [
+      ...core,
+      for (var i = core.length; i < count; i++)
+        _PremiumSlot(null, BoardItemRole.accessory),
+    ];
+  }
+
+  static List<_PremiumSlot> _outerwearPremiumSlots(int count) {
+    final core = <_PremiumSlot>[
+      _PremiumSlot(
+        const _Template(0.04, 0.04, 0.58, 0.0, 1, maxHeightFraction: 0.60),
+        BoardItemRole.outerwear,
+      ),
+      _PremiumSlot(
+        const _Template(0.16, 0.10, 0.46, 0.0, 2, maxHeightFraction: 0.42),
+        BoardItemRole.top,
+      ),
+      _PremiumSlot(
+        const _Template(0.46, 0.42, 0.48, 0.0, 1, maxHeightFraction: 0.50),
+        BoardItemRole.bottom,
+      ),
+      _PremiumSlot(
+        const _Template(0.12, 0.72, 0.30, 0.0, 3, maxHeightFraction: 0.18),
+        BoardItemRole.footwear,
+      ),
+    ];
+    return [
+      ...core,
+      for (var i = core.length; i < count; i++)
+        _PremiumSlot(null, BoardItemRole.accessory),
+    ];
+  }
+
+  static List<_PremiumSlot> _dressPremiumSlots(
+    int count, {
+    required bool hasOuterwear,
+  }) {
+    final core = <_PremiumSlot>[
+      _PremiumSlot(
+        const _Template(0.10, 0.04, 0.78, 0.0, 2, maxHeightFraction: 0.82),
+        BoardItemRole.dress,
+      ),
+    ];
+    if (count >= 4) {
+      if (hasOuterwear) {
+        core.add(
+          _PremiumSlot(
+            const _Template(0.58, 0.08, 0.30, 0.0, 1, maxHeightFraction: 0.34),
+            BoardItemRole.outerwear,
+          ),
+        );
+      }
+      if (!hasOuterwear) {
+        core.add(
+          _PremiumSlot(
+            const _Template(0.56, 0.42, 0.30, 0.0, 1, maxHeightFraction: 0.34),
+            BoardItemRole.bottom,
+          ),
+        );
+      }
+    }
+    if (count >= 3) {
+      core.add(
+        _PremiumSlot(
+          const _Template(0.56, 0.08, 0.30, 0.0, 1, maxHeightFraction: 0.34),
+          BoardItemRole.top,
+        ),
+      );
+    }
+    if (count >= 5 && hasOuterwear) {
+      core.add(
+        _PremiumSlot(
+          const _Template(0.56, 0.42, 0.30, 0.0, 1, maxHeightFraction: 0.34),
+          BoardItemRole.bottom,
+        ),
+      );
+    }
+    if (count >= 3) {
+      core.add(
+        _PremiumSlot(
+          const _Template(0.08, 0.72, 0.40, 0.0, 3, maxHeightFraction: 0.18),
+          BoardItemRole.footwear,
+        ),
+      );
+    }
+    return [
+      ...core,
+      for (var i = core.length; i < count; i++)
+        _PremiumSlot(null, BoardItemRole.accessory),
+    ];
+  }
+
+  static BoardItemPlacement _placePremiumAccessory(
+    StyleBoardItem item, {
+    required int index,
+    required int total,
+    required bool compact,
+    required double width,
+    required double height,
+  }) {
+    if (total <= 2 && !compact) {
+      return _placeAccessory(
+        item,
+        index: index,
+        width: width,
+        height: height,
+        compact: false,
+      );
+    }
+    final positions = <(double, double, double)>[
+      (0.64, 0.56, 0.18),
+      (0.82, 0.56, 0.12),
+      (0.64, 0.70, 0.18),
+      (0.82, 0.70, 0.12),
+      (0.50, 0.79, 0.14),
+    ];
+    final position = positions[math.min(index, positions.length - 1)];
+    final boxWidth = width * position.$3;
+    return BoardItemPlacement(
+      item: item,
+      x: width * position.$1,
+      y: height * position.$2,
+      width: boxWidth,
+      height: _boxHeightForItem(item, boxWidth, height * 0.13),
+      rotation: 0,
+      zIndex: 4,
+    );
   }
 
   static double _boxHeightForItem(
@@ -145,113 +463,6 @@ class EditorialBoardLayoutEngine {
         ? _accessoryAspectRatio(item)
         : _arForRole(item.role);
     return (boxWidth * aspectRatio).clamp(0.0, maxHeight);
-  }
-
-  static EditorialLayoutResult _classicThreePlusAccessory({
-    required StyleBoardItem top,
-    required StyleBoardItem bottom,
-    required StyleBoardItem footwear,
-    required StyleBoardItem? outerwear,
-    required List<StyleBoardItem> accessories,
-    required double width,
-    required double height,
-  }) {
-    final hasOuter = outerwear != null;
-    final itemCount = 3 + accessories.length + (hasOuter ? 1 : 0);
-    final placements = <BoardItemPlacement>[];
-
-    if (hasOuter) {
-      // Layered look: outerwear is the large background/side anchor, the top
-      // layers over it, jeans drop lower-right, footwear lower-left.
-      final outerW = width * 0.58;
-      placements.add(
-        BoardItemPlacement(
-          item: outerwear,
-          x: width * 0.04,
-          y: height * 0.04,
-          width: outerW,
-          height: _boxHeight(BoardItemRole.outerwear, outerW, height * 0.60),
-          rotation: -0.03,
-          zIndex: 0,
-        ),
-      );
-      final topW = width * 0.46;
-      placements.add(
-        BoardItemPlacement(
-          item: top,
-          x: width * 0.16,
-          y: height * 0.10,
-          width: topW,
-          height: _boxHeight(BoardItemRole.top, topW, height * 0.42),
-          rotation: -0.015,
-          zIndex: 2,
-        ),
-      );
-      final botW = width * 0.48;
-      placements.add(
-        BoardItemPlacement(
-          item: bottom,
-          x: width * 0.46,
-          y: height * 0.42,
-          width: botW,
-          height: _boxHeight(BoardItemRole.bottom, botW, height * 0.50),
-          rotation: 0.01,
-          zIndex: 1,
-        ),
-      );
-    } else {
-      // One editorial composition, not three product rows: the top leads from
-      // upper-left, the trousers form a vertical counterweight, and footwear
-      // closes the diagonal near the bottom.
-      final topW = width * (itemCount <= 4 ? 0.48 : 0.37);
-      placements.add(
-        BoardItemPlacement(
-          item: top,
-          x: width * 0.05,
-          y: height * 0.06,
-          width: topW,
-          height: _boxHeight(BoardItemRole.top, topW, height * 0.46),
-          rotation: 0,
-          zIndex: 2,
-        ),
-      );
-      final botW = width * (itemCount <= 4 ? 0.40 : 0.35);
-      placements.add(
-        BoardItemPlacement(
-          item: bottom,
-          x: width * (itemCount <= 4 ? 0.50 : 0.46),
-          y: height * (itemCount <= 4 ? 0.20 : 0.24),
-          width: botW,
-          height: _boxHeight(BoardItemRole.bottom, botW, height * 0.58),
-          rotation: 0,
-          zIndex: 1,
-        ),
-      );
-    }
-
-    final footW = width * (itemCount <= 4 ? 0.30 : 0.29);
-    placements.add(
-      BoardItemPlacement(
-        item: footwear,
-        x: width * 0.12,
-        y: height * 0.72,
-        width: footW,
-        height: _boxHeight(BoardItemRole.footwear, footW, height * 0.18),
-        rotation: 0,
-        zIndex: 3,
-      ),
-    );
-
-    for (var i = 0; i < math.min(accessories.length, 2); i++) {
-      placements.add(
-        _placeAccessory(accessories[i], index: i, width: width, height: height),
-      );
-    }
-
-    return EditorialLayoutResult(
-      mode: EditorialLayoutMode.classicThreePlusAccessory,
-      placements: _sorted(placements),
-    );
   }
 
   static _AccessoryKind _accessoryKind(StyleBoardItem item) {
@@ -342,151 +553,6 @@ class EditorialBoardLayoutEngine {
       height: _boxHeightForItem(item, boxWidth, maxHeight),
       rotation: 0,
       zIndex: 4,
-    );
-  }
-
-  static EditorialLayoutResult _dressFocused({
-    required StyleBoardItem dress,
-    required StyleBoardItem? footwear,
-    required StyleBoardItem? outerwear,
-    required List<StyleBoardItem> accessories,
-    required double width,
-    required double height,
-  }) {
-    final dressW = width * 0.78;
-    final placements = <BoardItemPlacement>[
-      BoardItemPlacement(
-        item: dress,
-        x: width * 0.10,
-        y: height * 0.04,
-        width: dressW,
-        height: _boxHeight(BoardItemRole.dress, dressW, height * 0.82),
-        rotation: 0.01,
-        zIndex: 2,
-      ),
-    ];
-
-    if (outerwear != null) {
-      final outerW = width * 0.40;
-      placements.add(
-        BoardItemPlacement(
-          item: outerwear,
-          x: width * 0.01,
-          y: height * 0.10,
-          width: outerW,
-          height: _boxHeight(BoardItemRole.outerwear, outerW, height * 0.50),
-          rotation: -0.04,
-          zIndex: 1,
-        ),
-      );
-    }
-
-    if (footwear != null) {
-      final footW = width * 0.34;
-      placements.add(
-        BoardItemPlacement(
-          item: footwear,
-          x: width * 0.12,
-          y: height * 0.76,
-          width: footW,
-          height: _boxHeight(BoardItemRole.footwear, footW, height * 0.16),
-          rotation: -0.02,
-          zIndex: 3,
-        ),
-      );
-    }
-
-    for (var i = 0; i < math.min(accessories.length, 3); i++) {
-      placements.add(
-        _placeAccessory(
-          accessories[i],
-          index: i,
-          width: width,
-          height: height,
-          compact: true,
-        ),
-      );
-    }
-
-    return EditorialLayoutResult(
-      mode: EditorialLayoutMode.dressFocused,
-      placements: _sorted(placements),
-    );
-  }
-
-  static EditorialLayoutResult _accessoryHeavy({
-    required List<StyleBoardItem> mainItems,
-    required List<StyleBoardItem> accessories,
-    required double width,
-    required double height,
-  }) {
-    final placements = <BoardItemPlacement>[];
-    // Main garments take the upper ~70% in a 2-column editorial block; the
-    // accessory cluster sits lower-right. Wider than the old template so the
-    // canvas still fills even with many small items.
-    final mainTemplates = <_Template>[
-      const _Template(0.02, 0.06, 0.42, -0.03, 2),
-      const _Template(0.46, 0.04, 0.50, 0.02, 1),
-      const _Template(0.04, 0.42, 0.46, -0.02, 3),
-      const _Template(0.52, 0.44, 0.40, 0.03, 2),
-    ];
-
-    for (var i = 0; i < math.min(mainItems.length, mainTemplates.length); i++) {
-      placements.add(mainTemplates[i].place(mainItems[i], width, height));
-    }
-
-    for (var i = 0; i < math.min(accessories.length, 4); i++) {
-      placements.add(
-        _placeAccessory(
-          accessories[i],
-          index: i,
-          width: width,
-          height: height,
-          compact: true,
-        ),
-      );
-    }
-
-    return EditorialLayoutResult(
-      mode: EditorialLayoutMode.accessoryHeavy,
-      placements: _sorted(placements),
-    );
-  }
-
-  static EditorialLayoutResult _generic({
-    required List<StyleBoardItem> items,
-    required double width,
-    required double height,
-  }) {
-    // Spread up to 6 items across the full canvas in a loose editorial grid.
-    final templates = <_Template>[
-      const _Template(0.04, 0.06, 0.48, -0.03, 1),
-      const _Template(0.50, 0.06, 0.46, 0.02, 1),
-      const _Template(0.06, 0.42, 0.48, -0.02, 2),
-      const _Template(0.52, 0.42, 0.42, 0.04, 3),
-      const _Template(0.10, 0.74, 0.40, -0.03, 3),
-      const _Template(0.56, 0.76, 0.34, 0.03, 4),
-    ];
-
-    final placements = <BoardItemPlacement>[];
-    for (var i = 0; i < math.min(items.length, templates.length); i++) {
-      final item = items[i];
-      placements.add(
-        item.role == BoardItemRole.accessory
-            ? _placeAccessory(
-                item,
-                index: i,
-                width: width,
-                height: height,
-                compact: true,
-              )
-            : templates[i].place(item, width, height),
-      );
-    }
-
-    return EditorialLayoutResult(
-      mode: EditorialLayoutMode.generic,
-      placements: _sorted(placements),
     );
   }
 
@@ -683,8 +749,16 @@ class _Template {
   final double w;
   final double rotation;
   final int z;
+  final double maxHeightFraction;
 
-  const _Template(this.x, this.y, this.w, this.rotation, this.z);
+  const _Template(
+    this.x,
+    this.y,
+    this.w,
+    this.rotation,
+    this.z, {
+    this.maxHeightFraction = 0.46,
+  });
 
   /// Height is derived from the item's role aspect ratio (not a fixed fraction)
   /// so the contained cutout fills the box; capped to the lower canvas band.
@@ -693,7 +767,7 @@ class _Template {
     final boxH = EditorialBoardLayoutEngine._boxHeightForItem(
       item,
       boxW,
-      height * 0.46,
+      height * maxHeightFraction,
     );
     return BoardItemPlacement(
       item: item,
@@ -705,6 +779,13 @@ class _Template {
       zIndex: z,
     );
   }
+}
+
+class _PremiumSlot {
+  final _Template? template;
+  final BoardItemRole? role;
+
+  const _PremiumSlot(this.template, this.role);
 }
 
 enum _AccessoryKind { bag, belt, watch, jewellery, headwear, scarf, generic }

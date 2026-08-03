@@ -2,10 +2,28 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class Env {
+  static const String gitSha = String.fromEnvironment(
+    'AHVI_GIT_SHA',
+    defaultValue: 'unknown',
+  );
+  static const String buildName = String.fromEnvironment(
+    'AHVI_BUILD_NAME',
+    defaultValue: 'dev',
+  );
+  static const String buildNumber = String.fromEnvironment(
+    'AHVI_BUILD_NUMBER',
+    defaultValue: '0',
+  );
   static const String appBuildVersion = String.fromEnvironment(
     'AHVI_APP_BUILD_VERSION',
-    defaultValue: '1.0.0+1',
+    defaultValue: '$buildName+$buildNumber',
   );
+  static const String buildMode = bool.fromEnvironment('dart.vm.product')
+      ? 'release'
+      : bool.fromEnvironment('dart.vm.profile')
+      ? 'profile'
+      : 'debug';
+  static const String canonicalRendererVersion = 'editorial_board_canonical_v1';
 
   static String get appwriteEndpoint =>
       dotenv.env['EXPO_PUBLIC_APPWRITE_ENDPOINT'] ?? '';
@@ -75,7 +93,18 @@ class Env {
   }
 
   static void debugPrintRuntimeTarget() {
-    debugPrint('AHVI Backend URL: $backendApiUrl');
-    debugPrint('AHVI App build version: $appBuildVersion');
+    debugPrint('AHVI backend configured=${isConfigured}');
+  }
+
+  static void debugPrintBuildProvenance() {
+    debugPrint(
+      'AHVI_BUILD_PROVENANCE '
+      'git_sha=$gitSha '
+      'build_name=$buildName '
+      'build_number=$buildNumber '
+      'build_mode=$buildMode '
+      'app_version=$appBuildVersion '
+      'canonical_renderer=$canonicalRendererVersion',
+    );
   }
 }

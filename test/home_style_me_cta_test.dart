@@ -12,6 +12,7 @@ import 'package:myapp/theme/accent_palette.dart';
 import 'package:myapp/theme/base_theme.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/visual_direction_carousel.dart';
+import 'package:myapp/widgets/ahvi_stylist_chat.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -136,6 +137,47 @@ void main() {
       await _drainHomeBackground(tester);
     },
   );
+
+  testWidgets('Wardrobe quick action sends wardrobe-first board flags', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(430, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final backend = _HomeStyleBackend();
+    await tester.pumpWidget(
+      Provider<BackendService>.value(
+        value: backend,
+        child: MaterialApp(
+          theme: BaseTheme.light.copyWith(
+            extensions: [AppThemeTokens.light(_accent)],
+          ),
+          localizationsDelegates: const [_TestLocalizationsDelegate()],
+          supportedLocales: const [Locale('en')],
+          home: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showAhviStylistChatSheet(
+                context,
+                moduleContext: 'wardrobe',
+                initialPrompt: 'Use my wardrobe',
+              ),
+              child: const Text('Open wardrobe chat'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open wardrobe chat'));
+    await tester.pumpAndSettle();
+
+    expect(backend.requests, contains('Use my wardrobe'));
+    expect(backend.actions, contains('use_my_wardrobe'));
+    expect(backend.useWardrobe, isTrue);
+    expect(backend.wardrobeFirst, isTrue);
+    expect(backend.assetPolicy, 'wardrobe');
+    expect(backend.allowGenericAssetsInMainBoard, isFalse);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('closing Home Style Me during loading is lifecycle safe', (
     tester,
@@ -285,6 +327,10 @@ class _HomeStyleBackend extends BackendService {
   final Duration responseDelay;
   final List<String> requests = [];
   final List<String> actions = [];
+  bool useWardrobe = false;
+  bool wardrobeFirst = false;
+  String? assetPolicy;
+  bool allowGenericAssetsInMainBoard = true;
 
   _HomeStyleBackend({this.responseDelay = Duration.zero})
     : super(appwriteService: AppwriteService());
@@ -325,6 +371,10 @@ class _HomeStyleBackend extends BackendService {
   }) async {
     requests.add(query);
     actions.add(action ?? styleAction ?? '');
+    this.useWardrobe = useWardrobe;
+    this.wardrobeFirst = wardrobeFirst;
+    this.assetPolicy = assetPolicy;
+    this.allowGenericAssetsInMainBoard = allowGenericAssetsInMainBoard;
     if (responseDelay > Duration.zero) {
       await Future<void>.delayed(responseDelay);
     }
@@ -360,8 +410,12 @@ class _HomeStyleBackend extends BackendService {
         'source_policy': 'wardrobe',
         'message_text': 'I used your wardrobe.',
         'data': {
-          'rendered_boards': [_board('wardrobe-1')],
+          'rendered_boards': [_board('wardrobe-1'), _board('wardrobe-2')],
         },
+        'cards': [
+          {'title': 'Generic module card one'},
+          {'title': 'Generic module card two'},
+        ],
       };
     }
     return {

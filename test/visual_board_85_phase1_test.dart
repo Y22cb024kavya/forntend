@@ -432,8 +432,8 @@ void main() {
       tester.getTopLeft(why).dy,
       greaterThan(tester.getTopLeft(canvas).dy),
     );
-    expect(tester.widget<Text>(why).maxLines, 2);
-    expect(tester.widget<Text>(tip).maxLines, 2);
+    expect(tester.widget<Text>(why).maxLines, isNull);
+    expect(tester.widget<Text>(tip).maxLines, isNull);
   });
 
   testWidgets('recommendation cards reserve equal outer and canvas heights', (
@@ -506,13 +506,62 @@ void main() {
       tester.getSize(canvas).height,
       closeTo(editorialBoardCanvasHeightForWidth(320), 0.01),
     );
-    expect(why.maxLines, 2);
-    expect(tip.maxLines, 2);
-    expect(why.overflow, TextOverflow.ellipsis);
-    expect(tip.overflow, TextOverflow.ellipsis);
-    expect(why.data, isNot(endsWith('fade')));
-    expect(tip.data, anyOf(endsWith('…'), endsWith('.')));
+    expect(why.maxLines, isNull);
+    expect(tip.maxLines, isNull);
+    expect(why.overflow, isNull);
+    expect(tip.overflow, isNull);
+    expect(why.data, contains('clean boundary'));
+    expect(tip.data, contains('main garment lead'));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('long copy remains usable at narrow width and large text scale', (
+    tester,
+  ) async {
+    await _withFixtureImages(() async {
+      await tester.binding.setSurfaceSize(const Size(320, 820));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        _testApp(
+          textScaler: const TextScaler.linear(1.8),
+          child: Scaffold(
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(8),
+              child: VisualDirectionCarousel(
+                directions: [
+                  {
+                    ..._direction,
+                    'why_it_works':
+                        'The warm silhouette balances the occasion with an easy proportion that should end at a clean boundary.',
+                    'styling_tip':
+                        'Keep the supporting accents deliberate and let the main garment lead the composition through the evening.',
+                  },
+                ],
+                cardWidth: 286,
+                curationReveal: false,
+                use85Layout: true,
+                onSendMessage: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('style-why-it-works')), findsOneWidget);
+      expect(find.byKey(const ValueKey('style-styling-tip')), findsOneWidget);
+      expect(find.text('Save'), findsOneWidget);
+      expect(find.text('Share'), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('style-why-it-works'))).overflow,
+        isNull,
+      );
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('style-styling-tip'))).overflow,
+        isNull,
+      );
+      expect(tester.takeException(), isNull);
+    });
   });
 
   testWidgets('cutouts stay unframed and opaque accessory gets one frame', (
@@ -897,13 +946,20 @@ Future<void> _settleFixtureImages(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-Widget _testApp({required Widget child}) {
+Widget _testApp({required Widget child, TextScaler? textScaler}) {
   return MaterialApp(
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       useMaterial3: true,
       extensions: [AppThemeTokens.light(_accent)],
     ),
-    home: child,
+    home: Builder(
+      builder: (context) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler: textScaler ?? MediaQuery.of(context).textScaler,
+        ),
+        child: child,
+      ),
+    ),
   );
 }

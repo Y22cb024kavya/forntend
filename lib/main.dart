@@ -64,6 +64,7 @@ Future<void> main() async {
   await dotenv.load(fileName: ".env");
   Env.debugPrintMissingConfig();
   Env.debugPrintRuntimeTarget();
+  Env.debugPrintBuildProvenance();
   AhviNotificationService.instance.configureMediReminderHandler(
     _openMediFromNotification,
   );

@@ -482,6 +482,7 @@ final Map<String, AhviModuleConfig> _moduleConfigs = {
     greetingKey: 'wardrobe_chat_greeting',
     quickPrompts: (ctx) => [
       'Outfit for today',
+      'Use my wardrobe',
       'Style capsule wardrobe',
       'What to buy next?',
       'Color combinations',
@@ -1346,6 +1347,11 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       final styleActionContext = styleModules.contains(widget.moduleContext)
           ? styleActionContextFromValue(
               trimmed,
+              originalRequest:
+                  (_lastStyleContext?['original_request'] ??
+                          _lastStyleContext?['original_prompt'] ??
+                          '')
+                      .toString(),
               occasion: interpretedOccasion ?? '',
               sessionId: _currentSessionId ?? '',
               previousPairingTarget:
@@ -1353,6 +1359,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
                       .toString(),
             )
           : null;
+      final isWardrobeAction = styleActionContext?.action == 'use_my_wardrobe';
       final styleContext = <String, dynamic>{
         ...?styleActionContext?.toJson(),
         if (isClarificationAnswer) ...{
@@ -1424,6 +1431,10 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
               showClosestOption: isClosestStyleAction,
               allowClosestOption: isClosestStyleAction,
               closest: isClosestStyleAction,
+              useWardrobe: isWardrobeAction,
+              wardrobeFirst: isWardrobeAction,
+              assetPolicy: isWardrobeAction ? 'wardrobe' : null,
+              allowGenericAssetsInMainBoard: !isWardrobeAction,
             )
           : await backend.sendModuleChat(
               domain: canonicalModuleChatDomain(
@@ -1514,6 +1525,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
                 .toList(growable: false);
       final boardPayload = _StyleBoardPayload.fromResponse(response);
       final boardSelection = selectStyleBoardAlias(response);
+      final actionChips = _actionChipsFromResponse(response);
       final diagnosticSelection = AhviStyleDiagnostics.selectAlias(response);
       final canonicalBoardCollection = responsePolicy.boardCollection(response);
       final liveFirstBoard = boardSelection.boards.isEmpty
@@ -1549,6 +1561,15 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
         'first_item_keys=${liveFirstItem is Map && liveFirstItem.isNotEmpty ? liveFirstItem.keys.join(',') : 'none'} '
         'final_renderer=${boardSelection.boards.isNotEmpty ? 'canonical_editorial_style' : selection.renderer} '
         'final_rendered_count=${boardSelection.boards.length}',
+      );
+      debugPrint(
+        'AHVI_ACTIVE_WARDROBE_ACTION '
+        'source_file=ahvi_stylist_chat.dart function=_sendMessage '
+        'requested_mode=${styleActionContext?.action ?? 'none'} '
+        'interaction_mode=${responsePolicy.interactionMode.isEmpty ? 'none' : responsePolicy.interactionMode} '
+        'canonical_renderer_reached=${boardSelection.boards.isNotEmpty} '
+        'board_count=${boardSelection.boards.length} '
+        'selected_surface=ahvi_stylist_chat_response',
       );
       // Clarification lifecycle: a rendered board/cards resolves any pending
       // clarification; a fresh clarification response re-arms it.
@@ -1666,6 +1687,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
             text: displayText,
             isUser: false,
             moduleCards: displayModuleCards,
+            actionChips: actionChips,
             visualBoard: visualBoard,
             typedModuleCard: typedModuleCard,
             visualPackingCard: visualPackingCard,
@@ -2208,6 +2230,7 @@ class _SheetMessage {
   final Map<String, dynamic>? stylistReasoning;
   final Map<String, dynamic>? adviceBlock;
   final List<Map<String, dynamic>> moduleCards;
+  final List<Map<String, dynamic>> actionChips;
   final String? diagnosticCorrelationId;
 
   _SheetMessage({
@@ -2226,6 +2249,7 @@ class _SheetMessage {
     this.stylistReasoning,
     this.adviceBlock,
     this.moduleCards = const [],
+    this.actionChips = const [],
     this.diagnosticCorrelationId,
   }) : assert(text != null || textKey != null);
 
@@ -2250,6 +2274,7 @@ class _SheetMessage {
     'stylistReasoning': stylistReasoning,
     'adviceBlock': adviceBlock,
     'moduleCards': moduleCards,
+    'actionChips': actionChips,
     'diagnosticCorrelationId': diagnosticCorrelationId,
   };
 
@@ -2299,6 +2324,7 @@ class _SheetMessage {
       stylistReasoning: asMap(j['stylistReasoning']),
       adviceBlock: asMap(j['adviceBlock']),
       moduleCards: _mapList(j['moduleCards']),
+      actionChips: _mapList(j['actionChips']),
       diagnosticCorrelationId: j['diagnosticCorrelationId'] as String?,
     );
   }
@@ -2361,6 +2387,14 @@ class _StyleBoardPayload {
       boardId: response['board_ids']?.toString(),
     );
   }
+}
+
+List<Map<String, dynamic>> _actionChipsFromResponse(
+  Map<String, dynamic> response,
+) {
+  final data = response['data'];
+  final raw = response['chips'] ?? (data is Map ? data['chips'] : null);
+  return _mapList(filterDeprecatedVisibleStyleActions(raw));
 }
 
 @visibleForTesting
@@ -2713,6 +2747,8 @@ class _Bubble extends StatelessWidget {
           AhviVisualBoardView(board: msg.visualBoard!),
         if (msg.moduleCards.isNotEmpty)
           _SheetModuleCards(cards: msg.moduleCards, onPrompt: onPrompt),
+        if (msg.actionChips.isNotEmpty)
+          _SheetActionChips(chips: msg.actionChips, onPrompt: onPrompt),
         if (msg.adviceBlock != null) StyleAdviceCard(data: msg.adviceBlock!),
         if (msg.transitionPlan != null)
           TransitionPlanCard(data: msg.transitionPlan!),
@@ -2938,6 +2974,41 @@ class _SheetModuleCards extends StatelessWidget {
   }
 }
 
+class _SheetActionChips extends StatelessWidget {
+  final List<Map<String, dynamic>> chips;
+  final ValueChanged<String> onPrompt;
+
+  const _SheetActionChips({required this.chips, required this.onPrompt});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Wrap(
+        spacing: 7,
+        runSpacing: 7,
+        children: chips
+            .map((chip) {
+              final label =
+                  (chip['label'] ?? chip['title'] ?? chip['value'] ?? '')
+                      .toString()
+                      .trim();
+              final value = (chip['value'] ?? chip['action'] ?? label)
+                  .toString()
+                  .trim();
+              return OutlinedButton(
+                onPressed: label.isEmpty || value.isEmpty
+                    ? null
+                    : () => onPrompt(value),
+                child: Text(label),
+              );
+            })
+            .toList(growable: false),
+      ),
+    );
+  }
+}
+
 class _VisualDirectionCards extends StatelessWidget {
   final _VisualDirectionPayload payload;
   final ValueChanged<String> onPrompt;
@@ -2951,7 +3022,7 @@ class _VisualDirectionCards extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = math.min(MediaQuery.sizeOf(context).width - 72, 318.0);
+    final width = math.min(MediaQuery.sizeOf(context).width - 40, 390.0);
     debugPrint(
       'AHVI_LIVE_STYLE_RENDERER '
       'source_file=ahvi_stylist_chat.dart function=_VisualDirectionCards.build '

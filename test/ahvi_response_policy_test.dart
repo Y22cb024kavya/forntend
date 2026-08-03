@@ -145,6 +145,40 @@ void main() {
       expect(board['source_policy'], 'wardrobe');
     });
 
+    test('wardrobe release path keeps two valid boards over generic cards', () {
+      final response = _response(
+        route: 'wardrobe_style',
+        extra: {
+          'board_policy': 'wardrobe',
+          'source_policy': 'wardrobe',
+          'data': {
+            'rendered_boards': [
+              {..._board('wardrobe-1'), 'source_policy': 'wardrobe'},
+              {..._board('wardrobe-2'), 'source_policy': 'wardrobe'},
+            ],
+          },
+          'cards': [
+            {'title': 'Generic module card one'},
+            {'title': 'Generic module card two'},
+          ],
+        },
+      );
+
+      final collection = AhviResponsePolicy.fromResponse(
+        response,
+      ).boardCollection(response);
+
+      expect(collection.rawCount, 2);
+      expect(collection.boards, hasLength(2));
+      expect(styleBoardCountForTesting(response), 2);
+      expect(collection.path, 'data.rendered_boards');
+      expect(
+        collection.boards,
+        everyElement(containsPair('source_policy', 'wardrobe')),
+      );
+      expect(styleResponseRendererKindForTesting(response), 'visual_directions');
+    });
+
     for (final route in const [
       'missing_pieces',
       'medical_urgent',

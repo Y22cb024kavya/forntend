@@ -32,7 +32,7 @@ typedef OutfitBoardTap = void Function(Map<String, dynamic> board);
 
 const double editorialBoardHeaderHeight = 30;
 const double editorialBoardContextHeight = 72;
-const double editorialBoardReasoningHeight = 108;
+const double editorialBoardReasoningHeight = 220;
 const double editorialBoardActionHeight = 48;
 const double editorialBoardMutationHeight = 52;
 
@@ -600,62 +600,69 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
               Expanded(
                 child: RepaintBoundary(
                   key: _shareBoundaryKey,
-                  child: Column(
-                    children: [
-                      SizedBox(
-                        height: editorialBoardHeaderHeight,
-                        child: _PremiumBoardHeader(mode: mode),
-                      ),
-                      SizedBox(
-                        height: editorialBoardContextHeight,
-                        child: ClipRect(
+                  child: SingleChildScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          height: editorialBoardHeaderHeight,
+                          child: _PremiumBoardHeader(mode: mode),
+                        ),
+                        SizedBox(
+                          height: editorialBoardContextHeight,
+                          child: ClipRect(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: widget.onTapBoard == null
+                                  ? null
+                                  : () => widget.onTapBoard!(_currentDirection),
+                              child: OutfitContextStrip(model: _model),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          height: editorialBoardCanvasHeightForWidth(
+                            widget.width,
+                          ),
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: widget.onTapBoard == null
                                 ? null
                                 : () => widget.onTapBoard!(_currentDirection),
-                            child: OutfitContextStrip(model: _model),
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                        height: editorialBoardCanvasHeightForWidth(
-                          widget.width,
-                        ),
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: widget.onTapBoard == null
-                              ? null
-                              : () => widget.onTapBoard!(_currentDirection),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
-                            child: renderable
-                                ? EditorialBoardCanvas(
-                                    key: const ValueKey(
-                                      'editorial-outfit-canvas',
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
+                              child: renderable
+                                  ? EditorialBoardCanvas(
+                                      key: const ValueKey(
+                                        'editorial-outfit-canvas',
+                                      ),
+                                      board: board,
+                                      lockedItemIds:
+                                          _controller?.state.lockedItemIds ??
+                                          const {},
+                                      onToggleLock: mode.supportsMutation
+                                          ? _controller?.toggleLock
+                                          : null,
+                                    )
+                                  : _IncompleteBoardFallback(
+                                      title: board.title,
+                                      whyItWorks: board.whyItWorks,
                                     ),
-                                    board: board,
-                                    lockedItemIds:
-                                        _controller?.state.lockedItemIds ??
-                                        const {},
-                                    onToggleLock: mode.supportsMutation
-                                        ? _controller?.toggleLock
-                                        : null,
-                                  )
-                                : _IncompleteBoardFallback(
-                                    title: board.title,
-                                    whyItWorks: board.whyItWorks,
-                                  ),
+                            ),
                           ),
                         ),
-                      ),
-                      SizedBox(
-                        height: editorialBoardReasoningHeight,
-                        child: ClipRect(
-                          child: OutfitReasoningStrip(model: _model),
+                        SizedBox(
+                          height: editorialBoardReasoningHeight,
+                          child: SingleChildScrollView(
+                            physics: const ClampingScrollPhysics(),
+                            child: OutfitReasoningStrip(
+                              model: _model,
+                              mode: mode,
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -663,6 +670,7 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                 BoardMutationBar(
                   controller: _controller!,
                   onShuffle: _shuffleBoard,
+                  showUndo: mode.supportsMutation,
                 ),
               OutfitActionBar(
                 interactionMode: mode,
@@ -946,8 +954,13 @@ class OutfitContextStrip extends StatelessWidget {
 
 class OutfitReasoningStrip extends StatelessWidget {
   final OutfitBoardModel model;
+  final BoardInteractionMode mode;
 
-  const OutfitReasoningStrip({super.key, required this.model});
+  const OutfitReasoningStrip({
+    super.key,
+    required this.model,
+    required this.mode,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -956,11 +969,16 @@ class OutfitReasoningStrip extends StatelessWidget {
     }
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final why = editorialSentenceSafeCopy(
-      model.intelligenceText,
-      maxCharacters: 180,
+    final why = _naturalCopy(model.intelligenceText);
+    final tip = _naturalCopy(model.stylingTip);
+    debugPrint(
+      'AHVI_ACTIVE_EDITORIAL_COPY '
+      'source_file=ahvi_outfit_board_card.dart widget=OutfitReasoningStrip '
+      'requested_mode=${mode.wireName} interaction_mode=${mode.wireName} '
+      'canonical_renderer_reached=true board_count=1 '
+      'selected_surface=editorial_reasoning_strip '
+      'why_chars=${why.length} tip_chars=${tip.length}',
     );
-    final tip = editorialSentenceSafeCopy(model.stylingTip, maxCharacters: 150);
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
       child: Column(
@@ -980,8 +998,6 @@ class OutfitReasoningStrip extends StatelessWidget {
             Text(
               why,
               key: const ValueKey('style-why-it-works'),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colors.onSurface,
                 fontWeight: FontWeight.w500,
@@ -1004,8 +1020,6 @@ class OutfitReasoningStrip extends StatelessWidget {
             Text(
               tip,
               key: const ValueKey('style-styling-tip'),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colors.onSurfaceVariant,
                 fontStyle: FontStyle.italic,
@@ -1018,6 +1032,9 @@ class OutfitReasoningStrip extends StatelessWidget {
       ),
     );
   }
+
+  String _naturalCopy(String value) =>
+      value.trim().replaceAll(RegExp(r'\s+'), ' ');
 }
 
 class _ContextChip extends StatelessWidget {
@@ -1093,11 +1110,13 @@ class _WardrobeMatchPill extends StatelessWidget {
 class BoardMutationBar extends StatelessWidget {
   final StyleBoardController controller;
   final Future<void> Function() onShuffle;
+  final bool showUndo;
 
   const BoardMutationBar({
     super.key,
     required this.controller,
     required this.onShuffle,
+    this.showUndo = false,
   });
 
   Future<void> _shuffle() async {
@@ -1146,12 +1165,12 @@ class BoardMutationBar extends StatelessWidget {
                   onTap: controller.unlockAll,
                 ),
               ),
-            if (controller.canUndo)
+            if (showUndo)
               Expanded(
                 child: _BoardAction(
                   icon: Icons.undo_rounded,
                   label: 'Undo shuffle',
-                  enabled: !state.isShuffling,
+                  enabled: controller.canUndo && !state.isShuffling,
                   onTap: controller.undo,
                 ),
               ),

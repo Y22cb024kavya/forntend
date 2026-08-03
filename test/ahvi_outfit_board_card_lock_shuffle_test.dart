@@ -560,7 +560,7 @@ void main() {
       await tester.pump();
       expect(find.byKey(const ValueKey<String>('bottom-1')), findsOneWidget);
       expect(find.text('2 of 3 items locked'), findsOneWidget);
-      expect(find.text('Undo shuffle'), findsNothing);
+      expect(find.text('Undo shuffle'), findsOneWidget);
     },
   );
 

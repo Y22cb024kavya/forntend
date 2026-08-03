@@ -516,7 +516,7 @@ class _ItemDetailModal extends StatelessWidget {
           'locked': true,
           'anchor': true,
         },
-      ).timeout(const Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 60));
     } on TimeoutException {
       timedOut = true;
       debugPrint('AHVI_MODAL_GUARD timeout flow=styleCta');
@@ -644,14 +644,12 @@ class _ItemDetailModal extends StatelessWidget {
           };
         })
         .toList(growable: false);
-    if (directions.isEmpty ||
-        directions.any(
+    return directions
+        .where(
           (direction) =>
-              _directionContractFailures(direction, anchorItemId).isNotEmpty,
-        )) {
-      return const [];
-    }
-    return directions;
+              _directionContractFailures(direction, anchorItemId).isEmpty,
+        )
+        .toList(growable: false);
   }
 
   List<Map<String, dynamic>> _styleThisDirectionsFromResponse(
@@ -931,10 +929,21 @@ class _ItemDetailModal extends StatelessWidget {
     final List<Map<String, dynamic>> directions = mode == 'style_this'
         ? visualDirections
         : <Map<String, dynamic>>[];
-    final Map<String, dynamic>? outfit =
-        (mode == 'build_outfit' && result?['outfit'] is Map)
-        ? Map<String, dynamic>.from(result!['outfit'] as Map)
+    final resultData = result?['data'] is Map
+        ? Map<String, dynamic>.from(result!['data'] as Map)
+        : const <String, dynamic>{};
+    final rawOutfit = mode == 'build_outfit'
+        ? (result?['outfit'] ?? resultData['outfit'])
         : null;
+    final Map<String, dynamic>? outfit = rawOutfit is Map
+        ? Map<String, dynamic>.from(rawOutfit)
+        : null;
+    final buildItems = outfit == null
+        ? const []
+        : outfit['items'] ??
+              outfit['board_items'] ??
+              outfit['boardItems'] ??
+              [];
     final bool isAnchorBoard =
         outfit != null && outfit['payload_type'] == 'ANCHOR_OUTFIT_BOARD';
     final bool hasBuildBoardContract =
@@ -949,6 +958,20 @@ class _ItemDetailModal extends StatelessWidget {
     );
 
     final bool usesActiveBoard = hasBuildBoardContract || hasStyleBoardContract;
+
+    debugPrint(
+      'AHVI_ACTIVE_${mode == 'style_this' ? 'STYLE_THIS' : 'BUILD_OUTFIT'}_SURFACE '
+      'source_file=ahvi_item_detail_modal.dart function=_showStyleResultSheet '
+      'requested_mode=$mode '
+      'interaction_mode=${mode == 'style_this' ? 'style_this' : 'build_outfit'} '
+      'canonical_renderer_reached=$usesActiveBoard '
+      'board_count=${mode == 'style_this'
+          ? directions.length
+          : hasBuildBoardContract
+          ? 1
+          : 0} '
+      'selected_surface=${usesActiveBoard ? 'canonical_editorial_carousel' : 'legacy_fallback'}',
+    );
 
     showModalBottomSheet(
       context: context,
@@ -1030,7 +1053,9 @@ class _ItemDetailModal extends StatelessWidget {
                     direction: <String, dynamic>{
                       ...outfit,
                       'direction_name': outfit['title'],
-                      'board_items': outfit['items'],
+                      'interaction_mode': 'build_outfit',
+                      'scenario': 'build_outfit',
+                      'board_items': buildItems,
                     },
                     width: MediaQuery.sizeOf(ctx).width - 40,
                     wardrobeById: buildWardrobeImageMap([

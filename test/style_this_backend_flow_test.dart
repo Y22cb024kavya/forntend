@@ -75,11 +75,15 @@ Map<String, dynamic> _successfulResponse() => {
 Map<String, dynamic> _successfulBuildResponse() => {
   'success': true,
   'outfit': {
-    'board_id': 'build-board-stable-1',
+    'board_id': '00000000-0000-4000-8000-000000000010',
     'revision': 1,
     'source_policy': 'wardrobe',
     'title': 'Sharp Layers',
-    'items': [_boardItem(_anchor.id, 'top')],
+    'items': [
+      _boardItem(_anchor.id, 'top', locked: true),
+      _boardItem('wardrobe-bottom-7', 'bottom'),
+      _boardItem('wardrobe-shoe-9', 'footwear'),
+    ],
     'can_lock': true,
     'can_shuffle': true,
     'anchor_locked': true,
@@ -173,9 +177,116 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(AhviOutfitBoardCard), findsOneWidget);
+    final card = tester.widget<AhviOutfitBoardCard>(
+      find.byType(AhviOutfitBoardCard),
+    );
+    expect(card.direction['interaction_mode'], 'build_outfit');
+    expect(card.direction['scenario'], 'build_outfit');
+    expect(find.byType(StyleBoardsScreen), findsNothing);
+    expect(find.text('Shuffle unlocked pieces'), findsOneWidget);
+    expect(find.text('Undo shuffle'), findsOneWidget);
+    expect(find.text('Save'), findsOneWidget);
+    expect(find.text('Share'), findsOneWidget);
     expect(find.textContaining('coming soon'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Build Outfit accepts the nested outfit payload', (tester) async {
+    final topLevel = _successfulBuildResponse();
+    await _pumpItemDetail(
+      tester,
+      styleCall:
+          ({
+            required requestedItemId,
+            required requestedScenario,
+            requestAnchorItem,
+            occasion,
+          }) async => {
+            'success': true,
+            'data': {'outfit': topLevel['outfit']},
+          },
+    );
+
+    await tester.tap(find.text('Build'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AhviOutfitBoardCard), findsOneWidget);
+    expect(find.text('Sharp Layers'), findsWidgets);
+    expect(find.byType(StyleBoardsScreen), findsNothing);
+    expect(find.text('Shuffle unlocked pieces'), findsOneWidget);
+    expect(find.text('Undo shuffle'), findsOneWidget);
+    expect(find.text('Save'), findsOneWidget);
+    expect(find.text('Share'), findsOneWidget);
+    expect(find.textContaining('coming soon'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'Style This keeps valid directions when one direction is malformed',
+    (tester) async {
+      final response = _successfulResponse();
+      final validDirections = [
+        for (var index = 1; index <= 3; index++)
+          {
+            ...Map<String, dynamic>.from(
+              (response['visual_directions'] as List).single as Map,
+            ),
+            'board_id':
+                '00000000-0000-4000-8000-00000000000$index',
+            'direction_name': 'Sharp Layers $index',
+            'title': 'Sharp Layers $index',
+          },
+      ];
+      response.remove('visual_directions');
+      response['style_directions'] = [
+        {
+          'board_id': 'outfit_card_legacy',
+          'revision': 0,
+          'source_policy': 'catalog',
+          'scenario': 'style_this',
+          'direction_name': 'Legacy fallback',
+          'board_items': const [],
+        },
+        ...validDirections,
+      ];
+      /*
+       * The malformed direction is intentionally retained in the backend
+       * payload. The item-detail contract filter must reject only it while
+       * forwarding all three valid directions to the canonical carousel.
+       */
+      final expectedValidTitles = [
+        'Sharp Layers 1',
+        'Sharp Layers 2',
+        'Sharp Layers 3',
+      ];
+      await _pumpItemDetail(
+        tester,
+        styleCall:
+            ({
+              required requestedItemId,
+              required requestedScenario,
+              requestAnchorItem,
+              occasion,
+            }) async => response,
+      );
+
+      await tester.tap(find.text('Style'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(VisualDirectionCarousel), findsOneWidget);
+      expect(find.byType(AhviOutfitBoardCard), findsNWidgets(3));
+      expect(find.text('STYLE THIS'), findsNWidgets(3));
+      expect(find.text('Undo shuffle'), findsNWidgets(3));
+      expect(find.text('Save'), findsNWidgets(3));
+      expect(find.text('Share'), findsNWidgets(3));
+      expect(find.byIcon(Icons.lock_rounded), findsNWidgets(3));
+      for (final title in expectedValidTitles) {
+        expect(find.text(title), findsOneWidget);
+      }
+      expect(find.text('Legacy fallback'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('failed Style This response keeps detail open with retry', (
     tester,

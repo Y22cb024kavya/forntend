@@ -135,6 +135,31 @@ class WardrobeItem {
   String? get displayUrl => resolveImage().url;
 }
 
+/// Pure decision helpers for the async-catalog post-save refresh, split out so
+/// the state machine is unit-testable without a live Appwrite or widget.
+class WardrobeCatalogRefresh {
+  const WardrobeCatalogRefresh._();
+
+  /// A catalog is "resolved" (stop refreshing) once its doc reports a terminal
+  /// catalog_status. Empty/absent or 'catalog_pending' means still processing.
+  static bool isResolved(Map<String, dynamic> raw) {
+    final s = (raw['catalog_status'] ?? raw['catalogStatus'] ?? '')
+        .toString()
+        .trim();
+    return s.isNotEmpty && s != 'catalog_pending';
+  }
+
+  /// Subset of [ids] whose matching item in [items] has a terminal
+  /// catalog_status (catalog_generated / catalog_ready / catalog_failed).
+  static Set<String> resolvedIds(List<WardrobeItem> items, Set<String> ids) {
+    final byId = {for (final w in items) w.id: w};
+    return ids.where((id) {
+      final w = byId[id];
+      return w != null && isResolved(w.raw);
+    }).toSet();
+  }
+}
+
 String _cleanUiText(Object? value, {String fallback = ''}) {
   final raw = value?.toString().trim() ?? '';
   if (raw.isEmpty) return fallback;
@@ -375,6 +400,14 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
   bool _loadedCache = false;
   // One-shot guard: avoids stacking silent refreshes after save.
   bool _silentWardrobeRefreshScheduled = false;
+
+  // WARDROBE_ASYNC_CATALOG: the backend saves an uploaded item with its cutout
+  // and patches normalized_url + catalog_status -> catalog_generated ~40s later
+  // in a background task. These drive ONE delayed refetch (+ one bounded retry)
+  // so the finished catalog image replaces the cutout on the same card without a
+  // manual reopen. Cleared in dispose() so the refresh stops on back-nav.
+  bool _catalogRefreshScheduled = false;
+  final Set<String> _pendingCatalogIds = {};
 
   bool _isLoading =
   true; // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Loader state for initial fetch
@@ -633,6 +666,74 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
     }
   }
 
+  // Kick off the async-catalog refresh once. Ids accumulate in
+  // _pendingCatalogIds across saves, so a second save before the timer fires
+  // just adds to the same batch instead of stacking timers.
+  void _scheduleCatalogRefresh() {
+    if (_catalogRefreshScheduled) return;
+    _catalogRefreshScheduled = true;
+    Future.delayed(const Duration(seconds: 40), () => _runCatalogRefresh(1));
+  }
+
+  // One refetch per attempt; at most two attempts (40s, then +20s). No
+  // Timer.periodic. The image swap comes from _fetchWardrobeItems re-pulling the
+  // patched normalized_url; catalog_status only decides whether a retry is
+  // worthwhile. Stops on: dispose (mounted/flag false), item removed, terminal
+  // catalog_status, or the second attempt.
+  Future<void> _runCatalogRefresh(int attempt) async {
+    if (!mounted || !_catalogRefreshScheduled) {
+      _catalogRefreshScheduled = false;
+      return;
+    }
+    // Drop ids the user has since deleted.
+    _pendingCatalogIds.removeWhere((id) => !_wardrobe.any((w) => w.id == id));
+    if (_pendingCatalogIds.isEmpty) {
+      _catalogRefreshScheduled = false;
+      return;
+    }
+    _evictCatalogImages(_pendingCatalogIds);
+    try {
+      await _fetchWardrobeItems().timeout(const Duration(seconds: 8));
+    } catch (e) {
+      debugPrint('AHVI_ASYNC_CATALOG refresh failed (non-critical): $e');
+    }
+    if (!mounted) {
+      _catalogRefreshScheduled = false;
+      return;
+    }
+    _pendingCatalogIds
+      ..removeAll(
+        WardrobeCatalogRefresh.resolvedIds(_wardrobe, _pendingCatalogIds),
+      )
+      ..removeWhere((id) => !_wardrobe.any((w) => w.id == id));
+    if (_pendingCatalogIds.isNotEmpty && attempt < 2) {
+      Future.delayed(const Duration(seconds: 20), () => _runCatalogRefresh(2));
+    } else {
+      _catalogRefreshScheduled = false;
+      _pendingCatalogIds.clear();
+    }
+  }
+
+  // Evict the old cutout/raw images so the freshly-fetched catalog URL is not
+  // served from Flutter's cache under a reused URL.
+  void _evictCatalogImages(Set<String> ids) {
+    for (final id in ids) {
+      final match = _wardrobe.where((w) => w.id == id);
+      if (match.isEmpty) continue;
+      final w = match.first;
+      for (final url in <String?>{
+        w.normalizedUrl,
+        w.maskedUrl,
+        w.imageUrl,
+        w.displayUrl,
+      }) {
+        if (url != null && url.isNotEmpty) {
+          imageCache.evict(NetworkImage(url));
+        }
+      }
+    }
+  }
+
   @override
   void dispose() {
     debugPrint('AHVI_WARDROBE_NAV dispose_started scope=wardrobe');
@@ -644,6 +745,8 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
     // This prevents setState() from firing after the screen is disposed,
     // which was causing the back-swipe freeze
     _silentWardrobeRefreshScheduled = false;
+    // Stop any pending async-catalog refetch/retry after back-nav.
+    _catalogRefreshScheduled = false;
 
     _keyboardFocusNode.dispose();
     super.dispose();
@@ -697,6 +800,13 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
 
           final alreadySavedRemotely = item['remoteSaved'] == true;
           if (alreadySavedRemotely) {
+            // Deferred catalog (WARDROBE_ASYNC_CATALOG): the card currently
+            // shows the cutout; schedule a bounded refetch to swap in the
+            // catalog PNG when the background task lands.
+            if ((item['catalogStatus'] ?? '').toString() == 'catalog_pending') {
+              _pendingCatalogIds.add(localItem.id);
+              _scheduleCatalogRefresh();
+            }
             if (mounted) {
               _showToast(AppLocalizations.t(context, 'wardrobe_item_saved'));
             }
@@ -2972,6 +3082,8 @@ class _AddItemModalState extends State<_AddItemModal>
           'worn': row['worn'] is int ? row['worn'] as int : 0,
           'liked': row['liked'] == true,
           'remoteSaved': true,
+          'catalogStatus':
+              (row['catalogStatus'] ?? row['catalog_status'])?.toString(),
         });
       }
     }

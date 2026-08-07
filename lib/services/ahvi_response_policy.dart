@@ -161,6 +161,7 @@ class AhviResponsePolicy {
 
   bool get textPrimary =>
       isSafetySensitive ||
+      route == 'text_only' ||
       route == 'style_advice' ||
       route == 'style_pairing' ||
       route == 'missing_pieces' ||

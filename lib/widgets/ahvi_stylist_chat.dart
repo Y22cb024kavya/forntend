@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:mime/mime.dart';
 import 'package:myapp/app_localizations.dart';
+import 'package:myapp/calendar.dart' as calendar_page;
 import 'package:myapp/feature/chat/services/ahvi_processing_message.dart';
 import 'package:myapp/feature/chat/services/ahvi_block_response_parser.dart';
 import 'package:myapp/feature/chat/models/ahvi_response_block.dart';
@@ -104,6 +105,12 @@ bool _isBoardActionPhrase(String value) {
       t.contains('show me another') ||
       t.contains('different look') ||
       t.startsWith('shuffle');
+}
+
+bool _isSpecializedStyleRequest(String value) {
+  final t = value.toLowerCase().trim();
+  return RegExp(r'\bstyle this\b').hasMatch(t) ||
+      RegExp(r'\b(?:build|create|make)\b[\w\s]*\boutfit\b').hasMatch(t);
 }
 
 bool _isPlanPackRequest(String value) {
@@ -733,6 +740,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
   bool _typing = false;
   bool _chipsVisible = true;
   bool _chatHasText = false;
+  bool _calendarNavigationPending = false;
   Attachment? _pendingAttachment;
   final AhviSessionGenerationGuard _responseGuard =
       AhviSessionGenerationGuard();
@@ -750,7 +758,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
         return ahviProcessingMessage(AhviProcessingContext.wardrobe);
       case 'style':
       case 'daily_wear':
-        return ahviProcessingMessage(AhviProcessingContext.styleRecommendation);
+        return ahviProcessingMessage(AhviProcessingContext.general);
       case 'prepare':
       case 'plan':
       case 'planner':
@@ -1248,12 +1256,35 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
     return true;
   }
 
+  Future<void> _openCalendarFromResponse(Map<String, dynamic> response) async {
+    if (_calendarNavigationPending) return;
+    final route = calendarOpenModuleRoute(response) ?? 'calendar';
+    if (normalizeCalendarRoute(route) == null) return;
+
+    _calendarNavigationPending = true;
+    debugPrint(
+      'AHVI_CALENDAR_ACTION action=open_module '
+      'source=primary_style_sheet route=$route',
+    );
+    final currentNavigator = Navigator.of(context);
+    final rootNavigator = Navigator.of(widget.rootContext, rootNavigator: true);
+    if (currentNavigator.canPop()) currentNavigator.pop();
+    await rootNavigator.push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => const calendar_page.CalendarShell(),
+      ),
+    );
+    _calendarNavigationPending = false;
+  }
+
   Future<void> _sendMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty && _pendingAttachment == null) return;
-    if (_typing) return;
+    _responseGuard.invalidate();
     final diagnosticCorrelationId = AhviStyleDiagnostics.nextCorrelationId();
     final responseToken = _responseGuard.capture(_currentSessionId ?? '');
+    final requestId =
+        'req_${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
     final attachment = _pendingAttachment;
     final prompt = [
       if (trimmed.isNotEmpty) trimmed,
@@ -1375,6 +1406,19 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
             'interpreted_occasion': interpretedOccasion,
         },
       };
+      final isCanonicalStyleConversation =
+          widget.moduleContext == 'style' ||
+          widget.moduleContext == 'daily_wear';
+      // Keep parameter-heavy clarification, closest, wardrobe-action, board
+      // mutation, and specialized Style This/Build Outfit calls on /api/text.
+      final keepLegacyStyleText =
+          isClosestStyleAction ||
+          isClarificationAnswer ||
+          isWardrobeAction ||
+          isBoardActionPhrase ||
+          _isSpecializedStyleRequest(trimmed);
+      final useCanonicalStyleModuleChat =
+          isCanonicalStyleConversation && !keepLegacyStyleText;
       final isMediReminderQuestion =
           widget.moduleContext.toLowerCase() == 'medi' &&
           _isReminderQuestion(trimmed);
@@ -1395,12 +1439,31 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       final requestContext = calendarReq == null
           ? moduleContextData
           : <String, dynamic>{...calendarReq.context, ...moduleContextData};
+      final canonicalStyleContext = <String, dynamic>{
+        ...moduleContextData,
+        if (_runningMemory.trim().isNotEmpty) 'current_memory': _runningMemory,
+        if (_lastStyleContext != null) 'last_style_context': _lastStyleContext,
+        if (styleContext.isNotEmpty) 'style_context': styleContext,
+      };
+      debugPrint(
+        'AHVI_STYLE_ENDPOINT endpoint=${calendarReq != null || useCanonicalStyleModuleChat || isPlanPackRequest ? '/api/module-chat' : '/api/text'} '
+        'request_id=$requestId',
+      );
       final response = calendarReq != null
           ? await backend.sendModuleChat(
               domain: 'calendar',
               message: calendarReq.message,
               context: requestContext,
               chatHistory: List<Map<String, String>>.from(_chatHistory),
+              requestId: requestId,
+            )
+          : useCanonicalStyleModuleChat
+          ? await backend.sendModuleChat(
+              domain: styleModuleContext,
+              message: query,
+              chatHistory: List<Map<String, String>>.from(_chatHistory),
+              context: canonicalStyleContext,
+              requestId: requestId,
             )
           : styleModules.contains(widget.moduleContext) && !isPlanPackRequest
           ? await backend.sendChatQuery(
@@ -1444,14 +1507,29 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
               message: query,
               chatHistory: List<Map<String, String>>.from(_chatHistory),
               context: moduleContextData,
+              requestId: requestId,
             );
       debugPrint(
         'AHVI_MODULE_RESPONSE module=${widget.moduleContext} '
         'respModule=${response['module'] ?? response['domain'] ?? ''} '
-        'intent=${response['intent'] ?? ''}',
+        'intent=${response['intent'] ?? ''} '
+        'response_mode=${response['response_mode'] ?? response['meta']?['response_mode'] ?? ''} '
+        'request_id=${response['request_id'] ?? requestId}',
       );
       if (!mounted ||
           !_acceptsResponse(responseToken, diagnosticCorrelationId)) {
+        return;
+      }
+      final responseMode =
+          (response['response_mode'] ??
+                  (response['meta'] is Map
+                      ? (response['meta'] as Map)['response_mode']
+                      : null))
+              ?.toString()
+              .trim()
+              .toLowerCase();
+      if (responseMode == 'calendar_navigation') {
+        await _openCalendarFromResponse(response);
         return;
       }
       final refreshTarget =

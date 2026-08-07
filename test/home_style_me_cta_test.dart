@@ -128,11 +128,12 @@ void main() {
       expect(find.text('Lock'), findsNothing);
       expect(find.text('Shuffle'), findsNothing);
       expect(find.text('Undo'), findsNothing);
-      expect(backend.requests, [
+      expect(backend.moduleRequests, [
         'What should I wear to a coffee date?',
         'Show visual inspiration for a smart casual weekend.',
       ]);
-      expect(backend.actions, ['', '']);
+      expect(backend.requestIds, hasLength(2));
+      expect(backend.requestIds.toSet(), hasLength(2));
       expect(tester.takeException(), isNull);
       await _drainHomeBackground(tester);
     },
@@ -326,6 +327,8 @@ class _TestLocalizationsDelegate
 class _HomeStyleBackend extends BackendService {
   final Duration responseDelay;
   final List<String> requests = [];
+  final List<String> moduleRequests = [];
+  final List<String> requestIds = [];
   final List<String> actions = [];
   bool useWardrobe = false;
   bool wardrobeFirst = false;
@@ -338,6 +341,39 @@ class _HomeStyleBackend extends BackendService {
   @override
   Future<Map<String, dynamic>> getTodayWorkout({bool forceRefresh = false}) {
     return Future.value(const {});
+  }
+
+  @override
+  Future<Map<String, dynamic>> sendModuleChat({
+    required String domain,
+    required String message,
+    Map<String, dynamic>? context,
+    List<Map<String, String>> chatHistory = const [],
+    Map<String, dynamic>? userProfile,
+    String? requestId,
+  }) async {
+    moduleRequests.add(message);
+    requestIds.add(requestId ?? '');
+    if (responseDelay > Duration.zero) {
+      await Future<void>.delayed(responseDelay);
+    }
+    final lower = message.toLowerCase();
+    if (lower.contains('visual inspiration')) return _visualResponse();
+    if (lower.contains('coffee date')) {
+      return {
+        'type': 'stylist_advice',
+        'route': 'style_advice',
+        'mode': 'style_advice',
+        'interaction_mode': 'advice',
+        'message_text':
+            'For a coffee date, choose a relaxed layer and finish with simple footwear.',
+      };
+    }
+    return {
+      'type': 'conversation',
+      'route': 'conversation',
+      'message_text': 'Hi. I am here to help with your style questions.',
+    };
   }
 
   @override
@@ -368,6 +404,7 @@ class _HomeStyleBackend extends BackendService {
     bool wardrobeFirst = false,
     String? assetPolicy,
     bool allowGenericAssetsInMainBoard = true,
+    String? requestId,
   }) async {
     requests.add(query);
     actions.add(action ?? styleAction ?? '');

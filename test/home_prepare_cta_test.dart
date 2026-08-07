@@ -358,6 +358,7 @@ class _HomePrepareBackend extends BackendService {
     Map<String, dynamic>? context,
     List<Map<String, String>> chatHistory = const [],
     Map<String, dynamic>? userProfile,
+    String? requestId,
   }) async {
     moduleRequests.add(
       _ModuleRequest(

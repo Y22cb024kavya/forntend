@@ -565,7 +565,8 @@ class BackendService {
           'current_memory': _memoryPayload(currentMemory, lastStyleContext),
           'user_profile': {...?userProfile, 'user_id': authedUserId},
           'user_id': authedUserId,
-          if (requestId != null && requestId.isNotEmpty) 'request_id': requestId,
+          if (requestId != null && requestId.isNotEmpty)
+            'request_id': requestId,
           ...extraContext,
           'module_context': moduleContext,
           // Chat style boards render from live wardrobe item cards.
@@ -692,6 +693,7 @@ class BackendService {
             wardrobeFirst: wardrobeFirst,
             assetPolicy: assetPolicy,
             allowGenericAssetsInMainBoard: allowGenericAssetsInMainBoard,
+            requestId: requestId,
           );
         }
 
@@ -869,6 +871,18 @@ class BackendService {
         }
       }
 
+      final moduleContext = <String, dynamic>{...?context};
+      if ((module == 'style' ||
+              module == 'daily_wear' ||
+              module == 'wardrobe') &&
+          !moduleContext.containsKey('wardrobe')) {
+        try {
+          moduleContext['wardrobe'] = await _appwriteService.getWardrobeItems();
+        } catch (_) {
+          moduleContext['wardrobe'] = const <dynamic>[];
+        }
+      }
+
       final moduleStarted = DateTime.now();
       final modulePayload = enrichBackendPayloadWithLocation(
         {
@@ -876,9 +890,10 @@ class BackendService {
           'module': module,
           'message': query,
           'history': historyForRequest,
-          'context': context ?? const {},
-          'context_data': context ?? const {},
-          if (requestId != null && requestId.isNotEmpty) 'request_id': requestId,
+          'context': moduleContext,
+          'context_data': moduleContext,
+          if (requestId != null && requestId.isNotEmpty)
+            'request_id': requestId,
           'user_profile': {
             ...?userProfile,
             if (resolvedGender.isNotEmpty) 'gender': resolvedGender,

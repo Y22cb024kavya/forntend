@@ -33,6 +33,7 @@ import 'package:myapp/feature/chat/services/ahvi_processing_message.dart';
 import 'package:myapp/feature/chat/widgets/ahvi_processing_bubble.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/visual_direction_carousel.dart';
+import 'package:myapp/widgets/try_on_coming_soon.dart';
 
 // ============================================================
 // SEMANTIC COLORS
@@ -344,11 +345,8 @@ class _ItemDetailModal extends StatelessWidget {
                           Expanded(
                             child: _SecondaryActionButton(
                               icon: Icons.groups_2_outlined,
-                              label: AppLocalizations.t(
-                                context,
-                                'item_detail_build_outfit',
-                              ),
-                              onTap: () => _onBuildOutfit(context, item),
+                              label: 'Try-On',
+                              onTap: () => _onTryOnComingSoon(context),
                             ),
                           ),
                         ],
@@ -425,12 +423,10 @@ class _ItemDetailModal extends StatelessWidget {
 
   // ============================================================
   // STYLE THIS -> 3 styling directions from the backend stylist pipeline.
-  // BUILD OUTFIT -> 1 practical outfit anchored on this item.
-  // Both show a loading spinner, then a result sheet, and never dead-end.
+  // TRY-ON -> local Coming Soon UI until the feature is available.
   // ============================================================
-  void _onBuildOutfit(BuildContext context, WardrobeItem item) {
-    Navigator.of(context).pop();
-    unawaited(_runStyleCta(context, item, mode: 'build_outfit'));
+  void _onTryOnComingSoon(BuildContext context) {
+    unawaited(showTryOnComingSoon(context));
   }
 
   Future<void> _runStyleCta(

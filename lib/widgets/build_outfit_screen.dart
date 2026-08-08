@@ -40,6 +40,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/wardrobe.dart';
 import 'package:myapp/app_localizations.dart';
+import 'package:myapp/widgets/try_on_coming_soon.dart';
 
 // ============================================================
 // PUBLIC ENTRY POINT
@@ -51,18 +52,7 @@ void showBuildOutfitSheet(
       VoidCallback? onStyleSelected,
       VoidCallback? onItemReplaced,
     }) {
-  showDialog(
-    context: context,
-    useRootNavigator: true,
-    builder: (dialogContext) => Dialog.fullscreen(
-      child: BuildOutfitScreen(
-        selectedItem: selectedItem,
-        allItems: allItems,
-        onStyleSelected: onStyleSelected,
-        onItemReplaced: onItemReplaced,
-      ),
-    ),
-  );
+  showTryOnComingSoon(context);
 }
 
 // ============================================================
@@ -741,7 +731,7 @@ class _BuildOutfitScreenState extends State<BuildOutfitScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _tr(context, 'buildOutfitTitle', 'Build Outfit'),
+            _tr(context, 'buildOutfitTitle', 'Try-On'),
             style: GoogleFonts.inter(
               fontSize: 18,
               fontWeight: FontWeight.w700,

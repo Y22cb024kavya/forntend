@@ -701,7 +701,7 @@ class _PremiumBoardHeader extends StatelessWidget {
     final label = switch (mode) {
       BoardInteractionMode.recommendation => 'AHVI EDIT',
       BoardInteractionMode.styleThis => 'STYLE THIS',
-      BoardInteractionMode.buildOutfit => 'BUILD OUTFIT',
+      BoardInteractionMode.buildOutfit => 'TRY-ON',
     };
     return SizedBox(
       height: 30,
@@ -2621,10 +2621,11 @@ String resolveOutfitBoardTitle(Map<String, dynamic> direction) {
   );
   if (strategyDirection.isNotEmpty) return strategyDirection;
 
-  return _text(
+  final title = _text(
     direction['title'] ?? direction['board_title'] ?? direction['boardTitle'],
     fallback: 'Styled for You',
   );
+  return title.toLowerCase().startsWith('build outfit') ? 'Try-On' : title;
 }
 
 String _text(dynamic value, {String fallback = ''}) {

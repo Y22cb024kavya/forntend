@@ -4,12 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/app_localizations.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/visual_direction_carousel.dart';
+import 'package:myapp/feature/chat/widgets/ahvi_processing_bubble.dart';
 import 'package:myapp/style_board/editorial_board_renderer.dart';
 import 'package:myapp/theme/accent_palette.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/wardrobe.dart';
 import 'package:myapp/widgets/ahvi_item_detail_modal.dart';
 import 'package:myapp/widgets/style_boards.dart';
+import 'package:myapp/widgets/try_on_coming_soon.dart';
 
 const _accent = AccentPalette(
   primary: Color(0xFFFF8EC7),
@@ -70,24 +72,6 @@ Map<String, dynamic> _successfulResponse() => {
       ],
     },
   ],
-};
-
-Map<String, dynamic> _successfulBuildResponse() => {
-  'success': true,
-  'outfit': {
-    'board_id': '00000000-0000-4000-8000-000000000010',
-    'revision': 1,
-    'source_policy': 'wardrobe',
-    'title': 'Sharp Layers',
-    'items': [
-      _boardItem(_anchor.id, 'top', locked: true),
-      _boardItem('wardrobe-bottom-7', 'bottom'),
-      _boardItem('wardrobe-shoe-9', 'footwear'),
-    ],
-    'can_lock': true,
-    'can_shuffle': true,
-    'anchor_locked': true,
-  },
 };
 
 void main() {
@@ -159,9 +143,10 @@ void main() {
     },
   );
 
-  testWidgets('Build Outfit CTA invokes the canonical local flow', (
+  testWidgets('Try-On is Coming Soon and does not call Build Outfit', (
     tester,
   ) async {
+    var calls = 0;
     await _pumpItemDetail(
       tester,
       styleCall:
@@ -170,54 +155,27 @@ void main() {
             required requestedScenario,
             requestAnchorItem,
             occasion,
-          }) async => _successfulBuildResponse(),
-    );
-
-    await tester.tap(find.text('Build'));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(AhviOutfitBoardCard), findsOneWidget);
-    final card = tester.widget<AhviOutfitBoardCard>(
-      find.byType(AhviOutfitBoardCard),
-    );
-    expect(card.direction['interaction_mode'], 'build_outfit');
-    expect(card.direction['scenario'], 'build_outfit');
-    expect(find.byType(StyleBoardsScreen), findsNothing);
-    expect(find.text('Shuffle unlocked pieces'), findsOneWidget);
-    expect(find.text('Undo shuffle'), findsOneWidget);
-    expect(find.text('Save'), findsOneWidget);
-    expect(find.text('Share'), findsOneWidget);
-    expect(find.textContaining('coming soon'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('Build Outfit accepts the nested outfit payload', (tester) async {
-    final topLevel = _successfulBuildResponse();
-    await _pumpItemDetail(
-      tester,
-      styleCall:
-          ({
-            required requestedItemId,
-            required requestedScenario,
-            requestAnchorItem,
-            occasion,
-          }) async => {
-            'success': true,
-            'data': {'outfit': topLevel['outfit']},
+          }) async {
+            calls++;
+            return null;
           },
     );
 
-    await tester.tap(find.text('Build'));
+    expect(find.text('Try-On'), findsOneWidget);
+    expect(find.text('Build Outfit'), findsNothing);
+
+    await tester.tap(find.text('Try-On'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AhviOutfitBoardCard), findsOneWidget);
-    expect(find.text('Sharp Layers'), findsWidgets);
-    expect(find.byType(StyleBoardsScreen), findsNothing);
-    expect(find.text('Shuffle unlocked pieces'), findsOneWidget);
-    expect(find.text('Undo shuffle'), findsOneWidget);
-    expect(find.text('Save'), findsOneWidget);
-    expect(find.text('Share'), findsOneWidget);
-    expect(find.textContaining('coming soon'), findsNothing);
+    expect(calls, 0);
+    expect(find.byType(TryOnComingSoonDialog), findsOneWidget);
+    expect(
+      find.text('See how your looks come together on you.'),
+      findsOneWidget,
+    );
+    expect(find.text('Coming soon'), findsOneWidget);
+    expect(find.byType(AhviProcessingBubble), findsNothing);
+    expect(find.byType(AhviOutfitBoardCard), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

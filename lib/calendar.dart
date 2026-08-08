@@ -9,6 +9,7 @@ import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/models/ahvi_visual_board_model.dart';
 import 'package:myapp/widgets/ahvi_visual_board.dart';
 import 'package:myapp/widgets/ahvi_module_card.dart';
+import 'package:myapp/widgets/try_on_coming_soon.dart';
 
 void main() {
   runApp(const ScheduleApp());
@@ -1447,7 +1448,7 @@ class _StyleChatScreenState extends State<StyleChatScreen> {
       chips.addAll(const [
         AhviChip(label: 'Save to calendar', value: 'calendar_save_draft'),
         AhviChip(label: 'Add prep', value: 'calendar_add_prep'),
-        AhviChip(label: 'Build outfit', value: 'calendar_build_outfit'),
+        AhviChip(label: 'Try-On', value: 'calendar_build_outfit'),
       ]);
     }
     final seen = <String>{};
@@ -1455,6 +1456,10 @@ class _StyleChatScreenState extends State<StyleChatScreen> {
   }
 
   Future<void> _handleChip(AhviChip chip) async {
+    if (chip.value == 'calendar_build_outfit') {
+      await showTryOnComingSoon(context);
+      return;
+    }
     final action = calendarQuickActionFor(
       value: chip.value,
       label: chip.label,

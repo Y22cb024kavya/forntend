@@ -25,6 +25,7 @@ import 'package:myapp/services/ahvi_response_policy.dart';
 import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
 import 'package:myapp/widgets/ahvi_module_card.dart';
+import 'package:myapp/widgets/try_on_coming_soon.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/util/safe_text.dart';
 import 'package:myapp/models/ahvi_visual_board_model.dart';
@@ -1280,6 +1281,10 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
   Future<void> _sendMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty && _pendingAttachment == null) return;
+    if (isTryOnComingSoonAction(trimmed)) {
+      await showTryOnComingSoon(context);
+      return;
+    }
     _responseGuard.invalidate();
     final diagnosticCorrelationId = AhviStyleDiagnostics.nextCorrelationId();
     final responseToken = _responseGuard.capture(_currentSessionId ?? '');
@@ -2472,8 +2477,22 @@ List<Map<String, dynamic>> _actionChipsFromResponse(
 ) {
   final data = response['data'];
   final raw = response['chips'] ?? (data is Map ? data['chips'] : null);
-  return _mapList(filterDeprecatedVisibleStyleActions(raw));
+  return _mapList(filterDeprecatedVisibleStyleActions(raw))
+      .map((chip) {
+        final label = (chip['label'] ?? chip['title'] ?? chip['value'] ?? '')
+            .toString();
+        final value = (chip['value'] ?? chip['action'] ?? label).toString();
+        return isTryOnComingSoonAction(label) || isTryOnComingSoonAction(value)
+            ? {...chip, 'label': 'Try-On'}
+            : chip;
+      })
+      .toList(growable: false);
 }
+
+@visibleForTesting
+List<Map<String, dynamic>> actionChipsForTesting(
+  Map<String, dynamic> response,
+) => _actionChipsFromResponse(response);
 
 @visibleForTesting
 ({String path, List<Map<String, dynamic>> boards}) selectStyleBoardAlias(

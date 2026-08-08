@@ -826,8 +826,7 @@ class BackendService {
       if (_isBuildOutfitRequest(query)) {
         debugPrint('AHVI_BUILD_OUTFIT_STUB len=${query.length}');
         const comingSoon =
-            'Build Outfit is coming soon. ✨ In the meantime, ask me to '
-            '“Suggest an outfit for today” and I’ll put a full look together for you.';
+            'Try-On is coming soon. See how your looks come together on you.';
         return _normalizeChatResponse({
           'message': {'role': 'assistant', 'content': comingSoon},
           'message_text': comingSoon,

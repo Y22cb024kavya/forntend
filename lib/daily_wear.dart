@@ -21,6 +21,7 @@ import 'package:myapp/style_board/board_models.dart';
 import 'package:myapp/style_board/editorial_board_renderer.dart';
 import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
+import 'package:myapp/widgets/try_on_coming_soon.dart';
 
 enum _TryOnStage { preview, loading, camera, captured }
 
@@ -1239,23 +1240,7 @@ class _DailyWearScreenState extends State<DailyWearScreen>
   }
 
   void _openTryOn([String? outfitId]) {
-    HapticFeedback.lightImpact();
-    _clearTransientInputOverlay();
-    // Resolve the outfit id defensively. The old `_currentOutfit['id'] as
-    // String` crashed with "Null is not a subtype of String" whenever the
-    // current outfit had no id (e.g. an empty carousel).
-    final resolvedId = resolveTryOnOutfitId(outfitId, _currentOutfit);
-    if (resolvedId == null && _currentOutfit.isEmpty) {
-      debugPrint('AHVI_TRYON_VALIDATION_FAILED field=outfit_id');
-      _showTryOnError();
-      return;
-    }
-    _resetTryOnSimulation();
-    setState(() {
-      _tryOnOutfitId = resolvedId;
-      _tryOnOpen = true;
-      _tryOnStage = _TryOnStage.preview;
-    });
+    unawaited(showTryOnComingSoon(context));
   }
 
   void _closeTryOn() {
@@ -2690,7 +2675,7 @@ class _DailyWearScreenState extends State<DailyWearScreen>
                   ),
                   child: Center(
                     child: Text(
-                      'Build Outfit',
+                      'Try-On',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,

@@ -5,10 +5,11 @@ import 'package:myapp/widgets/ahvi_stylist_chat.dart';
 import 'package:myapp/widgets/try_on_coming_soon.dart';
 
 void main() {
-  test('Try-On compatibility actions are recognized without renaming them', () {
-    expect(isTryOnComingSoonAction('build_outfit'), isTrue);
-    expect(isTryOnComingSoonAction('Build Outfit for this blazer'), isTrue);
-    expect(isTryOnComingSoonAction('Try-On'), isTrue);
+  test('only the CTA sentinel opens Coming Soon', () {
+    expect(isTryOnComingSoonAction(tryOnComingSoonAction), isTrue);
+    expect(isTryOnComingSoonAction('build_outfit'), isFalse);
+    expect(isTryOnComingSoonAction('build me an outfit'), isFalse);
+    expect(isTryOnComingSoonAction('Try-On'), isFalse);
     expect(isTryOnComingSoonAction('Style This'), isFalse);
     expect(resolveOutfitBoardTitle({'title': 'Build Outfit'}), 'Try-On');
     expect(
@@ -16,8 +17,8 @@ void main() {
         'chips': [
           {'label': 'Build Outfit', 'value': 'build_outfit'},
         ],
-      }).single['label'],
-      'Try-On',
+      }).single,
+      {'label': 'Try-On', 'value': tryOnComingSoonAction},
     );
   });
 

@@ -1,17 +1,9 @@
 import 'package:flutter/material.dart';
 
+const tryOnComingSoonAction = '__try_on_coming_soon__';
+
 bool isTryOnComingSoonAction(Object? value) {
-  final normalized = (value ?? '')
-      .toString()
-      .trim()
-      .toLowerCase()
-      .replaceAll('_', ' ')
-      .replaceAll('-', ' ')
-      .replaceAll(RegExp(r'\s+'), ' ');
-  return normalized == 'build outfit' ||
-      normalized.startsWith('build outfit ') ||
-      normalized == 'try on' ||
-      normalized.startsWith('try on ');
+  return (value ?? '').toString().trim() == tryOnComingSoonAction;
 }
 
 Future<void> showTryOnComingSoon(BuildContext context) {

@@ -110,8 +110,7 @@ bool _isBoardActionPhrase(String value) {
 
 bool _isSpecializedStyleRequest(String value) {
   final t = value.toLowerCase().trim();
-  return RegExp(r'\bstyle this\b').hasMatch(t) ||
-      RegExp(r'\b(?:build|create|make)\b[\w\s]*\boutfit\b').hasMatch(t);
+  return RegExp(r'\bstyle this\b').hasMatch(t);
 }
 
 bool _isPlanPackRequest(String value) {
@@ -1415,7 +1414,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           widget.moduleContext == 'style' ||
           widget.moduleContext == 'daily_wear';
       // Keep parameter-heavy clarification, closest, wardrobe-action, board
-      // mutation, and specialized Style This/Build Outfit calls on /api/text.
+      // mutation and specialized Style This calls on /api/text.
       final keepLegacyStyleText =
           isClosestStyleAction ||
           isClarificationAnswer ||
@@ -2482,8 +2481,16 @@ List<Map<String, dynamic>> _actionChipsFromResponse(
         final label = (chip['label'] ?? chip['title'] ?? chip['value'] ?? '')
             .toString();
         final value = (chip['value'] ?? chip['action'] ?? label).toString();
-        return isTryOnComingSoonAction(label) || isTryOnComingSoonAction(value)
-            ? {...chip, 'label': 'Try-On'}
+        final isLegacyBuildOutfitChip =
+            label.trim().toLowerCase() == 'build outfit' ||
+            value.trim().toLowerCase() == 'build_outfit' ||
+            value.trim().toLowerCase() == 'build outfit';
+        return isLegacyBuildOutfitChip
+            ? {
+                ...chip,
+                'label': 'Try-On',
+                'value': tryOnComingSoonAction,
+              }
             : chip;
       })
       .toList(growable: false);

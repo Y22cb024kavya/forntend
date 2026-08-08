@@ -786,20 +786,6 @@ class BackendService {
     );
   }
 
-  // Build Outfit (build/create/make an outfit around a specific item) is stubbed
-  // for beta — its board producer doesn't carry a catalog fallback, so cutout-
-  // less anchors render blank. Suggest/style-me/what-to-wear boards are unaffected.
-  static final RegExp _buildOutfitRe = RegExp(
-    r'\b(build|create|make)\b[\w\s]*\boutfit\b',
-    caseSensitive: false,
-  );
-  bool _isBuildOutfitRequest(String message) {
-    final q = message.toLowerCase();
-    return _buildOutfitRe.hasMatch(q) ||
-        q.contains('outfit around') ||
-        q.contains('build me an outfit');
-  }
-
   Future<Map<String, dynamic>> sendModuleChat({
     required String domain,
     required String message,
@@ -822,21 +808,6 @@ class BackendService {
           'chips': const [],
           'type': 'module_response',
         };
-      }
-      if (_isBuildOutfitRequest(query)) {
-        debugPrint('AHVI_BUILD_OUTFIT_STUB len=${query.length}');
-        const comingSoon =
-            'Try-On is coming soon. See how your looks come together on you.';
-        return _normalizeChatResponse({
-          'message': {'role': 'assistant', 'content': comingSoon},
-          'message_text': comingSoon,
-          'chips': const [
-            'Suggest an outfit for today',
-            'Style capsule wardrobe',
-          ],
-          'quick_actions': const ['Suggest an outfit for today'],
-          'type': 'module_response',
-        });
       }
       final historyForRequest = List<Map<String, String>>.from(chatHistory);
       if (historyForRequest.isEmpty ||

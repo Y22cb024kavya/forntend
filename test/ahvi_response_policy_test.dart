@@ -235,7 +235,23 @@ void main() {
         extra: {
           'anchor_locked': true,
           'anchor_item': {'item_id': 'anchor-1'},
-          'style_directions': [_board('style-this')],
+          'style_directions': [
+            {
+              'title': 'Style This',
+              'items': [
+                {
+                  'item_id': 'anchor-1',
+                  'name': 'Selected garment',
+                  'image_url': 'https://example.test/anchor.png',
+                },
+                {
+                  'item_id': 'support-1',
+                  'name': 'Supporting piece',
+                  'image_url': 'https://example.test/support.png',
+                },
+              ],
+            },
+          ],
         },
       );
       final policy = AhviResponsePolicy.fromResponse(response);

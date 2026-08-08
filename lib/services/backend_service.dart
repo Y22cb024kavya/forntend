@@ -1279,6 +1279,7 @@ class BackendService {
           'user_id': userId,
           'mode': scenario,
           'scenario': scenario,
+          'anchor_item_id': itemId,
           'anchor_garment_id': itemId,
           if (occasion != null && occasion.isNotEmpty) 'occasion': occasion,
           if (anchorItem != null) 'anchor_item': anchorItem,

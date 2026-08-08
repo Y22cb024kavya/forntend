@@ -12,6 +12,11 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   final responsePolicy = AhviResponsePolicy.fromResponse(response);
   final rawMessage = response['message'];
   final data = _dataMap(response);
+  final isStyleThisResponse =
+      (response['route'] ?? response['mode'] ?? '').toString().trim() ==
+      'style_this';
+  final hasStyleThisAnchor =
+      !isStyleThisResponse || _anchorItemMap(response, data).isNotEmpty;
   final text =
       (response['message_text'] ??
               response['response'] ??
@@ -51,6 +56,9 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   var visualDirections = responsePolicy.canRenderBoards(response)
       ? _extractVisualDirections(response, data)
       : <Map<String, dynamic>>[];
+  final hasStyleThisDirections =
+      isStyleThisResponse &&
+      _extractStyleThisDirections(response, data).isNotEmpty;
   // Style This ships its boards under top-level `style_directions` (not
   // `visual_directions`). Adapt them into the canonical visualDirections shape
   // so parseAhviResponse → AhviBlockRenderer → VisualDirectionCarousel →
@@ -58,6 +66,7 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   // when there are no normal visual_directions, so that path is untouched.
   if (visualDirections.isEmpty &&
       responsePolicy.canRenderBoards(response) &&
+      hasStyleThisAnchor &&
       responsePolicy.hasValidatedAnchorIn(response) &&
       !_looksLikeModuleResponse(response, data)) {
     final styleDirections = _extractStyleThisDirections(response, data);
@@ -73,6 +82,19 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
                 _styleDirectionToCanonical(dir, anchor, index++, sourcePolicy),
           )
           .map((board) => responsePolicy.decorateBoard(board, response))
+          .where((board) {
+            final expectedAnchor = _itemId(anchor);
+            final boardAnchor = (board['anchor_item_id'] ?? '')
+                .toString()
+                .trim();
+            final boardItems = _mapList(board['board_items']);
+            final matches = boardItems
+                .where((item) => _itemId(item) == expectedAnchor)
+                .length;
+            return expectedAnchor.isNotEmpty &&
+                boardAnchor == expectedAnchor &&
+                matches == 1;
+          })
           .toList();
       debugPrint(
         'AHVI_STYLE_DIRECTION_ADAPTER source_field=style_directions '
@@ -88,12 +110,17 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   var convertedWardrobeBoards = false;
   if (visualDirections.isEmpty &&
       responsePolicy.canRenderBoards(response) &&
+      hasStyleThisAnchor &&
+      !hasStyleThisDirections &&
       !_looksLikeModuleResponse(response, data)) {
     final wardrobeBoards = responsePolicy.boardCollection(response).boards;
     if (wardrobeBoards.isNotEmpty) {
       visualDirections = wardrobeBoards.map(_styleBoardToDirection).toList();
       convertedWardrobeBoards = true;
     }
+  }
+  if (isStyleThisResponse && !hasStyleThisAnchor) {
+    visualDirections = <Map<String, dynamic>>[];
   }
   final hasVisualDirections = visualDirections.isNotEmpty;
   final hasVisualBoard =
@@ -350,20 +377,30 @@ Map<String, dynamic> _anchorItemMap(
   final m = Map<String, dynamic>.from(anchor);
   final id = (m['item_id'] ?? m['id'] ?? m[r'$id'] ?? '').toString().trim();
   if (id.isEmpty) return const {};
+  final safeImage =
+      m['safe_image_url'] ??
+      m['safeImageUrl'] ??
+      m['board_image_url'] ??
+      m['boardImageUrl'] ??
+      m['cutout_url'] ??
+      m['cutoutUrl'] ??
+      m['catalog_image_url'] ??
+      m['catalogImageUrl'] ??
+      m['normalized_url'] ??
+      m['normalizedUrl'] ??
+      m['masked_url'] ??
+      m['maskedUrl'] ??
+      m['resolved_image_url'] ??
+      m['image_url'] ??
+      m['imageUrl'];
   return {
     ...m,
     'item_id': id,
-    'image_url':
-        m['image_url'] ??
-        m['imageUrl'] ??
-        m['resolved_image_url'] ??
-        m['normalized_url'] ??
-        m['masked_url'],
-    // Carry the anchor's catalog image so the board shows it (image_url is the
-    // raw crop the backend styled from). Without this the board anchor falls
-    // back to its raw/masked cutout while every other piece shows catalog.
-    'normalized_url':
-        m['normalized_url'] ?? m['normalizedUrl'] ?? m['resolved_image_url'],
+    if (safeImage != null && safeImage.toString().trim().isNotEmpty)
+      'image_url': safeImage,
+    'safe_image_url': safeImage,
+    if (safeImage != null && safeImage.toString().trim().isNotEmpty)
+      'normalized_url': safeImage,
     'role': m['role'] ?? m['category'],
     'owned': true,
   };
@@ -414,15 +451,17 @@ Map<String, dynamic> _styleDirectionToCanonical(
 
   final supportingItems = <Map<String, dynamic>>[
     for (var itemIndex = 0; itemIndex < items.length; itemIndex++)
-      if (itemIndex != anchorIndex) items[itemIndex],
+      if (itemIndex != anchorIndex && _itemId(items[itemIndex]) != anchorId)
+        items[itemIndex],
   ];
 
   final canonicalAnchor = <String, dynamic>{
-    ...backendAnchor,
     ...anchorItem,
+    ...backendAnchor,
     if (anchorId.isNotEmpty) 'item_id': anchorId,
     if (anchorId.isNotEmpty) 'id': anchorId,
-    if (anchorCatalog != null) 'normalized_url': anchorCatalog,
+    if (anchorCatalog != null && backendAnchor.isEmpty)
+      'normalized_url': anchorCatalog,
     'anchor': true,
     'locked': true,
     'source': 'wardrobe',
@@ -434,7 +473,9 @@ Map<String, dynamic> _styleDirectionToCanonical(
   // Keep the selected garment first. A downstream visual item cap must never
   // remove the garment that originated the Style This request.
   final boardItems = anchorId.isNotEmpty && anchorItem.isNotEmpty
-      ? <Map<String, dynamic>>[canonicalAnchor, ...supportingItems]
+      ? (anchorIndex >= 0
+            ? <Map<String, dynamic>>[canonicalAnchor, ...supportingItems]
+            : items)
       : items;
 
   final existingBoardId = (direction['board_id'] ?? '').toString().trim();

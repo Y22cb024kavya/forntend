@@ -698,6 +698,14 @@ class _ItemDetailModal extends StatelessWidget {
     final interactionMode = (direction['interaction_mode'] ?? 'style_this')
         .toString()
         .trim();
+    final declaredAnchor =
+        (direction['anchor_item_id'] ??
+                direction['anchorItemId'] ??
+                direction['originating_item_id'] ??
+                direction['originatingItemId'] ??
+                '')
+            .toString()
+            .trim();
     final items = _asMapList(
       direction['board_items'] ?? direction['boardItems'],
     );
@@ -714,7 +722,13 @@ class _ItemDetailModal extends StatelessWidget {
     if (items.isEmpty || items.any((item) => itemId(item).isEmpty)) {
       failures.add('stable_item_ids');
     }
-    if (!items.any((item) => itemId(item) == anchorItemId)) {
+    final anchorMatches = items
+        .where((item) => itemId(item) == anchorItemId)
+        .length;
+    if (declaredAnchor != anchorItemId) {
+      failures.add('anchor_declaration');
+    }
+    if (anchorMatches != 1) {
       failures.add('anchor_item_id');
     }
     return failures;

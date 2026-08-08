@@ -135,6 +135,30 @@ SavedBoardContent buildSavedBoardContent({
     );
   }
   final rawBoardId = _text(board['board_id'] ?? board['boardId']);
+  final interactionMode = _text(
+    board['interaction_mode'] ?? board['interactionMode'] ?? board['scenario'],
+  );
+  var anchorItemId = _text(
+    board['anchor_item_id'] ??
+        board['anchorItemId'] ??
+        board['originating_item_id'] ??
+        board['originatingItemId'],
+  );
+  if (anchorItemId.isEmpty && interactionMode == 'style_this') {
+    for (final item in compactItems) {
+      if (item['locked'] == true || item['anchor'] == true) {
+        anchorItemId = _text(item['id']);
+        break;
+      }
+    }
+  }
+  if (interactionMode == 'style_this' &&
+      (anchorItemId.isEmpty || !itemIds.contains(anchorItemId))) {
+    throw const SavedBoardPersistenceException(
+      'missing_style_this_anchor',
+      'This Style This look is missing its selected item and cannot be saved safely.',
+    );
+  }
   final boardId = _isStableId(rawBoardId)
       ? rawBoardId
       : _derivedBoardId(
@@ -158,6 +182,11 @@ SavedBoardContent buildSavedBoardContent({
     'original_occasion': originalOccasion.trim(),
     'is_favourite': selection.isFavourite,
     'layout_mode': layoutMode,
+    if (interactionMode == 'style_this') ...{
+      'scenario': 'style_this',
+      'interaction_mode': 'style_this',
+      'anchor_item_id': anchorItemId,
+    },
   };
   final masterJson = jsonEncode(master);
   if (masterJson.length > 100000) {

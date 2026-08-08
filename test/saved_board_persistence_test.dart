@@ -61,6 +61,28 @@ void main() {
         content: content(favourite: favourite),
       );
 
+  test('Style This save preserves the exact anchor identity and revision', () {
+    final saved = buildSavedBoardContent(
+      board: {
+        ...liveBoard(),
+        'scenario': 'style_this',
+        'interaction_mode': 'style_this',
+        'anchor_item_id': 'bottom-2',
+      },
+      items: shuffledItems,
+      selection: const SavedBoardSelection(bucket: 'office_fits'),
+      title: 'Style This office look',
+      originalOccasion: 'office',
+    );
+
+    final master = jsonDecode(saved.masterGarment) as Map<String, dynamic>;
+    expect(saved.itemIds, contains('bottom-2'));
+    expect(master['scenario'], 'style_this');
+    expect(master['interaction_mode'], 'style_this');
+    expect(master['anchor_item_id'], 'bottom-2');
+    expect(master['revision'], 3);
+  });
+
   group('deployed Appwrite contract', () {
     test('payload contains exactly the six deployed attributes', () {
       final data = payload();

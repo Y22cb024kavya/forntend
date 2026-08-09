@@ -348,6 +348,34 @@ void main() {
     },
   );
 
+  testWidgets('Share surfaces a recoverable error when native sharing fails', (
+    tester,
+  ) async {
+    await _pumpBar(
+      tester,
+      OutfitActionBar(
+        direction: _direction(),
+        editorialCover: const {},
+        primaryLabel: 'Office Look',
+        missingName: '',
+        shareBoundaryKey: GlobalKey(),
+        captureOverride: () async => Uint8List.fromList(<int>[1, 2, 3]),
+        shareImageOverride: (bytes, caption) async {
+          throw StateError('image share unavailable');
+        },
+        shareTextOverride: (caption) async {
+          throw StateError('text share unavailable');
+        },
+      ),
+    );
+
+    await tester.tap(find.text('Share'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Could not open the share sheet.'), findsOneWidget);
+  });
+
   testWidgets('Save and Share remain enabled without a board contract', (
     tester,
   ) async {

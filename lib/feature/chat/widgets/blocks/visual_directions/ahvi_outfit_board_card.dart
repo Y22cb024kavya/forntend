@@ -1350,8 +1350,12 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
       final ro = key.currentContext?.findRenderObject();
       if (ro is! RenderRepaintBoundary) return null;
       final image = await ro.toImage(pixelRatio: 3.0);
-      final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      return data?.buffer.asUint8List();
+      try {
+        final data = await image.toByteData(format: ui.ImageByteFormat.png);
+        return data?.buffer.asUint8List();
+      } finally {
+        image.dispose();
+      }
     } finally {
       entry.remove();
     }
@@ -1375,7 +1379,16 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
       '${dir.path}/ahvi_board_${DateTime.now().millisecondsSinceEpoch}.png',
     );
     await file.writeAsBytes(bytes, flush: true);
-    await Share.shareXFiles([XFile(file.path)], text: caption);
+    final result = await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(file.path, mimeType: 'image/png')],
+        text: caption,
+        subject: caption,
+      ),
+    );
+    if (result.status == ShareResultStatus.unavailable) {
+      throw StateError('native_share_unavailable');
+    }
   }
 
   Future<void> _share() async {
@@ -1398,7 +1411,15 @@ class _OutfitActionBarState extends State<OutfitActionBar> {
       debugPrint('AHVI_BOARD_SHARE_FAILED error=$e');
       try {
         final shareText =
-            widget.shareTextOverride ?? (text) => Share.share(text);
+            widget.shareTextOverride ??
+            (text) async {
+              final result = await SharePlus.instance.share(
+                ShareParams(text: text, subject: text),
+              );
+              if (result.status == ShareResultStatus.unavailable) {
+                throw StateError('native_share_unavailable');
+              }
+            };
         await shareText(caption);
         debugPrint('AHVI_BOARD_SHARE_TEXT_FALLBACK');
         _sendFeedback('shared');

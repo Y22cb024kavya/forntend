@@ -816,6 +816,18 @@ class BackendService {
         historyForRequest.add({'role': 'user', 'content': query});
       }
 
+      final moduleContext = <String, dynamic>{...?context};
+      final needsWardrobe =
+          (module == 'style' ||
+              module == 'daily_wear' ||
+              module == 'wardrobe') &&
+          !moduleContext.containsKey('wardrobe');
+      final wardrobeFuture = needsWardrobe
+          ? _appwriteService.getWardrobeItems()
+          : null;
+      final locationFuture = _locationContext(authedUserId);
+      final authHeadersFuture = _authHeaders();
+
       // Resolve the user's gender so the backend can gender-filter style
       // assets. /api/module-chat reads gender ONLY from the request
       // user_profile; without it target_gender=unknown and only unisex assets
@@ -841,13 +853,9 @@ class BackendService {
         }
       }
 
-      final moduleContext = <String, dynamic>{...?context};
-      if ((module == 'style' ||
-              module == 'daily_wear' ||
-              module == 'wardrobe') &&
-          !moduleContext.containsKey('wardrobe')) {
+      if (wardrobeFuture != null) {
         try {
-          moduleContext['wardrobe'] = await _appwriteService.getWardrobeItems();
+          moduleContext['wardrobe'] = await wardrobeFuture;
         } catch (_) {
           moduleContext['wardrobe'] = const <dynamic>[];
         }
@@ -871,7 +879,7 @@ class BackendService {
             'user_id': authedUserId,
           },
         },
-        await _locationContext(authedUserId),
+        await locationFuture,
         includeContext: true,
         includeUserProfile: true,
       );
@@ -882,7 +890,7 @@ class BackendService {
       final response = await http
           .post(
             Uri.parse('$baseUrl/api/module-chat'),
-            headers: await _authHeaders(),
+            headers: await authHeadersFuture,
             body: jsonEncode(_jsonSafe(modulePayload)),
           )
           // Backend's chat_completion has a 45s budget. Give the network +
@@ -1518,6 +1526,24 @@ class BackendService {
       debugPrint('Today calendar load error: $e');
       return <Map<String, dynamic>>[];
     }
+  }
+
+  Future<CalendarPlanCounts> getCalendarPlanCounts() async {
+    try {
+      final uri = Uri.parse(
+        '$baseUrl/api/calendar/events',
+      ).replace(queryParameters: const {'limit': '300'});
+      final response = await http
+          .get(uri, headers: await _authHeaders())
+          .timeout(const Duration(seconds: 30));
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = await compute(_parseJsonMap, response.body);
+        return CalendarPlanCounts.fromJson(data);
+      }
+    } catch (e) {
+      debugPrint('Calendar plan counts load error: $e');
+    }
+    return const CalendarPlanCounts.empty();
   }
 
   Future<Map<String, dynamic>?> createCalendarEvent({

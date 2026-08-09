@@ -39,6 +39,7 @@ class PlanItem {
   final String time;
   final String outfit;
   final DateTime? startTime;
+  final bool isOutfitPlan;
   bool hasReminder;
 
   PlanItem({
@@ -49,6 +50,7 @@ class PlanItem {
     this.time = '',
     this.outfit = '',
     this.startTime,
+    this.isOutfitPlan = true,
     this.hasReminder = true,
   });
 
@@ -60,6 +62,7 @@ class PlanItem {
     String? time,
     String? outfit,
     DateTime? startTime,
+    bool? isOutfitPlan,
     bool? hasReminder,
   }) {
     return PlanItem(
@@ -70,6 +73,7 @@ class PlanItem {
       time: time ?? this.time,
       outfit: outfit ?? this.outfit,
       startTime: startTime ?? this.startTime,
+      isOutfitPlan: isOutfitPlan ?? this.isOutfitPlan,
       hasReminder: hasReminder ?? this.hasReminder,
     );
   }
@@ -208,6 +212,10 @@ class _CalendarShellState extends State<CalendarShell> {
       time: _formatTime(event.startTime),
       outfit: outfit,
       startTime: event.startTime,
+      isOutfitPlan: isOutfitPlanEvent({
+        'type': event.type,
+        'metadata': event.metadata,
+      }),
       hasReminder: event.reminderMinutes > 0,
     );
   }
@@ -267,12 +275,13 @@ class _CalendarShellState extends State<CalendarShell> {
       description: plan.outfit,
       startTime: start,
       endTime: start.add(const Duration(hours: 1)),
-      type: plan.occasion,
+      type: 'plan',
       source: 'ahvi_calendar',
       reminderMinutes: plan.hasReminder ? 30 : 0,
       metadata: {
         'occasion': plan.occasion,
         'outfit': plan.outfit,
+        'plan_kind': 'outfit',
         'colorTheme': plan.colorTheme,
       },
     );
@@ -1096,7 +1105,7 @@ class MainCalendarView extends StatelessWidget {
   int getAllPlansCount() {
     int total = 0;
     for (var l in allPlansData.values) {
-      total += l.length;
+      total += l.where((plan) => plan.isOutfitPlan).length;
     }
     return total;
   }

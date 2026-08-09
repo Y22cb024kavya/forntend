@@ -70,6 +70,42 @@ class CalendarEventRecord {
   }
 }
 
+class CalendarPlanCounts {
+  const CalendarPlanCounts({
+    required this.total,
+    required this.today,
+    required this.upcoming,
+  });
+
+  const CalendarPlanCounts.empty() : total = 0, today = 0, upcoming = 0;
+
+  final int total;
+  final int today;
+  final int upcoming;
+
+  factory CalendarPlanCounts.fromJson(Map<String, dynamic> json) {
+    int read(String key) => (json[key] as num?)?.toInt() ?? 0;
+    return CalendarPlanCounts(
+      total: read('total_outfit_plan_count'),
+      today: read('today_outfit_plan_count'),
+      upcoming: read('upcoming_outfit_plan_count'),
+    );
+  }
+}
+
+bool isOutfitPlanEvent(Map<String, dynamic> event) {
+  final metadata = calendarJsonMap(event['metadata']) ?? const {};
+  final explicitKind = metadata['plan_kind']?.toString().trim().toLowerCase();
+  if (explicitKind == 'outfit') return true;
+  if (explicitKind == 'non_outfit') return false;
+  final type = (event['type'] ?? event['event_type'] ?? '')
+      .toString()
+      .trim()
+      .toLowerCase();
+  return type == 'plan' ||
+      metadata['outfit']?.toString().trim().isNotEmpty == true;
+}
+
 enum CalendarListSurface {
   homeToday('home_today'),
   calendar('calendar');

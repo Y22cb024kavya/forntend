@@ -91,4 +91,33 @@ void main() {
     expect(result, isNotNull);
     expect(result!.reminderConfirmed, isFalse);
   });
+
+  test('parses authoritative outfit plan counts', () {
+    final counts = CalendarPlanCounts.fromJson({
+      'total_outfit_plan_count': 22,
+      'today_outfit_plan_count': 1,
+      'upcoming_outfit_plan_count': 7,
+    });
+
+    expect(counts.total, 22);
+    expect(counts.today, 1);
+    expect(counts.upcoming, 7);
+  });
+
+  test('uses explicit metadata to distinguish outfit plans from meetings', () {
+    expect(
+      isOutfitPlanEvent({
+        'type': 'plan',
+        'metadata': {'plan_kind': 'outfit'},
+      }),
+      isTrue,
+    );
+    expect(
+      isOutfitPlanEvent({
+        'type': 'meeting',
+        'metadata': {'plan_kind': 'non_outfit'},
+      }),
+      isFalse,
+    );
+  });
 }

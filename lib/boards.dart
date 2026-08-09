@@ -4,6 +4,8 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:myapp/models/calendar_event_record.dart';
+import 'package:myapp/services/backend_service.dart';
 import 'package:myapp/app_localizations.dart';
 import 'package:myapp/calendar.dart';
 import 'package:myapp/theme/theme_tokens.dart';
@@ -58,8 +60,32 @@ class CalendarCard extends StatefulWidget {
 }
 
 class _CalendarCardState extends State<CalendarCard> {
-  final int _totalPlans = 0;
-  final int _todayPlans = 0;
+  int _totalPlans = 0;
+  int _todayPlans = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    CalendarRefreshSignal.generation.addListener(_refreshCounts);
+    _loadCounts();
+  }
+
+  @override
+  void dispose() {
+    CalendarRefreshSignal.generation.removeListener(_refreshCounts);
+    super.dispose();
+  }
+
+  void _refreshCounts() => _loadCounts();
+
+  Future<void> _loadCounts() async {
+    final counts = await BackendService().getCalendarPlanCounts();
+    if (!mounted) return;
+    setState(() {
+      _totalPlans = counts.total;
+      _todayPlans = counts.today;
+    });
+  }
 
   void _openCalendar() {
     Navigator.push(

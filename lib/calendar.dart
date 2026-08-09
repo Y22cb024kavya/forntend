@@ -109,6 +109,8 @@ class _CalendarShellState extends State<CalendarShell> {
 
   final BackendService _backend = BackendService();
   final Map<String, List<PlanItem>> _plansData = {};
+  CalendarPlanCounts _canonicalPlanCounts =
+      const CalendarPlanCounts.empty();
 
   bool _isLoadingPlans = false;
   bool _isChatOpen = false;
@@ -224,10 +226,13 @@ class _CalendarShellState extends State<CalendarShell> {
     if (_isLoadingPlans) return;
     setState(() => _isLoadingPlans = true);
 
-    final events = await _backend.getCalendarEvents(
+    final eventsFuture = _backend.getCalendarEvents(
       limit: 300,
       surface: CalendarListSurface.calendar,
     );
+    final countsFuture = _backend.getCalendarPlanCounts();
+    final events = await eventsFuture;
+    final counts = await countsFuture;
     final next = <String, List<PlanItem>>{};
 
     for (final event in events) {
@@ -248,6 +253,7 @@ class _CalendarShellState extends State<CalendarShell> {
       _plansData
         ..clear()
         ..addAll(next);
+      _canonicalPlanCounts = counts;
       _isLoadingPlans = false;
     });
   }
@@ -416,6 +422,7 @@ class _CalendarShellState extends State<CalendarShell> {
                           selectedDateKey: _selectedDateKey,
                           plans: _plansData[_selectedDateKey] ?? [],
                           allPlansData: _plansData,
+                          outfitPlanCount: _canonicalPlanCounts.total,
                           onMonthChanged: _changeMonth,
                           onDaySelected: (date) {
                             setState(() {
@@ -532,6 +539,7 @@ class MainCalendarView extends StatelessWidget {
   final String selectedDateKey;
   final List<PlanItem> plans;
   final Map<String, List<PlanItem>> allPlansData;
+  final int outfitPlanCount;
   final Function(int) onMonthChanged;
   final Function(DateTime) onDaySelected;
   final VoidCallback onAddPlanPressed;
@@ -546,6 +554,7 @@ class MainCalendarView extends StatelessWidget {
     required this.selectedDateKey,
     required this.plans,
     required this.allPlansData,
+    required this.outfitPlanCount,
     required this.onMonthChanged,
     required this.onDaySelected,
     required this.onAddPlanPressed,
@@ -651,7 +660,7 @@ class MainCalendarView extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        '${getAllPlansCount()} ${AppLocalizations.t(context, 'calendar_outfit_plans')}',
+                        '$outfitPlanCount ${AppLocalizations.t(context, 'calendar_outfit_plans')}',
                         style: TextStyle(fontSize: 12, color: theme.mutedText),
                       ),
                     ],
@@ -1102,13 +1111,6 @@ class MainCalendarView extends StatelessWidget {
     return DateTime(date.year, date.month + 1, 0).day;
   }
 
-  int getAllPlansCount() {
-    int total = 0;
-    for (var l in allPlansData.values) {
-      total += l.where((plan) => plan.isOutfitPlan).length;
-    }
-    return total;
-  }
 }
 
 // ==========================================

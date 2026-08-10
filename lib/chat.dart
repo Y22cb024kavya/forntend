@@ -1372,6 +1372,12 @@ class _ChatScreenState extends State<ChatScreen>
     final sourceCards = sourceIndex == null
         ? const <dynamic>[]
         : _messages[sourceIndex].cards;
+    final sourceStyleState = sourceIndex == null || sourceCards.isEmpty
+        ? null
+        : styleMutationStateFromBoard(
+            Map<String, dynamic>.from(sourceCards.first as Map),
+            responseState: _messages[sourceIndex].styleState,
+          );
     final exclude = _styleBoardSignatures(sourceCards);
 
     setState(() {
@@ -1400,6 +1406,7 @@ class _ChatScreenState extends State<ChatScreen>
         previousPrompt: resolvedPrompt.isNotEmpty ? resolvedPrompt : null,
         resolvedPrompt: resolvedPrompt.isNotEmpty ? resolvedPrompt : null,
         lastStyleContext: _lastStyleContext,
+        styleState: sourceStyleState,
         excludeStyleSignatures: exclude,
         requestedBoardCount: 3,
       );
@@ -1440,6 +1447,7 @@ class _ChatScreenState extends State<ChatScreen>
             visualBoard: old.visualBoard,
             moduleCard: old.moduleCard,
             moduleCards: old.moduleCards,
+            styleState: old.styleState,
           );
           _messages.add(
             _ChatMessage(

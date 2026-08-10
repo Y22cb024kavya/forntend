@@ -39,6 +39,7 @@ import 'package:myapp/feature/chat/widgets/blocks/ahvi_block_renderer.dart'
         StylistReasoningCard,
         StyleAdviceCard;
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/visual_direction_carousel.dart';
+import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
 import 'package:myapp/widgets/chat_cards/visual_packing_checklist_card.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -742,6 +743,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
   final List<Map<String, String>> _chatHistory = [];
   String _runningMemory = '';
   Map<String, dynamic>? _lastStyleContext;
+  Map<String, dynamic>? _activeBoardMutationState;
   // Once a Style response renders cards/boards, any earlier occasion
   // clarification is resolved. Later board actions (Shuffle / another look)
   // must NOT be serialized as answers to that stale clarification.
@@ -1287,12 +1289,23 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
   }
 
   Map<String, dynamic>? _currentMutationState() {
+    if (_activeBoardMutationState != null) {
+      return _activeBoardMutationState;
+    }
     for (var index = _messages.length - 1; index >= 0; index--) {
-      final payload = _messages[index].boardPayload;
-      final state = payload?.mutationState;
+      final message = _messages[index];
+      final state =
+          message.visualDirectionPayload?.mutationState ??
+          message.boardPayload?.mutationState;
       if (state != null) return state;
     }
     return null;
+  }
+
+  void _handleBoardStateChanged(Map<String, dynamic> board) {
+    final state = styleMutationStateFromBoard(board);
+    if (state == null || !mounted) return;
+    setState(() => _activeBoardMutationState = state);
   }
 
   Future<void> _sendMessage(String text) async {
@@ -1843,6 +1856,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
 
       setState(() {
         _typing = false;
+        _activeBoardMutationState = null;
         _messages.add(
           _SheetMessage(
             text: displayText,
@@ -2233,7 +2247,11 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
                   padding: EdgeInsets.fromLTRB(16, 8, 16, inputAreaH + 12),
                   children: [
                     ..._messages.map(
-                      (msg) => _Bubble(msg: msg, onPrompt: _sendMessage),
+                      (msg) => _Bubble(
+                        msg: msg,
+                        onPrompt: _sendMessage,
+                        onBoardStateChanged: _handleBoardStateChanged,
+                      ),
                     ),
                     if (_typing) _TypingBubble(message: _typingMessage),
                   ],
@@ -2608,15 +2626,31 @@ List<Map<String, dynamic>> actionChipsForTesting(
 
 class _VisualDirectionPayload {
   final List<Map<String, dynamic>> directions;
+  final Map<String, dynamic>? styleState;
 
-  const _VisualDirectionPayload({required this.directions});
+  const _VisualDirectionPayload({required this.directions, this.styleState});
 
   bool get hasDirections => directions.isNotEmpty;
 
-  Map<String, dynamic> toJson() => {'directions': directions};
+  Map<String, dynamic> toJson() => {
+    'directions': directions,
+    'styleState': styleState,
+  };
+
+  Map<String, dynamic>? get mutationState => directions.isEmpty
+      ? null
+      : styleMutationStateFromBoard(
+          directions.first,
+          responseState: styleState,
+        );
 
   factory _VisualDirectionPayload.fromJson(Map<String, dynamic> j) =>
-      _VisualDirectionPayload(directions: _mapList(j['directions']));
+      _VisualDirectionPayload(
+        directions: _mapList(j['directions']),
+        styleState: j['styleState'] is Map
+            ? Map<String, dynamic>.from(j['styleState'] as Map)
+            : null,
+      );
 
   static _VisualDirectionPayload fromResponse(Map<String, dynamic> response) {
     final parsed = parseAhviResponse(response);
@@ -2629,6 +2663,9 @@ class _VisualDirectionPayload {
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
             .toList(growable: false),
+        styleState: response['style_state'] is Map
+            ? Map<String, dynamic>.from(response['style_state'] as Map)
+            : null,
       );
     }
     return const _VisualDirectionPayload(directions: []);
@@ -2878,8 +2915,13 @@ bool _suppressDuplicateBubble(BuildContext context, _SheetMessage msg) {
 class _Bubble extends StatelessWidget {
   final _SheetMessage msg;
   final ValueChanged<String> onPrompt;
+  final OutfitBoardStateChanged? onBoardStateChanged;
 
-  const _Bubble({required this.msg, required this.onPrompt});
+  const _Bubble({
+    required this.msg,
+    required this.onPrompt,
+    this.onBoardStateChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2964,6 +3006,7 @@ class _Bubble extends StatelessWidget {
           _VisualDirectionCards(
             payload: msg.visualDirectionPayload!,
             onPrompt: onPrompt,
+            onBoardStateChanged: onBoardStateChanged,
             diagnosticCorrelationId: msg.diagnosticCorrelationId,
           ),
         if (msg.boardPayload != null)
@@ -3211,11 +3254,13 @@ class _SheetActionChips extends StatelessWidget {
 class _VisualDirectionCards extends StatelessWidget {
   final _VisualDirectionPayload payload;
   final ValueChanged<String> onPrompt;
+  final OutfitBoardStateChanged? onBoardStateChanged;
   final String? diagnosticCorrelationId;
 
   const _VisualDirectionCards({
     required this.payload,
     required this.onPrompt,
+    this.onBoardStateChanged,
     this.diagnosticCorrelationId,
   });
 
@@ -3244,6 +3289,7 @@ class _VisualDirectionCards extends StatelessWidget {
         directions: payload.directions,
         cardWidth: width,
         onSendMessage: onPrompt,
+        onBoardStateChanged: onBoardStateChanged,
       ),
     );
   }

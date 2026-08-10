@@ -29,6 +29,7 @@ import 'package:myapp/util/wardrobe_image_resolver.dart';
 
 typedef OutfitBoardMessageSender = void Function(String message);
 typedef OutfitBoardTap = void Function(Map<String, dynamic> board);
+typedef OutfitBoardStateChanged = void Function(Map<String, dynamic> board);
 
 const double editorialBoardHeaderHeight = 30;
 const double editorialBoardContextHeight = 72;
@@ -145,6 +146,7 @@ class AhviOutfitBoardCard extends StatefulWidget {
   final double width;
   final OutfitBoardMessageSender? onSendMessage;
   final Map<String, dynamic> editorialCover;
+  final OutfitBoardStateChanged? onBoardStateChanged;
 
   /// Tap on the flat-lay visual opens the legacy stylist-reasoning detail
   /// sheet. The action bar keeps its own handlers and is excluded from this
@@ -160,6 +162,7 @@ class AhviOutfitBoardCard extends StatefulWidget {
     required this.width,
     this.onSendMessage,
     this.editorialCover = const {},
+    this.onBoardStateChanged,
     this.onTapBoard,
     this.shuffleCall,
     this.saveBoardOverride,
@@ -496,6 +499,7 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
   void _handleControllerChange() {
     if (!mounted) return;
     setState(() {});
+    widget.onBoardStateChanged?.call(_currentDirection);
     if (_controller?.state.isShuffling == false && _pendingImageBoard != null) {
       final pending = _pendingImageBoard!;
       _pendingImageBoard = null;
@@ -555,6 +559,12 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
       'occasion': board.occasion,
       'why_it_works': board.whyItWorks,
       'styling_tip': board.stylingTip,
+      'locked_item_ids':
+          _controller?.state.lockedItemIds.toList(growable: false) ??
+          board.items
+              .where((item) => item.isLocked && item.hasStableIdentity)
+              .map((item) => item.itemId)
+              .toList(growable: false),
       'board_items': board.items
           .map((item) => item.toContractJson())
           .toList(growable: false),

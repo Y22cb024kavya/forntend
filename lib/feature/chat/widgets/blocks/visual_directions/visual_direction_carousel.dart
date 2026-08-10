@@ -25,6 +25,7 @@ class VisualDirectionCarousel extends StatelessWidget {
   /// card. When null the bar still renders but each action becomes a soft
   /// no-op so unmounted callbacks never crash.
   final DirectionMessageSender? onSendMessage;
+  final OutfitBoardStateChanged? onBoardStateChanged;
 
   /// Toggle for the premium one-shot reveal animation. Defaults to on; the
   /// loader self-disables when there are no directions to gate.
@@ -38,6 +39,7 @@ class VisualDirectionCarousel extends StatelessWidget {
     this.cardWidth,
     this.editorialCover = const {},
     this.onSendMessage,
+    this.onBoardStateChanged,
     this.curationReveal = true,
     this.use85Layout,
     this.wardrobeById = const {},
@@ -99,6 +101,7 @@ class VisualDirectionCarousel extends StatelessWidget {
                         direction: direction,
                         width: width,
                         onSendMessage: onSendMessage,
+                        onBoardStateChanged: onBoardStateChanged,
                         editorialCover: editorialCover,
                         wardrobeById: wardrobeById,
                         onTapBoard: (tappedBoard) => _openBoardDetail(

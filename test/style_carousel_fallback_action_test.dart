@@ -5,7 +5,6 @@
 // Share) — never a second Save/Share implementation and never a bare fallback
 // with no actions. Tests go through VisualDirectionCarousel, not OutfitActionBar
 // directly.
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
@@ -55,12 +54,14 @@ Future<void> _pump(WidgetTester tester, Map<String, dynamic> direction) =>
       MaterialApp(
         theme: _theme,
         home: Scaffold(
-          body: VisualDirectionCarousel(
-            directions: [direction],
-            cardWidth: 340,
-            curationReveal: false,
-            editorialCover: const {},
-            onSendMessage: (_) {},
+          body: SingleChildScrollView(
+            child: VisualDirectionCarousel(
+              directions: [direction],
+              cardWidth: 340,
+              curationReveal: false,
+              editorialCover: const {},
+              onSendMessage: (_) {},
+            ),
           ),
         ),
       ),

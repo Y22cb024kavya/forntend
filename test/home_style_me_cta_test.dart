@@ -515,6 +515,7 @@ class _HomeStyleBackend extends BackendService {
     Map<String, dynamic>? context,
     List<Map<String, String>> chatHistory = const [],
     Map<String, dynamic>? userProfile,
+    Map<String, dynamic>? styleState,
     String? requestId,
   }) async {
     moduleRequests.add(message);
@@ -583,6 +584,7 @@ class _HomeStyleBackend extends BackendService {
     String? resolvedPrompt,
     String? currentLookId,
     Map<String, dynamic>? styleContext,
+    Map<String, dynamic>? styleState,
     Map<String, dynamic>? lastStyleContext,
     bool showClosestOption = false,
     bool allowClosestOption = false,

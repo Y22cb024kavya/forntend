@@ -584,6 +584,8 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
     final renderable = _isRenderableOutfit(board.items);
     final theme = Theme.of(context);
     final mode = _interactionMode;
+    final contextStrip = OutfitContextStrip(model: _model);
+    final textScale = MediaQuery.textScalerOf(context).scale(1);
 
     return SizedBox(
       width: widget.width,
@@ -626,7 +628,12 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                               onTap: widget.onTapBoard == null
                                   ? null
                                   : () => widget.onTapBoard!(_currentDirection),
-                              child: OutfitContextStrip(model: _model),
+                              child: textScale > 1
+                                  ? SingleChildScrollView(
+                                      physics: const ClampingScrollPhysics(),
+                                      child: contextStrip,
+                                    )
+                                  : contextStrip,
                             ),
                           ),
                         ),

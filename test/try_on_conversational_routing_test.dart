@@ -43,7 +43,10 @@ void main() {
       final backend = _RecordingBackend();
       await _pumpChat(tester, backend, prompt);
 
-      expect(backend.moduleRequests, contains(prompt));
+      final requests = prompt == 'change the shoes'
+          ? backend.textRequests
+          : backend.moduleRequests;
+      expect(requests, contains(prompt));
       expect(find.byType(TryOnComingSoonDialog), findsNothing);
       expect(find.text('Coming soon'), findsNothing);
     });
@@ -140,6 +143,7 @@ class _RecordingBackend extends BackendService {
     Map<String, dynamic>? context,
     List<Map<String, String>> chatHistory = const [],
     Map<String, dynamic>? userProfile,
+    Map<String, dynamic>? styleState,
     String? requestId,
   }) async {
     moduleRequests.add(message);
@@ -167,6 +171,7 @@ class _RecordingBackend extends BackendService {
     String? resolvedPrompt,
     String? currentLookId,
     Map<String, dynamic>? styleContext,
+    Map<String, dynamic>? styleState,
     Map<String, dynamic>? lastStyleContext,
     bool showClosestOption = false,
     bool allowClosestOption = false,

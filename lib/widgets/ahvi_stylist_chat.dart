@@ -1413,11 +1413,11 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       final isCanonicalStyleConversation =
           widget.moduleContext == 'style' ||
           widget.moduleContext == 'daily_wear';
-      // Keep parameter-heavy clarification, closest, wardrobe-action, board
-      // mutation and specialized Style This calls on /api/text.
+      // Keep dedicated board actions, mutations, and specialized Style This
+      // calls on /api/text. Ordinary Style clarification answers stay on the
+      // canonical path so resolved date/activity context remains available.
       final keepLegacyStyleText =
           isClosestStyleAction ||
-          isClarificationAnswer ||
           isWardrobeAction ||
           isBoardActionPhrase ||
           _isSpecializedStyleRequest(trimmed);
@@ -1659,11 +1659,13 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           boardPayload.hasBoards || visualPayload.hasDirections;
       final bool isClarificationResponse =
           !renderedBoards &&
-          ((response['type']?.toString().toLowerCase() == 'clarification') ||
+          ((response['response_mode']?.toString().toLowerCase() ==
+                  'clarification') ||
+              (response['type']?.toString().toLowerCase() == 'clarification') ||
               _looksLikeStyleClarification(guardedAiText));
-      if (renderedBoards) {
+      if (renderedBoards || !isClarificationResponse) {
         _clarificationResolvedByCards = true;
-      } else if (isClarificationResponse) {
+      } else {
         _clarificationResolvedByCards = false;
       }
       final visualInspiration = textOnlyResponse

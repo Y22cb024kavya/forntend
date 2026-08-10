@@ -292,6 +292,38 @@ void main() {
       isTrue,
     );
   });
+
+  testWidgets('Style multi-turn activity context stays on module chat', (
+    tester,
+  ) async {
+    final backend = _HomeStyleBackend(continuityMode: true);
+    await _pumpHome(tester, backend, _RecordingNavigatorObserver());
+    await tester.tap(find.byKey(const ValueKey('home-style-me-cta')));
+    await _waitForChat(tester);
+
+    await _submit(tester, 'I need something for tomorrow');
+    await _waitForText(tester, 'What are you dressing for?');
+    await _submit(tester, 'I have a badminton game');
+    await _waitForText(tester, 'For your badminton game tomorrow.');
+    await _submit(tester, 'show visual inspiration for this');
+    await _waitForText(tester, 'For your badminton game tomorrow.');
+
+    expect(backend.legacyRequests, isEmpty);
+    expect(backend.moduleCalls, hasLength(3));
+    expect(
+      backend.moduleCalls.map((call) => call.domain),
+      everyElement('style'),
+    );
+    expect(
+      _historyContains(
+        backend.moduleCalls[2].chatHistory,
+        role: 'user',
+        content: 'I have a badminton game',
+      ),
+      isTrue,
+    );
+    expect(find.byType(VisualDirectionCarousel), findsWidgets);
+  });
 }
 
 Finder get _chatFinder => find.byWidgetPredicate(
@@ -437,8 +469,10 @@ class _ModuleCall {
 
 class _HomeStyleBackend extends BackendService {
   final Duration responseDelay;
+  final bool continuityMode;
   final List<String> requests = [];
   final List<String> moduleRequests = [];
+  final List<String> legacyRequests = [];
   final List<_ModuleCall> moduleCalls = [];
   final List<String> requestIds = [];
   final List<String> actions = [];
@@ -447,8 +481,10 @@ class _HomeStyleBackend extends BackendService {
   String? assetPolicy;
   bool allowGenericAssetsInMainBoard = true;
 
-  _HomeStyleBackend({this.responseDelay = Duration.zero})
-    : super(appwriteService: AppwriteService());
+  _HomeStyleBackend({
+    this.responseDelay = Duration.zero,
+    this.continuityMode = false,
+  }) : super(appwriteService: AppwriteService());
 
   static String replyFor(String prompt) {
     final lower = prompt.toLowerCase();
@@ -494,6 +530,7 @@ class _HomeStyleBackend extends BackendService {
     if (responseDelay > Duration.zero) {
       await Future<void>.delayed(responseDelay);
     }
+    if (continuityMode) return _continuityResponse(message);
     final lower = message.toLowerCase();
     if (lower.contains('visual inspiration')) return _visualResponse();
     if (lower.contains('colours suit me') ||
@@ -557,6 +594,7 @@ class _HomeStyleBackend extends BackendService {
     String? requestId,
   }) async {
     requests.add(query);
+    if (continuityMode) legacyRequests.add(query);
     actions.add(action ?? styleAction ?? '');
     this.useWardrobe = useWardrobe;
     this.wardrobeFirst = wardrobeFirst;
@@ -624,6 +662,31 @@ class _HomeStyleBackend extends BackendService {
       _board('board-3'),
     ],
   };
+
+  Map<String, dynamic> _continuityResponse(String message) {
+    final lower = message.toLowerCase();
+    if (lower.contains('need something')) {
+      return {
+        'type': 'clarification',
+        'route': 'clarification',
+        'response_mode': 'clarification',
+        'message_text': 'What are you dressing for?',
+      };
+    }
+    if (lower.contains('badminton')) {
+      return {
+        'type': 'stylist_advice',
+        'route': 'style_advice',
+        'response_mode': 'text_only',
+        'message_text': 'For your badminton game tomorrow.',
+      };
+    }
+    return {
+      ..._visualResponse(),
+      'response_mode': 'visual_inspiration',
+      'message_text': 'For your badminton game tomorrow.',
+    };
+  }
 
   Map<String, dynamic> _board(String id) => {
     'board_id': id,

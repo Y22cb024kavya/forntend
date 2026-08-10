@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:myapp/feature/chat/models/ahvi_response_block.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/visual_direction_carousel.dart';
+import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
 import 'package:myapp/models/ahvi_visual_board_model.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/widgets/ahvi_module_card.dart';
@@ -20,6 +21,7 @@ class AhviBlockRenderer extends StatelessWidget {
   final ModuleCardsBuilder moduleCardsBuilder;
   final WardrobeGapBuilder? wardrobeGapBuilder;
   final MessageSender? onSendMessage;
+  final OutfitBoardStateChanged? onBoardStateChanged;
 
   const AhviBlockRenderer({
     super.key,
@@ -30,6 +32,7 @@ class AhviBlockRenderer extends StatelessWidget {
     required this.moduleCardsBuilder,
     this.wardrobeGapBuilder,
     this.onSendMessage,
+    this.onBoardStateChanged,
   });
 
   @override
@@ -61,6 +64,7 @@ class AhviBlockRenderer extends StatelessWidget {
           directions: directions,
           editorialCover: coverMap,
           onSendMessage: onSendMessage,
+          onBoardStateChanged: onBoardStateChanged,
         );
       case AhviBlockType.styleBoards:
         final boards = block.data['boards'];

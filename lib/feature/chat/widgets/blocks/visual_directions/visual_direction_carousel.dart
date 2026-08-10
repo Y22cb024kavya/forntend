@@ -104,11 +104,14 @@ class VisualDirectionCarousel extends StatelessWidget {
                         onBoardStateChanged: onBoardStateChanged,
                         editorialCover: editorialCover,
                         wardrobeById: wardrobeById,
-                        onTapBoard: (tappedBoard) => _openBoardDetail(
-                          cardContext,
-                          direction: tappedBoard,
-                          editorialCover: editorialCover,
-                        ),
+                        onTapBoard: (tappedBoard) {
+                          onBoardStateChanged?.call(tappedBoard);
+                          _openBoardDetail(
+                            cardContext,
+                            direction: tappedBoard,
+                            editorialCover: editorialCover,
+                          );
+                        },
                       );
                     }
                     return _BoardDirectionFallbackCard(

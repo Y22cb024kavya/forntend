@@ -1026,6 +1026,7 @@ class _ChatScreenState extends State<ChatScreen>
   // Persisted style-pairing session — kept across follow-ups so anchor/route/
   // persona survive "use my wardrobe" / "show visual inspiration" / etc.
   Map<String, dynamic>? _lastStyleContext;
+  Map<String, dynamic>? _activeBoardMutationState;
   // A rendered board/cards response resolves any pending occasion
   // clarification; later board actions must not be sent as clarification answers.
   bool _clarificationResolvedByCards = false;
@@ -1247,6 +1248,7 @@ class _ChatScreenState extends State<ChatScreen>
       _chatHistory.clear();
       _runningMemory = '';
       _lastStyleContext = null;
+      _activeBoardMutationState = null;
       _isTyping = false;
     });
     _scrollToBottom();
@@ -1277,6 +1279,7 @@ class _ChatScreenState extends State<ChatScreen>
       }
       _runningMemory = '';
       _lastStyleContext = null;
+      _activeBoardMutationState = null;
       _isTyping = false;
     });
     _scrollToBottom();
@@ -1298,17 +1301,36 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Map<String, dynamic>? _currentMutationState() {
+    if (_activeBoardMutationState != null) return _activeBoardMutationState;
     for (var index = _messages.length - 1; index >= 0; index--) {
       final message = _messages[index];
       if (message.isMe || message.cards.isEmpty) continue;
-      final board = message.cards.whereType<Map>().firstOrNull;
-      if (board == null) continue;
-      return styleMutationStateFromBoard(
-        Map<String, dynamic>.from(board),
+      final boards = message.cards
+          .whereType<Map>()
+          .map((board) => Map<String, dynamic>.from(board))
+          .toList(growable: false);
+      return styleMutationStateFromBoards(
+        boards,
         responseState: message.styleState,
       );
     }
     return null;
+  }
+
+  bool _hasAmbiguousBoardSelection() {
+    for (var index = _messages.length - 1; index >= 0; index--) {
+      final message = _messages[index];
+      if (!message.isMe && message.cards.isNotEmpty) {
+        return message.cards.whereType<Map>().length > 1;
+      }
+    }
+    return false;
+  }
+
+  void _handleBoardStateChanged(Map<String, dynamic> board) {
+    final state = styleMutationStateFromBoard(board);
+    if (state == null || !mounted) return;
+    setState(() => _activeBoardMutationState = state);
   }
 
   void _handleChipTap(String chip) {
@@ -1372,13 +1394,44 @@ class _ChatScreenState extends State<ChatScreen>
     final sourceCards = sourceIndex == null
         ? const <dynamic>[]
         : _messages[sourceIndex].cards;
-    final sourceStyleState = sourceIndex == null || sourceCards.isEmpty
+    final activeState = _currentMutationState();
+    final sourceStyleState = sourceIndex == null
         ? null
-        : styleMutationStateFromBoard(
-            Map<String, dynamic>.from(sourceCards.first as Map),
+        : activeState != null &&
+              sourceCards.whereType<Map>().any(
+                (board) =>
+                    (board['board_id'] ?? board['boardId'] ?? '').toString() ==
+                    activeState['board_id']?.toString(),
+              )
+        ? activeState
+        : styleMutationStateFromBoards(
+            sourceCards
+                .whereType<Map>()
+                .map((board) => Map<String, dynamic>.from(board))
+                .toList(growable: false),
             responseState: _messages[sourceIndex].styleState,
           );
     final exclude = _styleBoardSignatures(sourceCards);
+    final ambiguousSource = sourceCards.whereType<Map>().length > 1;
+    if (ambiguousSource && sourceStyleState == null) {
+      setState(() {
+        _messages.add(_ChatMessage(text: chip, isMe: true));
+        _messages.add(
+          _ChatMessage(
+            text: 'Which look should I update? Select the board you want to change first.',
+            isMe: false,
+          ),
+        );
+        _chatHistory
+          ..add({'role': 'user', 'content': chip})
+          ..add({
+            'role': 'assistant',
+            'content': 'Which look should I update? Select the board you want to change first.',
+          });
+      });
+      _scrollToBottom();
+      return;
+    }
 
     setState(() {
       _messages.add(_ChatMessage(text: chip, isMe: true));
@@ -1601,6 +1654,24 @@ class _ChatScreenState extends State<ChatScreen>
       final bool styleViaText =
           isStyleModule && (isClosestAction || isBoardMutation);
       final mutationState = isBoardMutation ? _currentMutationState() : null;
+      if (isBoardMutation &&
+          mutationState == null &&
+          _hasAmbiguousBoardSelection()) {
+        setState(() {
+          _isTyping = false;
+          _messages.add(
+            _ChatMessage(
+              text: 'Which look should I update? Select the board you want to change first.',
+              isMe: false,
+            ),
+          );
+          _chatHistory.add({
+            'role': 'assistant',
+            'content': 'Which look should I update? Select the board you want to change first.',
+          });
+        });
+        return;
+      }
       if (isStyleModule) {
         debugPrint(
           'AHVI_STYLE_REQUEST request_id=$requestId '
@@ -1813,6 +1884,7 @@ class _ChatScreenState extends State<ChatScreen>
               _messages.last.text.trim() == aiText.trim();
       _chatHistory.add({'role': 'assistant', 'content': closestEmptyFallback});
       setState(() {
+        _activeBoardMutationState = null;
         if (duplicateWeakMatch && !isClosestAction) return;
         _messages.add(
           _ChatMessage(
@@ -2347,6 +2419,7 @@ class _ChatScreenState extends State<ChatScreen>
       moduleCardBuilder: (card) => _moduleCardView(card, t),
       moduleCardsBuilder: (cards) => _genericModuleCardsView(cards, t),
       onSendMessage: (msg) => _sendMessage(msg),
+      onBoardStateChanged: _handleBoardStateChanged,
     );
   }
 
@@ -2560,6 +2633,7 @@ class _ChatScreenState extends State<ChatScreen>
     return VisualDirectionCarousel(
       directions: boards,
       onSendMessage: (message) => _sendMessage(message),
+      onBoardStateChanged: _handleBoardStateChanged,
       curationReveal: false,
     );
   }

@@ -81,4 +81,71 @@ void main() {
       'White sneakers',
     );
   });
+
+  test('multi-board state requires an explicit active board', () {
+    final boards = [
+      {
+        'board_id': 'dinner',
+        'revision': 1,
+        'source_policy': 'wardrobe',
+        'board_items': [
+          {'item_id': 'dinner-shoe', 'role': 'footwear'},
+        ],
+      },
+      {
+        'board_id': 'office',
+        'revision': 1,
+        'source_policy': 'wardrobe',
+        'board_items': [
+          {'item_id': 'office-shoe', 'role': 'footwear'},
+        ],
+      },
+    ];
+
+    expect(styleMutationStateFromBoards(boards), isNull);
+    final office = styleMutationStateFromBoards(
+      boards,
+      activeBoardId: 'office',
+    );
+    expect(office, isNotNull);
+    expect(office!['board_id'], 'office');
+    expect((office['board_items'] as List).single['item_id'], 'office-shoe');
+
+    final officeWithoutDinnerState = styleMutationStateFromBoards(
+      boards,
+      activeBoardId: 'office',
+      responseState: {
+        'board_id': 'dinner',
+        'revision': 1,
+        'locked_item_ids': ['dinner-shoe'],
+      },
+    );
+    expect(officeWithoutDinnerState!['locked_item_ids'], isNull);
+  });
+
+  test('explicit board revision remains the source for the next mutation', () {
+    final state = styleMutationStateFromBoards(
+      [
+        {
+          'board_id': 'dinner',
+          'revision': 1,
+          'board_items': [
+            {'item_id': 'dinner-shoe', 'role': 'footwear'},
+          ],
+        },
+        {
+          'board_id': 'office',
+          'revision': 2,
+          'board_items': [
+            {'item_id': 'office-shoe-v2', 'role': 'footwear'},
+          ],
+        },
+      ],
+      activeBoardId: 'office',
+    );
+
+    expect(state!['board_id'], 'office');
+    expect(state['revision'], 2);
+    expect((state['board_items'] as List).single['item_id'], 'office-shoe-v2');
+  });
 }

@@ -90,3 +90,38 @@ Map<String, dynamic>? styleMutationStateFromBoard(
   }
   return result;
 }
+
+/// Resolves a board collection only when ownership is explicit or unambiguous.
+/// A multi-board response without an active board must not silently select the
+/// first historical board.
+Map<String, dynamic>? styleMutationStateFromBoards(
+  List<Map<String, dynamic>> boards, {
+  Map<String, dynamic>? responseState,
+  String? activeBoardId,
+}) {
+  if (boards.isEmpty) return null;
+  final requestedId = activeBoardId?.trim() ?? '';
+  final board = requestedId.isNotEmpty
+      ? boards.where((candidate) {
+          return (candidate['board_id'] ?? candidate['boardId'] ?? '')
+                  .toString()
+                  .trim() ==
+              requestedId;
+        }).firstOrNull
+      : boards.length == 1
+      ? boards.single
+      : null;
+  if (board == null) return null;
+  final responseBoardId = (responseState?['board_id'] ??
+          responseState?['boardId'] ??
+          '')
+      .toString()
+      .trim();
+  final boardId = (board['board_id'] ?? board['boardId'] ?? '')
+      .toString()
+      .trim();
+  final stateForBoard = responseBoardId.isEmpty || responseBoardId == boardId
+      ? responseState
+      : null;
+  return styleMutationStateFromBoard(board, responseState: stateForBoard);
+}

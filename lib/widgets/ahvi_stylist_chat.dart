@@ -1294,12 +1294,29 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
     }
     for (var index = _messages.length - 1; index >= 0; index--) {
       final message = _messages[index];
-      final state =
-          message.visualDirectionPayload?.mutationState ??
-          message.boardPayload?.mutationState;
-      if (state != null) return state;
+      final visualPayload = message.visualDirectionPayload;
+      if (visualPayload?.hasDirections == true) {
+        return visualPayload!.mutationState;
+      }
+      final boardPayload = message.boardPayload;
+      if (boardPayload?.hasBoards == true) {
+        return boardPayload!.mutationState;
+      }
     }
     return null;
+  }
+
+  bool _hasAmbiguousBoardSelection() {
+    for (var index = _messages.length - 1; index >= 0; index--) {
+      final message = _messages[index];
+      if (message.visualDirectionPayload?.hasDirections == true) {
+        return message.visualDirectionPayload!.directions.length > 1;
+      }
+      if (message.boardPayload?.hasBoards == true) {
+        return message.boardPayload!.boardCount > 1;
+      }
+    }
+    return false;
   }
 
   void _handleBoardStateChanged(Map<String, dynamic> board) {
@@ -1490,7 +1507,24 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
               isPlanPackRequest
           ? '/api/module-chat'
           : '/api/text';
-      final mutationState = isBoardMutation ? _currentMutationState() : null;
+      final mutationState =
+          (isBoardMutation || isBoardActionPhrase)
+          ? _currentMutationState()
+          : null;
+      if ((isBoardMutation || isBoardActionPhrase) &&
+          mutationState == null &&
+          _hasAmbiguousBoardSelection()) {
+        setState(() {
+          _typing = false;
+          _messages.add(
+            _SheetMessage(
+              text: 'Which look should I update? Tap the board you want to change first.',
+              isUser: false,
+            ),
+          );
+        });
+        return;
+      }
       debugPrint(
         'AHVI_STYLE_REQUEST request_id=$requestId '
         'module=${_styleTraceValue(styleModuleContext)} '
@@ -1680,13 +1714,12 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           responseMeta['fallback_reason'] ??
           responseMeta['fallback_used'] ??
           'none';
-      final liveFirstBoard = boardSelection.boards.isEmpty
-          ? const <String, dynamic>{}
-          : boardSelection.boards.first;
-      final liveFirstItems =
-          liveFirstBoard['board_items'] ?? liveFirstBoard['items'];
-      final liveFirstItem = liveFirstItems is List && liveFirstItems.isNotEmpty
-          ? liveFirstItems.first
+      final liveBoard = boardSelection.boards.length == 1
+          ? boardSelection.boards.single
+          : const <String, dynamic>{};
+      final liveItems = liveBoard['board_items'] ?? liveBoard['items'];
+      final liveItem = liveItems is List && liveItems.length == 1
+          ? liveItems.single
           : const <String, dynamic>{};
       final gapPayload = _WardrobeGapPayload.fromResponse(response);
       final liveRejectionPredicates = <String>[];
@@ -1708,8 +1741,8 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
         'response_mode=${_styleTraceValue(responsePolicy.route)} '
         'requires_clarification=${requiresClarification == true} '
         'has_board=${boardSelection.boards.isNotEmpty || visualPayload.hasDirections || visualBoard != null} '
-        'board_id=${_styleTraceValue(responseStyleState['board_id'] ?? liveFirstBoard['board_id'])} '
-        'board_revision=${_styleTraceValue(responseStyleState['revision'] ?? liveFirstBoard['revision'])} '
+        'board_id=${_styleTraceValue(responseStyleState['board_id'] ?? liveBoard['board_id'])} '
+        'board_revision=${_styleTraceValue(responseStyleState['revision'] ?? liveBoard['revision'])} '
         'resolved_date=${_styleTraceValue(resolvedContext['date_context'])} '
         'resolved_activity=${_styleTraceValue(resolvedContext['activity'])} '
         'activity_type=${_styleTraceValue(resolvedContext['activity_type'])} '
@@ -1729,8 +1762,8 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
         'accepted_count=${boardSelection.boards.length} '
         'rejected_count=${canonicalBoardCollection.rawCount - boardSelection.boards.length} '
         'rejection_predicates=${liveRejectionPredicates.isEmpty ? 'none' : liveRejectionPredicates.join(',')} '
-        'first_board_keys=${liveFirstBoard.isEmpty ? 'none' : liveFirstBoard.keys.join(',')} '
-        'first_item_keys=${liveFirstItem is Map && liveFirstItem.isNotEmpty ? liveFirstItem.keys.join(',') : 'none'} '
+        'selected_board_keys=${liveBoard.isEmpty ? 'none' : liveBoard.keys.join(',')} '
+        'selected_item_keys=${liveItem is Map && liveItem.isNotEmpty ? liveItem.keys.join(',') : 'none'} '
         'final_renderer=${boardSelection.boards.isNotEmpty ? 'canonical_editorial_style' : selection.renderer} '
         'final_rendered_count=${boardSelection.boards.length}',
       );
@@ -2527,6 +2560,9 @@ class _StyleBoardPayload {
   bool get hasBoards =>
       renderedBoards.isNotEmpty || cards.isNotEmpty || outfits.isNotEmpty;
 
+  int get boardCount =>
+      renderedBoards.length + cards.length + outfits.length;
+
   Map<String, dynamic> toJson() => {
     'cards': cards,
     'renderedBoards': renderedBoards,
@@ -2548,8 +2584,8 @@ class _StyleBoardPayload {
 
   Map<String, dynamic>? get mutationState => renderedBoards.isEmpty
       ? null
-      : styleMutationStateFromBoard(
-          renderedBoards.first,
+      : styleMutationStateFromBoards(
+          renderedBoards,
           responseState: styleState,
         );
 
@@ -2639,8 +2675,8 @@ class _VisualDirectionPayload {
 
   Map<String, dynamic>? get mutationState => directions.isEmpty
       ? null
-      : styleMutationStateFromBoard(
-          directions.first,
+      : styleMutationStateFromBoards(
+          directions,
           responseState: styleState,
         );
 

@@ -122,6 +122,30 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   if (isStyleThisResponse && !hasStyleThisAnchor) {
     visualDirections = <Map<String, dynamic>>[];
   }
+  if (isStyleThisResponse && hasStyleThisAnchor && visualDirections.isNotEmpty) {
+    final anchorId = _itemId(_anchorItemMap(response, data));
+    if (anchorId.isNotEmpty) {
+      visualDirections = visualDirections
+          .map(
+            (direction) => <String, dynamic>{
+              ...direction,
+              'anchor_item_id':
+                  direction['anchor_item_id'] ??
+                  direction['anchorItemId'] ??
+                  direction['selected_item_id'] ??
+                  direction['selectedItemId'] ??
+                  anchorId,
+              'selected_item_id':
+                  direction['selected_item_id'] ??
+                  direction['selectedItemId'] ??
+                  direction['anchor_item_id'] ??
+                  direction['anchorItemId'] ??
+                  anchorId,
+            },
+          )
+          .toList(growable: false);
+    }
+  }
   final hasVisualDirections = visualDirections.isNotEmpty;
   final hasVisualBoard =
       responsePolicy.canRenderBoards(response) &&
@@ -373,9 +397,36 @@ Map<String, dynamic> _anchorItemMap(
       response['anchorItem'] ??
       data['anchor_item'] ??
       data['anchorItem'];
-  if (anchor is! Map) return const {};
-  final m = Map<String, dynamic>.from(anchor);
-  final id = (m['item_id'] ?? m['id'] ?? m[r'$id'] ?? '').toString().trim();
+  final m = anchor is Map
+      ? Map<String, dynamic>.from(anchor)
+      : <String, dynamic>{};
+  final anchorMapId =
+      (m['item_id'] ?? m['id'] ?? m[r'$id'] ?? '').toString().trim();
+  final selectedId =
+      (response['selected_item_id'] ??
+              response['selectedItemId'] ??
+              data['selected_item_id'] ??
+              data['selectedItemId'] ??
+              '')
+          .toString()
+          .trim();
+  final declaredAnchorId =
+      (response['anchor_item_id'] ?? data['anchor_item_id'] ?? '')
+          .toString()
+          .trim();
+  final identityMismatch =
+      (selectedId.isNotEmpty &&
+          ((anchorMapId.isNotEmpty && selectedId != anchorMapId) ||
+              (declaredAnchorId.isNotEmpty && selectedId != declaredAnchorId))) ||
+      (declaredAnchorId.isNotEmpty &&
+          anchorMapId.isNotEmpty &&
+          declaredAnchorId != anchorMapId);
+  if (identityMismatch) {
+    return const {};
+  }
+  final id = selectedId.isNotEmpty
+      ? selectedId
+      : (declaredAnchorId.isNotEmpty ? declaredAnchorId : anchorMapId);
   if (id.isEmpty) return const {};
   final safeImage =
       m['safe_image_url'] ??
@@ -511,6 +562,7 @@ Map<String, dynamic> _styleDirectionToCanonical(
   };
   if (anchorId.isNotEmpty) {
     out['anchor_item_id'] = anchorId;
+    out['selected_item_id'] = anchorId;
     out['originating_item_id'] = direction['originating_item_id'] ?? anchorId;
   }
   return out;

@@ -1268,8 +1268,14 @@ class BackendService {
           'scenario': scenario,
           'anchor_item_id': itemId,
           'anchor_garment_id': itemId,
+          'selected_item_id': itemId,
           if (occasion != null && occasion.isNotEmpty) 'occasion': occasion,
-          if (anchorItem != null) 'anchor_item': anchorItem,
+          if (anchorItem != null)
+            'anchor_item': {
+              ...anchorItem,
+              'anchor_item_id': itemId,
+              'selected_item_id': itemId,
+            },
         },
         await _locationContext(userId),
         includeContext: true,

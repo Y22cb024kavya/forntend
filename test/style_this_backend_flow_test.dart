@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:myapp/feature/chat/models/ahvi_response_block.dart';
+import 'package:myapp/feature/chat/services/ahvi_block_response_parser.dart';
 import 'package:myapp/app_localizations.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/visual_direction_carousel.dart';
@@ -31,16 +33,19 @@ Map<String, dynamic> _boardItem(
   String id,
   String role, {
   bool locked = false,
+  String source = 'wardrobe',
 }) => {
   'item_id': id,
   'name': id,
   'category': role,
   'role': role,
   'slot': role,
-  'source': 'wardrobe',
+  'source': source,
   'locked': locked,
   'image_url': 'https://example.test/$id.png',
   'masked_url': 'https://example.test/$id-cutout.png',
+  if (source == 'style_asset')
+    'transparent_url': 'https://example.test/$id-transparent.png',
   'position': {
     'x': role == 'top' ? .08 : .46,
     'y': role == 'footwear' ? .62 : .12,
@@ -51,31 +56,83 @@ Map<String, dynamic> _boardItem(
   },
 };
 
-Map<String, dynamic> _successfulResponse() => {
-  'success': true,
-  'route': 'style_this',
-  'board_policy': 'allow',
-  'anchor_item': {'item_id': _anchor.id},
-  'visual_directions': [
-    {
-      'board_id': 'style-board-stable-1',
-      'revision': 1,
-      'source_policy': 'wardrobe',
-      'scenario': 'style_this',
-      'direction_name': 'Sharp Layers',
-      'title': 'Sharp Layers',
-      'occasion': 'work',
-      'board_items': [
-        _boardItem(_anchor.id, 'top'),
-        _boardItem('wardrobe-bottom-7', 'bottom', locked: true),
-        _boardItem('wardrobe-shoe-9', 'footwear', locked: true),
-      ],
-    },
-  ],
-};
+Map<String, dynamic> _successfulResponse({
+  WardrobeItem? selectedItem,
+  String anchorRole = 'top',
+  bool includeStyleAssetDress = false,
+}) {
+  final anchor = selectedItem ?? _anchor;
+  final isDefault = anchor.id == _anchor.id && anchorRole == 'top';
+  final boardItems = isDefault
+      ? [
+          _boardItem(anchor.id, anchorRole),
+          _boardItem('wardrobe-bottom-7', 'bottom', locked: true),
+          _boardItem('wardrobe-shoe-9', 'footwear', locked: true),
+        ]
+      : [
+          _boardItem(anchor.id, anchorRole),
+          for (final role in const ['top', 'bottom', 'footwear', 'accessory'])
+            if (role != anchorRole)
+              _boardItem(
+                includeStyleAssetDress && role == 'top'
+                    ? 'dress-support'
+                    : 'support-$role',
+                role,
+                locked: true,
+                source: includeStyleAssetDress && role == 'top'
+                    ? 'style_asset'
+                    : 'wardrobe',
+              ),
+        ];
+  return {
+    'success': true,
+    'route': 'style_this',
+    'board_policy': 'allow',
+    'anchor_item': {'item_id': anchor.id},
+    'selected_item_id': anchor.id,
+    'visual_directions': [
+      {
+        'board_id': 'style-board-${anchor.id}',
+        'revision': 1,
+        'source_policy': 'wardrobe',
+        'scenario': 'style_this',
+        'direction_name': 'Sharp Layers',
+        'title': 'Sharp Layers',
+        'occasion': 'work',
+        'board_items': boardItems,
+      },
+    ],
+  };
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('mismatched selected item and anchor cannot render a Style This board', () {
+    final response = _successfulResponse()
+      ..['selected_item_id'] = 'belt-anchor'
+      ..['anchor_item'] = {'item_id': 'dress-support'};
+
+    final parsed = parseAhviResponse(response);
+
+    expect(
+      parsed.blocks.where((block) => block.type == AhviBlockType.visualDirections),
+      isEmpty,
+    );
+  });
+
+  test('selected_item_id bridges Style This responses without anchor_item', () {
+    final response = _successfulResponse()..remove('anchor_item');
+
+    final parsed = parseAhviResponse(response);
+    final block = parsed.blocks.singleWhere(
+      (candidate) => candidate.type == AhviBlockType.visualDirections,
+    );
+    final direction = (block.data['directions'] as List).first as Map;
+
+    expect(direction['selected_item_id'], _anchor.id);
+    expect(direction['anchor_item_id'], _anchor.id);
+  });
 
   testWidgets(
     'Style This sends canonical backend request and renders canonical board',
@@ -111,6 +168,8 @@ void main() {
         expect(itemId, _anchor.id);
         expect(scenario, 'style_this');
         expect(anchorItem?['item_id'], _anchor.id);
+        expect(anchorItem?['anchor_item_id'], _anchor.id);
+        expect(anchorItem?['selected_item_id'], _anchor.id);
         expect(anchorItem?['interaction_mode'], 'style_this');
         expect(anchorItem?['source_policy'], 'wardrobe');
         expect(anchorItem?['locked'], isTrue);
@@ -142,6 +201,81 @@ void main() {
       }
     },
   );
+
+  for (final fixture in const [
+    (id: 'shirt-anchor', name: 'White Shirt', role: 'top'),
+    (id: 'jeans-anchor', name: 'Blue Jeans', role: 'bottom'),
+    (id: 'shoe-anchor', name: 'Black Loafers', role: 'footwear'),
+    (id: 'belt-anchor', name: 'Brown Belt', role: 'accessory'),
+  ]) {
+    testWidgets(
+      'Style This preserves ${fixture.name} identity through canonical board',
+      (tester) async {
+        final selected = WardrobeItem(
+          id: fixture.id,
+          name: fixture.name,
+          cat: fixture.role,
+          occasions: const ['work'],
+          raw: {
+            r'$id': fixture.id,
+            'board_status': 'ready',
+          },
+        );
+        Map<String, dynamic>? requestAnchor;
+        await _pumpItemDetail(
+          tester,
+          selectedItem: selected,
+          styleCall:
+              ({
+                required requestedItemId,
+                required requestedScenario,
+                requestAnchorItem,
+                occasion,
+              }) async {
+                requestAnchor = requestAnchorItem;
+                return _successfulResponse(
+                  selectedItem: selected,
+                  anchorRole: fixture.role,
+                  includeStyleAssetDress: fixture.role == 'accessory',
+                );
+              },
+        );
+
+        await tester.tap(find.text('Style'));
+        await tester.pumpAndSettle();
+
+        expect(requestAnchor?['item_id'], selected.id);
+        expect(requestAnchor?['anchor_item_id'], selected.id);
+        expect(requestAnchor?['selected_item_id'], selected.id);
+        expect(find.byType(VisualDirectionCarousel), findsOneWidget);
+        expect(find.byType(AhviOutfitBoardCard), findsOneWidget);
+        expect(find.byType(EditorialBoardCanvas), findsOneWidget);
+        expect(find.text('STYLE THIS'), findsOneWidget);
+        expect(find.text('Save'), findsOneWidget);
+        expect(find.text('Share'), findsOneWidget);
+
+        final card = tester.widget<AhviOutfitBoardCard>(
+          find.byType(AhviOutfitBoardCard),
+        );
+        final items = (card.direction['board_items'] as List)
+            .whereType<Map>()
+            .map(Map<String, dynamic>.from)
+            .toList(growable: false);
+        expect(card.direction['interaction_mode'], 'style_this');
+        expect(card.direction['anchor_item_id'], selected.id);
+        expect(card.direction['selected_item_id'], selected.id);
+        expect(items.first['item_id'], selected.id);
+        expect(items.first['image_url'], 'https://example.test/${selected.id}.png');
+        if (fixture.role == 'accessory') {
+          expect(items.any((item) => item['source'] == 'style_asset'), isTrue);
+          expect(items.any((item) => item['item_id'] == 'dress-support'), isTrue);
+          expect(items.first['item_id'], isNot('dress-support'));
+          expect(items.first['image_url'], isNot(contains('dress-support')));
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets('Try-On is Coming Soon and does not call Build Outfit', (
     tester,
@@ -314,8 +448,10 @@ typedef _TestStyleCall =
 
 Future<void> _pumpItemDetail(
   WidgetTester tester, {
+  WardrobeItem? selectedItem,
   required _TestStyleCall styleCall,
 }) async {
+  final item = selectedItem ?? _anchor;
   await tester.binding.setSurfaceSize(const Size(430, 900));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
@@ -331,8 +467,8 @@ Future<void> _pumpItemDetail(
           builder: (context) => TextButton(
             onPressed: () => showItemDetailModal(
               context,
-              item: _anchor,
-              allItems: [_anchor],
+              item: item,
+              allItems: [item],
               styleWardrobeItemCall:
                   ({
                     required itemId,

@@ -507,6 +507,8 @@ class _ItemDetailModal extends StatelessWidget {
           'expected_transparent': resolvedImage.expectedTransparent,
           'source': 'wardrobe',
           'source_policy': 'wardrobe',
+          'anchor_item_id': item.id,
+          'selected_item_id': item.id,
           'scenario': mode,
           'interaction_mode': mode,
           'locked': true,
@@ -636,6 +638,18 @@ class _ItemDetailModal extends StatelessWidget {
           return <String, dynamic>{
             ...direction,
             if (interactionMode.isEmpty) 'interaction_mode': 'style_this',
+            'anchor_item_id':
+                direction['anchor_item_id'] ??
+                direction['anchorItemId'] ??
+                direction['selected_item_id'] ??
+                direction['selectedItemId'] ??
+                anchorItemId,
+            'selected_item_id':
+                direction['selected_item_id'] ??
+                direction['selectedItemId'] ??
+                direction['anchor_item_id'] ??
+                direction['anchorItemId'] ??
+                anchorItemId,
             'originating_item_id': anchorItemId,
           };
         })

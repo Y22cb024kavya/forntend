@@ -190,7 +190,34 @@ class AhviResponsePolicy {
         data['anchor_item'] ??
         data['anchorItem'];
     final anchorMap = _asMap(anchor);
+    final selectedItemId = _firstText([
+      response['selected_item_id'],
+      response['selectedItemId'],
+      data['selected_item_id'],
+      data['selectedItemId'],
+    ]);
+    final declaredAnchorId = _firstText([
+      response['anchor_item_id'],
+      data['anchor_item_id'],
+    ]);
+    final anchorMapId = _firstText([
+      anchorMap['item_id'],
+      anchorMap['id'],
+      anchorMap[r'$id'],
+    ]);
+    if (selectedItemId.isNotEmpty &&
+        anchorMapId.isNotEmpty &&
+        selectedItemId != anchorMapId) {
+      return false;
+    }
+    if (selectedItemId.isNotEmpty &&
+        declaredAnchorId.isNotEmpty &&
+        selectedItemId != declaredAnchorId) {
+      return false;
+    }
     final anchorId = _firstText([
+      selectedItemId,
+      declaredAnchorId,
       anchorMap['item_id'],
       anchorMap['id'],
       anchorMap[r'$id'],

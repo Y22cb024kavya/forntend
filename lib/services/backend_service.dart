@@ -504,6 +504,7 @@ class BackendService {
     String? resolvedPrompt,
     String? currentLookId,
     Map<String, dynamic>? styleContext,
+    Map<String, dynamic>? styleState,
     // Persisted style-pairing session (anchor/route/persona). Echoed into
     // current_memory so backend follow-ups keep the anchor.
     Map<String, dynamic>? lastStyleContext,
@@ -556,6 +557,8 @@ class BackendService {
           'current_look_id': currentLookId.trim(),
         if (styleContext != null && styleContext.isNotEmpty)
           'style_context': styleContext,
+        if (styleState != null && styleState.isNotEmpty)
+          'style_state': styleState,
       };
 
       final requestPayload = enrichBackendPayloadWithLocation(
@@ -683,6 +686,7 @@ class BackendService {
             resolvedPrompt: resolvedPrompt,
             currentLookId: currentLookId,
             styleContext: styleContext,
+            styleState: styleState,
             lastStyleContext: lastStyleContext,
             excludeStyleSignatures: excludeStyleSignatures,
             requestedBoardCount: requestedBoardCount,
@@ -776,6 +780,7 @@ class BackendService {
     required List<Map<String, String>> chatHistory,
     Map<String, dynamic> contextData = const {},
     Map<String, dynamic>? userProfile,
+    Map<String, dynamic>? styleState,
   }) async {
     return sendModuleChat(
       domain: module,
@@ -783,6 +788,7 @@ class BackendService {
       context: contextData,
       chatHistory: chatHistory,
       userProfile: userProfile,
+      styleState: styleState,
     );
   }
 
@@ -792,6 +798,7 @@ class BackendService {
     Map<String, dynamic>? context,
     List<Map<String, String>> chatHistory = const [],
     Map<String, dynamic>? userProfile,
+    Map<String, dynamic>? styleState,
     // P0: client-generated correlation id echoed by backend for late-response
     // rejection. Optional so old callers keep working.
     String? requestId,
@@ -870,6 +877,8 @@ class BackendService {
           'history': historyForRequest,
           'context': moduleContext,
           'context_data': moduleContext,
+          if (styleState != null && styleState.isNotEmpty)
+            'style_state': styleState,
           if (requestId != null && requestId.isNotEmpty)
             'request_id': requestId,
           'user_profile': {

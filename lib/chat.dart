@@ -24,6 +24,7 @@ import 'package:myapp/services/ahvi_speech_service.dart';
 import 'package:myapp/services/backend_service.dart';
 import 'package:myapp/services/chat_response_renderer_registry.dart';
 import 'package:myapp/services/ahvi_response_policy.dart';
+import 'package:myapp/services/style_mutation_contract.dart';
 import 'package:myapp/style_board/saved_board_persistence.dart';
 import 'package:myapp/skincare.dart' as skincare_page;
 import 'package:myapp/fitness_page.dart' as fitness_page;
@@ -285,6 +286,7 @@ class _ChatMessage {
   final AhviVisualBoard? visualBoard;
   final AhviModuleCard? moduleCard;
   final List<Map<String, dynamic>> moduleCards;
+  final Map<String, dynamic>? styleState;
   _ChatMessage({
     required this.text,
     required this.isMe,
@@ -298,6 +300,7 @@ class _ChatMessage {
     this.visualBoard,
     this.moduleCard,
     this.moduleCards = const [],
+    this.styleState,
   });
 
   // ── Persistence (for chat history) ────────────────────────────────────
@@ -323,6 +326,7 @@ class _ChatMessage {
     'visualBoard': visualBoard?.toJson(),
     'moduleCard': moduleCard?.toJson(),
     'moduleCards': moduleCards,
+    'styleState': styleState,
     'localKey': _localLookupKey,
   };
 
@@ -357,6 +361,9 @@ class _ChatMessage {
           ?.map((e) => Map<String, dynamic>.from(e as Map))
           .toList() ??
           const [],
+      styleState: j['styleState'] is Map
+          ? Map<String, dynamic>.from(j['styleState'] as Map)
+          : null,
       local: localKey != null ? _local[localKey] : null,
     );
   }
@@ -1290,6 +1297,20 @@ class _ChatScreenState extends State<ChatScreen>
     return null;
   }
 
+  Map<String, dynamic>? _currentMutationState() {
+    for (var index = _messages.length - 1; index >= 0; index--) {
+      final message = _messages[index];
+      if (message.isMe || message.cards.isEmpty) continue;
+      final board = message.cards.whereType<Map>().firstOrNull;
+      if (board == null) continue;
+      return styleMutationStateFromBoard(
+        Map<String, dynamic>.from(board),
+        responseState: message.styleState,
+      );
+    }
+    return null;
+  }
+
   void _handleChipTap(String chip) {
     const styleModules = {'style', 'wardrobe', 'daily_wear'};
     if (styleModules.contains(_module) && _isStyleMoreChip(chip)) {
@@ -1516,8 +1537,13 @@ class _ChatScreenState extends State<ChatScreen>
       );
       final isClosestAction = isStyleModule && _isShowClosestChip(queryText);
       final isBoardActionPhrase = _isBoardActionPhrase(queryText);
+      final isBoardMutation =
+          isStyleModule && isStyleBoardMutationPrompt(queryText);
       final pendingClarificationPrompt =
-          isStyleModule && !isClosestAction && !isBoardActionPhrase
+          isStyleModule &&
+              !isClosestAction &&
+              !isBoardActionPhrase &&
+              !isBoardMutation
           ? _pendingStyleClarificationPrompt()
           : '';
       final isClarificationAnswer =
@@ -1564,13 +1590,18 @@ class _ChatScreenState extends State<ChatScreen>
             'interpreted_occasion': interpretedOccasion,
         },
       };
+      final bool styleViaText =
+          isStyleModule && (isClosestAction || isBoardMutation);
+      final mutationState = isBoardMutation ? _currentMutationState() : null;
       if (isStyleModule) {
         debugPrint(
           'AHVI_STYLE_REQUEST request_id=$requestId '
           'module=${_styleTraceValue(_module)} '
-          'endpoint=${isClosestAction ? '/api/text' : '/api/module-chat'} '
+          'endpoint=${styleViaText ? '/api/text' : '/api/module-chat'} '
           'conversation_id=${_styleTraceValue(_currentSessionId)} '
           'message_count=${_chatHistory.length} '
+          'board_id=${_styleTraceValue(mutationState?['board_id'])} '
+          'board_revision=${_styleTraceValue(mutationState?['revision'])} '
           'frontend_sha=${_styleTraceValue(Env.gitSha)} '
           'build=${_styleTraceValue(Env.appBuildVersion)}',
         );
@@ -1587,8 +1618,6 @@ class _ChatScreenState extends State<ChatScreen>
       // prompt produced nothing. Closest-option remains on /api/text because
       // it depends on its rich style params; ordinary clarification answers
       // stay on the canonical path so conversation context is retained.
-      final bool styleViaText =
-          isStyleModule && isClosestAction;
       final Map<String, dynamic> response;
       if (styleViaText) {
         response = await backend.sendChatQuery(
@@ -1619,6 +1648,7 @@ class _ChatScreenState extends State<ChatScreen>
           showClosestOption: isClosestAction,
           allowClosestOption: isClosestAction,
           closest: isClosestAction,
+          styleState: mutationState,
           requestId: requestId,
         );
       } else if (isStyleModule) {
@@ -1669,6 +1699,9 @@ class _ChatScreenState extends State<ChatScreen>
           ? const <dynamic>[]
           : _extractStyleBoardsFromResponse(response);
       if (isStyleModule) {
+        final responseStyleState = response['style_state'] is Map
+            ? Map<String, dynamic>.from(response['style_state'] as Map)
+            : const <String, dynamic>{};
         final traceData = response['data'] is Map
             ? Map<String, dynamic>.from(response['data'] as Map)
             : const <String, dynamic>{};
@@ -1696,6 +1729,8 @@ class _ChatScreenState extends State<ChatScreen>
           'response_mode=${_styleTraceValue(responsePolicy.route)} '
           'requires_clarification=${response['requires_clarification'] ?? traceMeta['requires_clarification'] ?? false} '
           'has_board=${responseBoards.isNotEmpty || visualBoard != null} '
+          'board_id=${_styleTraceValue(responseStyleState['board_id'])} '
+          'board_revision=${_styleTraceValue(responseStyleState['revision'])} '
           'resolved_date=${_styleTraceValue(resolvedContext['date_context'])} '
           'resolved_activity=${_styleTraceValue(resolvedContext['activity'])} '
           'activity_type=${_styleTraceValue(resolvedContext['activity_type'])} '
@@ -1783,6 +1818,9 @@ class _ChatScreenState extends State<ChatScreen>
             visualBoard: visualBoard,
             moduleCard: sharedModuleCard,
             moduleCards: moduleCards,
+            styleState: response['style_state'] is Map
+                ? Map<String, dynamic>.from(response['style_state'] as Map)
+                : null,
             local: moduleCard,
           ),
         );

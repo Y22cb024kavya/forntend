@@ -14,6 +14,16 @@ void main() {
       contains(r'conversation_id=${_styleTraceValue(_currentSessionId)}'),
     );
     expect(source, contains(r'message_count=${_chatHistory.length}'));
+    expect(
+      source,
+      contains(r"board_id=${_styleTraceValue(mutationState?['board_id'])}"),
+    );
+    expect(
+      source,
+      contains(
+        r"board_revision=${_styleTraceValue(mutationState?['revision'])}",
+      ),
+    );
     expect(source, contains(r'frontend_sha=${_styleTraceValue(Env.gitSha)}'));
     expect(source, contains(r'build=${_styleTraceValue(Env.appBuildVersion)}'));
   });
@@ -24,6 +34,8 @@ void main() {
       'response_mode=',
       'requires_clarification=',
       'has_board=',
+      'board_id=',
+      'board_revision=',
       'resolved_date=',
       'resolved_activity=',
       'activity_type=',
@@ -43,6 +55,16 @@ void main() {
     expect(
       chatSource,
       contains(r'conversation_id=${_styleTraceValue(_currentSessionId)}'),
+    );
+    expect(
+      chatSource,
+      contains(r"board_id=${_styleTraceValue(mutationState?['board_id'])}"),
+    );
+    expect(
+      chatSource,
+      contains(
+        r"board_revision=${_styleTraceValue(mutationState?['revision'])}",
+      ),
     );
     expect(
       chatSource,

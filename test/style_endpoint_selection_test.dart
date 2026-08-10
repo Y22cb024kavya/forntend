@@ -24,7 +24,9 @@ void main() {
       'final Map<String, dynamic> response;',
     );
 
-    expect(selector, contains('isStyleModule && isClosestAction'));
+    expect(selector, contains('isStyleModule && (isClosestAction || isBoardMutation)'));
+    expect(selector, contains('isBoardMutation'));
+    expect(chat, contains('styleState: mutationState'));
     expect(selector, isNot(contains('isClarificationAnswer')));
   });
 
@@ -50,8 +52,17 @@ void main() {
     expect(selector, contains('isClosestStyleAction'));
     expect(selector, contains('isWardrobeAction'));
     expect(selector, contains('isBoardActionPhrase'));
+    expect(selector, contains('isBoardMutation'));
+    expect(stylist, contains('isStyleBoardMutationPrompt(trimmed)'));
     expect(selector, contains('_isSpecializedStyleRequest(trimmed)'));
     expect(selector, isNot(contains('isClarificationAnswer')));
+  });
+
+  test('natural-language mutations carry the active board to /api/text', () {
+    expect(stylist, contains('final isBoardMutation ='));
+    expect(stylist, contains('styleState: mutationState'));
+    expect(stylist, contains('isBoardMutation ||'));
+    expect(stylist, contains('useCanonicalStyleModuleChat'));
   });
 
   test('canonical Style requests send history and structured context', () {
@@ -79,6 +90,7 @@ void main() {
     );
 
     expect(textClient, contains("Uri.parse('\$baseUrl/api/text')"));
+    expect(textClient, contains("'style_state': styleState"));
     expect(moduleClient, contains("Uri.parse('\$baseUrl/api/module-chat')"));
     expect(moduleClient, contains("'history': historyForRequest"));
     expect(moduleClient, contains("'context': moduleContext"));

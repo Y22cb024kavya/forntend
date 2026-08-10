@@ -23,6 +23,7 @@ import 'package:myapp/services/backend_service.dart';
 import 'package:myapp/services/ahvi_style_diagnostics.dart';
 import 'package:myapp/services/chat_response_renderer_registry.dart';
 import 'package:myapp/services/ahvi_response_policy.dart';
+import 'package:myapp/services/style_mutation_contract.dart';
 import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
 import 'package:myapp/widgets/ahvi_module_card.dart';
@@ -1285,6 +1286,15 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
     _calendarNavigationPending = false;
   }
 
+  Map<String, dynamic>? _currentMutationState() {
+    for (var index = _messages.length - 1; index >= 0; index--) {
+      final payload = _messages[index].boardPayload;
+      final state = payload?.mutationState;
+      if (state != null) return state;
+    }
+    return null;
+  }
+
   Future<void> _sendMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty && _pendingAttachment == null) return;
@@ -1367,6 +1377,9 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           styleModules.contains(widget.moduleContext) &&
           _isShowClosestStyleAction(trimmed);
       final isBoardActionPhrase = _isBoardActionPhrase(trimmed);
+      final isBoardMutation =
+          styleModules.contains(widget.moduleContext) &&
+          isStyleBoardMutationPrompt(trimmed);
       final pendingClarificationPrompt =
           styleModules.contains(widget.moduleContext) &&
               !isClosestStyleAction &&
@@ -1428,6 +1441,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           isClosestStyleAction ||
           isWardrobeAction ||
           isBoardActionPhrase ||
+          isBoardMutation ||
           _isSpecializedStyleRequest(trimmed);
       final useCanonicalStyleModuleChat =
           isCanonicalStyleConversation && !keepLegacyStyleText;
@@ -1463,12 +1477,15 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
               isPlanPackRequest
           ? '/api/module-chat'
           : '/api/text';
+      final mutationState = isBoardMutation ? _currentMutationState() : null;
       debugPrint(
         'AHVI_STYLE_REQUEST request_id=$requestId '
         'module=${_styleTraceValue(styleModuleContext)} '
         'endpoint=$selectedEndpoint '
         'conversation_id=${_styleTraceValue(_currentSessionId)} '
         'message_count=${_chatHistory.length} '
+        'board_id=${_styleTraceValue(mutationState?['board_id'])} '
+        'board_revision=${_styleTraceValue(mutationState?['revision'])} '
         'frontend_sha=${_styleTraceValue(Env.gitSha)} '
         'build=${_styleTraceValue(Env.appBuildVersion)}',
       );
@@ -1521,6 +1538,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
               wardrobeFirst: isWardrobeAction,
               assetPolicy: isWardrobeAction ? 'wardrobe' : null,
               allowGenericAssetsInMainBoard: !isWardrobeAction,
+              styleState: mutationState,
             )
           : await backend.sendModuleChat(
               domain: canonicalModuleChatDomain(
@@ -1625,6 +1643,9 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       final responseData = response['data'] is Map
           ? Map<String, dynamic>.from(response['data'] as Map)
           : const <String, dynamic>{};
+      final responseStyleState = response['style_state'] is Map
+          ? Map<String, dynamic>.from(response['style_state'] as Map)
+          : const <String, dynamic>{};
       final responseMeta = response['meta'] is Map
           ? Map<String, dynamic>.from(response['meta'] as Map)
           : const <String, dynamic>{};
@@ -1674,6 +1695,8 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
         'response_mode=${_styleTraceValue(responsePolicy.route)} '
         'requires_clarification=${requiresClarification == true} '
         'has_board=${boardSelection.boards.isNotEmpty || visualPayload.hasDirections || visualBoard != null} '
+        'board_id=${_styleTraceValue(responseStyleState['board_id'] ?? liveFirstBoard['board_id'])} '
+        'board_revision=${_styleTraceValue(responseStyleState['revision'] ?? liveFirstBoard['revision'])} '
         'resolved_date=${_styleTraceValue(resolvedContext['date_context'])} '
         'resolved_activity=${_styleTraceValue(resolvedContext['activity'])} '
         'activity_type=${_styleTraceValue(resolvedContext['activity_type'])} '
@@ -2473,12 +2496,14 @@ class _StyleBoardPayload {
   final List<Map<String, dynamic>> renderedBoards;
   final List<Map<String, dynamic>> outfits;
   final String? boardId;
+  final Map<String, dynamic>? styleState;
 
   const _StyleBoardPayload({
     required this.cards,
     required this.renderedBoards,
     required this.outfits,
     this.boardId,
+    this.styleState,
   });
 
   bool get hasBoards =>
@@ -2489,6 +2514,7 @@ class _StyleBoardPayload {
     'renderedBoards': renderedBoards,
     'outfits': outfits,
     'boardId': boardId,
+    'styleState': styleState,
   };
 
   factory _StyleBoardPayload.fromJson(Map<String, dynamic> j) =>
@@ -2497,7 +2523,17 @@ class _StyleBoardPayload {
         renderedBoards: _mapList(j['renderedBoards']),
         outfits: _mapList(j['outfits']),
         boardId: j['boardId'] as String?,
+        styleState: j['styleState'] is Map
+            ? Map<String, dynamic>.from(j['styleState'] as Map)
+            : null,
       );
+
+  Map<String, dynamic>? get mutationState => renderedBoards.isEmpty
+      ? null
+      : styleMutationStateFromBoard(
+          renderedBoards.first,
+          responseState: styleState,
+        );
 
   static _StyleBoardPayload fromResponse(Map<String, dynamic> response) {
     if (_isModuleResponse(response)) {
@@ -2523,6 +2559,9 @@ class _StyleBoardPayload {
       renderedBoards: selectedBoards,
       outfits: const [],
       boardId: response['board_ids']?.toString(),
+      styleState: response['style_state'] is Map
+          ? Map<String, dynamic>.from(response['style_state'] as Map)
+          : null,
     );
   }
 }

@@ -1565,10 +1565,11 @@ class _ChatScreenState extends State<ChatScreen>
       // Style/wardrobe board requests route through /api/module-chat (the
       // validated board path). The homepage is now the summary surface and
       // /api/text only returns style_advice TEXT (no board), so a typed style
-      // prompt produced nothing. Closest-option / clarification follow-ups
-      // still use /api/text because they depend on its rich style params.
+      // prompt produced nothing. Closest-option remains on /api/text because
+      // it depends on its rich style params; ordinary clarification answers
+      // stay on the canonical path so conversation context is retained.
       final bool styleViaText =
-          isStyleModule && (isClosestAction || isClarificationAnswer);
+          isStyleModule && isClosestAction;
       final Map<String, dynamic> response;
       if (styleViaText) {
         response = await backend.sendChatQuery(

@@ -26,6 +26,7 @@ Quick task `260801-002` completed the confirmed OfflineSyncBootstrap lifecycle r
 |260802-001|Strengthen editorial board presentation|2026-08-02|d8e4b81|Verified|`.planning/quick/260802-001-strengthen-editorial-board-presentation/`|
 |20260810-loop3-style-entrypoint-consistency|Style entry-point consistency|2026-08-10|5c6d72b|Complete and verified|`.planning/quick/20260810-loop3-style-entrypoint-consistency/`|
 |20260810-loop4-style-multi-turn-context|Style multi-turn context continuity|2026-08-10|27d75a6|Complete and verified|`.planning/quick/20260810-loop4-style-multi-turn-context/`|
+|20260810-loop5-legacy-style-route-leakage|Eliminate unintended legacy Style route leakage|2026-08-10|Pending|Complete and verified|`.planning/quick/20260810-loop5-legacy-style-route-leakage/`|
 
 ## Quick Task 260801-003 Verification
 

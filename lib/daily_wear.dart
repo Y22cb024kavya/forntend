@@ -4,7 +4,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:myapp/app_localizations.dart';
-import 'package:myapp/feature/chat/services/ahvi_processing_message.dart';
 import 'package:myapp/feature/chat/widgets/ahvi_processing_bubble.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
@@ -1583,7 +1582,7 @@ class _DailyWearScreenState extends State<DailyWearScreen>
       if (!mounted) return;
       final message = _ChatMessage(
         id: DateTime.now().microsecondsSinceEpoch,
-        text: 'AHVI style request failed: $err',
+        text: "I'm having a moment - try again.",
         isUser: false,
         createdAt: DateTime.now(),
       );
@@ -3120,11 +3119,7 @@ class _DailyWearScreenState extends State<DailyWearScreen>
         }
 
         if (_isTyping && i == _messages.length) {
-          return _TypingBubble(
-            message: ahviProcessingMessage(
-              AhviProcessingContext.styleRecommendation,
-            ),
-          );
+          return const _TypingBubble();
         }
         final m = _messages[i];
         return _ChatBubble(

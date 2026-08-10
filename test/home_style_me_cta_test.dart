@@ -203,6 +203,95 @@ void main() {
     expect(tester.takeException(), isNull);
     await _drainHomeBackground(tester);
   });
+
+  testWidgets('Home prompt and Style Me share colour-advice capability', (
+    tester,
+  ) async {
+    final homeBackend = _HomeStyleBackend();
+    await _pumpHome(tester, homeBackend, _RecordingNavigatorObserver());
+
+    final homePrompt = find.byType(TextField).first;
+    await tester.enterText(homePrompt, 'What colours suit me?');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await _waitForText(tester, 'Colour advice is available.');
+    expect(find.byType(VisualDirectionCarousel), findsNothing);
+    final homeCall = homeBackend.moduleCalls.single;
+
+    await _popChatWithBack(tester);
+    final styleBackend = _HomeStyleBackend();
+    await _pumpHome(tester, styleBackend, _RecordingNavigatorObserver());
+    await tester.tap(find.byKey(const ValueKey('home-style-me-cta')));
+    await _waitForChat(tester);
+    await _submit(tester, 'What colours suit me?');
+    await _waitForText(tester, 'Colour advice is available.');
+    expect(find.byType(VisualDirectionCarousel), findsNothing);
+    final styleCall = styleBackend.moduleCalls.single;
+
+    expect(styleCall.domain, homeCall.domain);
+    expect(styleCall.message, homeCall.message);
+    expect(styleCall.chatHistory, homeCall.chatHistory);
+    expect(styleCall.context, homeCall.context);
+    expect(styleCall.domain, 'style');
+    expect(styleCall.message, 'What colours suit me?');
+  });
+
+  testWidgets('Style Me retains colour context across advice turns', (
+    tester,
+  ) async {
+    final backend = _HomeStyleBackend();
+    await _pumpHome(tester, backend, _RecordingNavigatorObserver());
+    await tester.tap(find.byKey(const ValueKey('home-style-me-cta')));
+    await _waitForChat(tester);
+
+    for (final prompt in [
+      'What colours suit me?',
+      'I have a warm undertone',
+      'What about blue?',
+      'Show me an outfit using those colours',
+    ]) {
+      await _submit(tester, prompt);
+      await _waitForText(tester, _HomeStyleBackend.replyFor(prompt));
+    }
+
+    expect(find.byType(VisualDirectionCarousel), findsWidgets);
+    expect(backend.moduleCalls, hasLength(4));
+    expect(
+      backend.moduleCalls.map((call) => call.domain),
+      everyElement('style'),
+    );
+    expect(
+      _historyContains(
+        backend.moduleCalls[1].chatHistory,
+        role: 'user',
+        content: 'What colours suit me?',
+      ),
+      isTrue,
+    );
+    expect(
+      _historyContains(
+        backend.moduleCalls[1].chatHistory,
+        role: 'assistant',
+        content: _HomeStyleBackend.replyFor('What colours suit me?'),
+      ),
+      isTrue,
+    );
+    expect(
+      _historyContains(
+        backend.moduleCalls[2].chatHistory,
+        role: 'user',
+        content: 'I have a warm undertone',
+      ),
+      isTrue,
+    );
+    expect(
+      _historyContains(
+        backend.moduleCalls[3].chatHistory,
+        role: 'user',
+        content: 'What about blue?',
+      ),
+      isTrue,
+    );
+  });
 }
 
 Finder get _chatFinder => find.byWidgetPredicate(
@@ -292,6 +381,14 @@ Future<void> _submit(WidgetTester tester, String prompt) async {
   await tester.pump(const Duration(milliseconds: 300));
 }
 
+bool _historyContains(
+  List<Map<String, String>> history, {
+  required String role,
+  required String content,
+}) => history.any(
+  (entry) => entry['role'] == role && entry['content'] == content,
+);
+
 class _RecordingNavigatorObserver extends NavigatorObserver {
   int materialPushes = 0;
   int popCount = 0;
@@ -324,10 +421,25 @@ class _TestLocalizationsDelegate
   bool shouldReload(_TestLocalizationsDelegate old) => false;
 }
 
+class _ModuleCall {
+  final String domain;
+  final String message;
+  final List<Map<String, String>> chatHistory;
+  final Map<String, dynamic> context;
+
+  const _ModuleCall({
+    required this.domain,
+    required this.message,
+    required this.chatHistory,
+    required this.context,
+  });
+}
+
 class _HomeStyleBackend extends BackendService {
   final Duration responseDelay;
   final List<String> requests = [];
   final List<String> moduleRequests = [];
+  final List<_ModuleCall> moduleCalls = [];
   final List<String> requestIds = [];
   final List<String> actions = [];
   bool useWardrobe = false;
@@ -337,6 +449,23 @@ class _HomeStyleBackend extends BackendService {
 
   _HomeStyleBackend({this.responseDelay = Duration.zero})
     : super(appwriteService: AppwriteService());
+
+  static String replyFor(String prompt) {
+    final lower = prompt.toLowerCase();
+    if (lower.contains('warm undertone')) {
+      return 'Warm undertones often suit earthy and golden colours.';
+    }
+    if (lower.contains('what about blue')) {
+      return 'Blue can work well; compare warmer navy and softer blue shades.';
+    }
+    if (lower.contains('show me an outfit')) {
+      return 'Here is an outfit using those colours.';
+    }
+    if (lower.contains('colours suit me')) {
+      return 'Colour advice is available.';
+    }
+    return 'Hi. I am here to help with your style questions.';
+  }
 
   @override
   Future<Map<String, dynamic>> getTodayWorkout({bool forceRefresh = false}) {
@@ -353,12 +482,33 @@ class _HomeStyleBackend extends BackendService {
     String? requestId,
   }) async {
     moduleRequests.add(message);
+    moduleCalls.add(
+      _ModuleCall(
+        domain: domain,
+        message: message,
+        chatHistory: List<Map<String, String>>.from(chatHistory),
+        context: Map<String, dynamic>.from(context ?? const {}),
+      ),
+    );
     requestIds.add(requestId ?? '');
     if (responseDelay > Duration.zero) {
       await Future<void>.delayed(responseDelay);
     }
     final lower = message.toLowerCase();
     if (lower.contains('visual inspiration')) return _visualResponse();
+    if (lower.contains('colours suit me') ||
+        lower.contains('warm undertone') ||
+        lower.contains('what about blue') ||
+        lower.contains('show me an outfit')) {
+      final isVisual = lower.contains('show me an outfit');
+      return {
+        'type': 'stylist_advice',
+        'route': isVisual ? 'visual_inspiration' : 'style_advice',
+        'response_mode': isVisual ? 'visual_inspiration' : 'text_only',
+        'message_text': _HomeStyleBackend.replyFor(message),
+        if (isVisual) ..._visualResponse(),
+      };
+    }
     if (lower.contains('coffee date')) {
       return {
         'type': 'stylist_advice',

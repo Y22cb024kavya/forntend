@@ -50,6 +50,8 @@ candidate. No Style Asset or catalogue ownership was inferred.
 - Navy blazer outerwear mutation: passed with footwear/top/bottom preserved.
 - Follow-up mutation: passed from revision `2` to `3`; lineage parent revision
   is the newly mutated board, not the historical revision.
+- Structured follow-up referent contract: `them` resolves to `footwear` in the
+  validated semantic decision fixture; no device/model-runtime proof exists.
 - No exact white sneaker available: returns `NO_VALID_REPLACEMENT`; it does not
   silently choose black sneakers or white loafers.
 
@@ -86,7 +88,7 @@ messages, tokens, or complete response bodies.
 
 ## TESTS
 
-- Frontend mutation/endpoint/trace/current-turn focused set: `13 passed`.
+- Frontend mutation/endpoint/trace/current-turn focused set: `19 passed`.
 - Frontend non-regression board, save/share, renderer, and policy set:
   `91 passed`.
 - Backend mutation/trace set: `25 passed`.
@@ -114,3 +116,8 @@ NO
 ## PRODUCTION TRAFFIC CHANGED
 
 NO
+
+## COMMITS
+
+- Frontend implementation: `88418ac`
+- Backend implementation: `db55312`

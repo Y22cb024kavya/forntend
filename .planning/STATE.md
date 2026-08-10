@@ -31,7 +31,7 @@ pending because `adb` is unavailable.
 |20260810-loop5-legacy-style-route-leakage|Eliminate unintended legacy Style route leakage|2026-08-10|0257123|Complete and verified|`.planning/quick/20260810-loop5-legacy-style-route-leakage/`|
 |20260810-loop6-style-response-mode-stale-state|Style response-mode and stale-state enforcement|2026-08-10|6ef4229|Complete and verified|`.planning/quick/20260810-loop6-style-response-mode-stale-state/`|
 |20260810-loop7-style-runtime-provenance|Style runtime provenance diagnostics|2026-08-10|e9e969a|Complete and verified|`.planning/quick/20260810-loop7-style-runtime-provenance/`|
-|20260810-loop8-style-board-mutation-integrity|Style board mutation integrity|2026-08-10|Pending|Complete and verified; device pending|`.planning/quick/20260810-loop8-style-board-mutation-integrity/`|
+|20260810-loop8-style-board-mutation-integrity|Style board mutation integrity|2026-08-10|88418ac|Complete and verified; device pending|`.planning/quick/20260810-loop8-style-board-mutation-integrity/`|
 
 ## Quick Task 260801-003 Verification
 

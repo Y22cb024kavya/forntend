@@ -1532,15 +1532,6 @@ class _DailyWearScreenState extends State<DailyWearScreen>
 
   Future<void> _callBackendStylist(String userText) async {
     final currentOutfit = _currentOutfit;
-    final wornNote = _wornOutfitId != null
-        ? 'Wearing today: "${_outfitById(_wornOutfitId!)['name']}"'
-        : 'No outfit chosen yet.';
-    final prompt =
-        '$userText\n\n'
-        'Current outfit: ${currentOutfit['name']} - ${currentOutfit['desc']}. '
-        'Tags: ${((currentOutfit['tags'] as List?)?.cast<String>() ?? <String>[]).join(', ')}. '
-        'Occasions: ${((currentOutfit['occ'] as List?)?.cast<String>() ?? <String>[]).join(', ')}. '
-        'Weather: ${_weatherContext.isEmpty ? 'unknown' : _weatherContext}. $wornNote';
 
     final history = _messages
         .take(_messages.length - 1)
@@ -1550,12 +1541,20 @@ class _DailyWearScreenState extends State<DailyWearScreen>
         .toList();
 
     try {
-      final response = await BackendService().sendChatQuery(
-        prompt,
-        '',
-        List<Map<String, String>>.from(history),
-        '',
-        moduleContext: 'style',
+      final response = await BackendService().sendModuleChat(
+        domain: 'style',
+        message: userText,
+        chatHistory: List<Map<String, String>>.from(history),
+        context: {
+          'surface': 'daily_wear',
+          // Keep the local session identity with the canonical request while
+          // the backend continues to use bounded history for continuity.
+          'conversation_id': _currentSessionId,
+          'session_id': _currentSessionId,
+          'current_outfit': Map<String, dynamic>.from(currentOutfit),
+          'weather_context': _weatherContext,
+          'worn_outfit_id': _wornOutfitId,
+        },
       );
       if (!mounted) return;
       final rawMessage = response?['message'];

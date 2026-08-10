@@ -2,7 +2,9 @@
 
 ## Current Position
 
-Quick task `260801-002` completed the confirmed OfflineSyncBootstrap lifecycle race fix on `release/beta-20260731` from baseline `f29c116`.
+Quick task `20260810-loop7-style-runtime-provenance` completed bounded Style
+runtime provenance diagnostics. The colour refusal remains unreproduced and
+the changes are ready for separate frontend/backend commits.
 
 ## Constraints
 
@@ -28,6 +30,7 @@ Quick task `260801-002` completed the confirmed OfflineSyncBootstrap lifecycle r
 |20260810-loop4-style-multi-turn-context|Style multi-turn context continuity|2026-08-10|27d75a6|Complete and verified|`.planning/quick/20260810-loop4-style-multi-turn-context/`|
 |20260810-loop5-legacy-style-route-leakage|Eliminate unintended legacy Style route leakage|2026-08-10|0257123|Complete and verified|`.planning/quick/20260810-loop5-legacy-style-route-leakage/`|
 |20260810-loop6-style-response-mode-stale-state|Style response-mode and stale-state enforcement|2026-08-10|6ef4229|Complete and verified|`.planning/quick/20260810-loop6-style-response-mode-stale-state/`|
+|20260810-loop7-style-runtime-provenance|Style runtime provenance diagnostics|2026-08-10|Pending|Complete and verified|`.planning/quick/20260810-loop7-style-runtime-provenance/`|
 
 ## Quick Task 260801-003 Verification
 

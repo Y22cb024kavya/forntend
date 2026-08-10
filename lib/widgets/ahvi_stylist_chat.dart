@@ -13,6 +13,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:mime/mime.dart';
 import 'package:myapp/app_localizations.dart';
 import 'package:myapp/calendar.dart' as calendar_page;
+import 'package:myapp/config/env.dart';
 import 'package:myapp/feature/chat/services/ahvi_processing_message.dart';
 import 'package:myapp/feature/chat/services/ahvi_block_response_parser.dart';
 import 'package:myapp/feature/chat/models/ahvi_response_block.dart';
@@ -127,6 +128,13 @@ bool _isPlanPackRequest(String value) {
       text.contains('vacation') ||
       text.contains('destination');
   return asksForPacking && (tripContext || text.contains('plan'));
+}
+
+String _styleTraceValue(Object? value) {
+  final text = value?.toString().trim() ?? '';
+  if (text.isEmpty) return 'none';
+  final safe = text.replaceAll(RegExp(r'[^a-zA-Z0-9_.:-]+'), '_');
+  return safe.substring(0, math.min(safe.length, 48));
 }
 
 String? _occasionFromStylePrompt(String value) {
@@ -1449,9 +1457,20 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
         if (_lastStyleContext != null) 'last_style_context': _lastStyleContext,
         if (styleContext.isNotEmpty) 'style_context': styleContext,
       };
+      final selectedEndpoint =
+          calendarReq != null ||
+              useCanonicalStyleModuleChat ||
+              isPlanPackRequest
+          ? '/api/module-chat'
+          : '/api/text';
       debugPrint(
-        'AHVI_STYLE_ENDPOINT endpoint=${calendarReq != null || useCanonicalStyleModuleChat || isPlanPackRequest ? '/api/module-chat' : '/api/text'} '
-        'request_id=$requestId',
+        'AHVI_STYLE_REQUEST request_id=$requestId '
+        'module=${_styleTraceValue(styleModuleContext)} '
+        'endpoint=$selectedEndpoint '
+        'conversation_id=${_styleTraceValue(_currentSessionId)} '
+        'message_count=${_chatHistory.length} '
+        'frontend_sha=${_styleTraceValue(Env.gitSha)} '
+        'build=${_styleTraceValue(Env.appBuildVersion)}',
       );
       final response = calendarReq != null
           ? await backend.sendModuleChat(
@@ -1513,13 +1532,6 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
               context: moduleContextData,
               requestId: requestId,
             );
-      debugPrint(
-        'AHVI_MODULE_RESPONSE module=${widget.moduleContext} '
-        'respModule=${response['module'] ?? response['domain'] ?? ''} '
-        'intent=${response['intent'] ?? ''} '
-        'response_mode=${response['response_mode'] ?? response['meta']?['response_mode'] ?? ''} '
-        'request_id=${response['request_id'] ?? requestId}',
-      );
       if (!mounted ||
           !_acceptsResponse(responseToken, diagnosticCorrelationId)) {
         return;
@@ -1610,6 +1622,30 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       final actionChips = _actionChipsFromResponse(response);
       final diagnosticSelection = AhviStyleDiagnostics.selectAlias(response);
       final canonicalBoardCollection = responsePolicy.boardCollection(response);
+      final responseData = response['data'] is Map
+          ? Map<String, dynamic>.from(response['data'] as Map)
+          : const <String, dynamic>{};
+      final responseMeta = response['meta'] is Map
+          ? Map<String, dynamic>.from(response['meta'] as Map)
+          : const <String, dynamic>{};
+      final resolvedContext = response['resolved_context'] is Map
+          ? Map<String, dynamic>.from(response['resolved_context'] as Map)
+          : responseData['resolved_context'] is Map
+          ? Map<String, dynamic>.from(responseData['resolved_context'] as Map)
+          : const <String, dynamic>{};
+      final referent = resolvedContext['referent'];
+      final requiresClarification =
+          response['requires_clarification'] ??
+          responseMeta['requires_clarification'] ??
+          (response['diagnostics'] is Map
+              ? (response['diagnostics'] as Map)['requires_clarification']
+              : false);
+      final fallback =
+          response['fallback_reason'] ??
+          responseData['fallback_reason'] ??
+          responseMeta['fallback_reason'] ??
+          responseMeta['fallback_used'] ??
+          'none';
       final liveFirstBoard = boardSelection.boards.isEmpty
           ? const <String, dynamic>{}
           : boardSelection.boards.first;
@@ -1629,6 +1665,24 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       if (responsePolicy.isSafetySensitive) {
         liveRejectionPredicates.add('safety_sensitive');
       }
+      debugPrint(
+        'AHVI_STYLE_RESPONSE request_id=${response['request_id'] ?? requestId} '
+        'module=${_styleTraceValue(widget.moduleContext)} '
+        'endpoint=$selectedEndpoint '
+        'intent=${_styleTraceValue(responsePolicy.intent)} '
+        'action=${_styleTraceValue(responsePolicy.action)} '
+        'response_mode=${_styleTraceValue(responsePolicy.route)} '
+        'requires_clarification=${requiresClarification == true} '
+        'has_board=${boardSelection.boards.isNotEmpty || visualPayload.hasDirections || visualBoard != null} '
+        'resolved_date=${_styleTraceValue(resolvedContext['date_context'])} '
+        'resolved_activity=${_styleTraceValue(resolvedContext['activity'])} '
+        'activity_type=${_styleTraceValue(resolvedContext['activity_type'])} '
+        'occasion=${_styleTraceValue(resolvedContext['occasion'])} '
+        'referent_type=${_styleTraceValue(referent is Map ? referent['type'] : null)} '
+        'fallback=${_styleTraceValue(fallback)} '
+        'frontend_sha=${_styleTraceValue(Env.gitSha)} '
+        'build=${_styleTraceValue(Env.appBuildVersion)}',
+      );
       debugPrint(
         'AHVI_LIVE_STYLE_HANDLER '
         'source_file=ahvi_stylist_chat.dart function=_sendMessage '

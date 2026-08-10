@@ -34,7 +34,15 @@ import 'package:myapp/widgets/ahvi_module_card.dart';
 import 'package:myapp/widgets/ahvi_visual_board.dart';
 import 'package:myapp/widgets/chat_cards/visual_packing_checklist_card.dart';
 import 'package:myapp/util/safe_text.dart';
+import 'package:myapp/config/env.dart';
 import 'package:provider/provider.dart';
+
+String _styleTraceValue(Object? value) {
+  final text = value?.toString().trim() ?? '';
+  if (text.isEmpty) return 'none';
+  final safe = text.replaceAll(RegExp(r'[^a-zA-Z0-9_.:-]+'), '_');
+  return safe.length > 48 ? safe.substring(0, 48) : safe;
+}
 
 class _SavedBoardCategory {
   final String key;
@@ -1556,6 +1564,17 @@ class _ChatScreenState extends State<ChatScreen>
             'interpreted_occasion': interpretedOccasion,
         },
       };
+      if (isStyleModule) {
+        debugPrint(
+          'AHVI_STYLE_REQUEST request_id=$requestId '
+          'module=${_styleTraceValue(_module)} '
+          'endpoint=${isClosestAction ? '/api/text' : '/api/module-chat'} '
+          'conversation_id=${_styleTraceValue(_currentSessionId)} '
+          'message_count=${_chatHistory.length} '
+          'frontend_sha=${_styleTraceValue(Env.gitSha)} '
+          'build=${_styleTraceValue(Env.appBuildVersion)}',
+        );
+      }
       // Only style / wardrobe / daily_wear flows go through /api/text which
       // builds boards. Every other module (home, utilities, fitness, diet,
       // skincare, medi, bills, calendar) goes through the shared module chat
@@ -1649,6 +1668,44 @@ class _ChatScreenState extends State<ChatScreen>
       final responseBoards = isModuleResponse
           ? const <dynamic>[]
           : _extractStyleBoardsFromResponse(response);
+      if (isStyleModule) {
+        final traceData = response['data'] is Map
+            ? Map<String, dynamic>.from(response['data'] as Map)
+            : const <String, dynamic>{};
+        final traceMeta = response['meta'] is Map
+            ? Map<String, dynamic>.from(response['meta'] as Map)
+            : const <String, dynamic>{};
+        final resolvedContext = response['resolved_context'] is Map
+            ? Map<String, dynamic>.from(response['resolved_context'] as Map)
+            : traceData['resolved_context'] is Map
+            ? Map<String, dynamic>.from(traceData['resolved_context'] as Map)
+            : const <String, dynamic>{};
+        final referent = resolvedContext['referent'];
+        final fallback =
+            response['fallback_reason'] ??
+            traceData['fallback_reason'] ??
+            traceMeta['fallback_reason'] ??
+            traceMeta['fallback_used'] ??
+            'none';
+        debugPrint(
+          'AHVI_STYLE_RESPONSE request_id=${response['request_id'] ?? requestId} '
+          'module=${_styleTraceValue(_module)} '
+          'endpoint=${styleViaText ? '/api/text' : '/api/module-chat'} '
+          'intent=${_styleTraceValue(responsePolicy.intent)} '
+          'action=${_styleTraceValue(responsePolicy.action)} '
+          'response_mode=${_styleTraceValue(responsePolicy.route)} '
+          'requires_clarification=${response['requires_clarification'] ?? traceMeta['requires_clarification'] ?? false} '
+          'has_board=${responseBoards.isNotEmpty || visualBoard != null} '
+          'resolved_date=${_styleTraceValue(resolvedContext['date_context'])} '
+          'resolved_activity=${_styleTraceValue(resolvedContext['activity'])} '
+          'activity_type=${_styleTraceValue(resolvedContext['activity_type'])} '
+          'occasion=${_styleTraceValue(resolvedContext['occasion'])} '
+          'referent_type=${_styleTraceValue(referent is Map ? referent['type'] : null)} '
+          'fallback=${_styleTraceValue(fallback)} '
+          'frontend_sha=${_styleTraceValue(Env.gitSha)} '
+          'build=${_styleTraceValue(Env.appBuildVersion)}',
+        );
+      }
       // Clarification lifecycle: rendered boards resolve a pending
       // clarification; a fresh clarification response re-arms it.
       final clarificationMsg =

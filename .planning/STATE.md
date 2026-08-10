@@ -24,7 +24,7 @@ Quick task `260801-002` completed the confirmed OfflineSyncBootstrap lifecycle r
 |260801-002|OfflineSyncBootstrap lifecycle race|2026-08-01|This commit|Complete and verified|`.planning/quick/260801-002-offline-sync-bootstrap-lifecycle/`|
 |260801-003|Explicit board and tone rendering|2026-08-02|Pending|Complete and verified|`.planning/quick/260801-003-enforce-explicit-board-tone-rendering/`|
 |260802-001|Strengthen editorial board presentation|2026-08-02|d8e4b81|Verified|`.planning/quick/260802-001-strengthen-editorial-board-presentation/`|
-|20260810-loop3-style-entrypoint-consistency|Style entry-point consistency|2026-08-10|Pending|Complete and verified|`.planning/quick/20260810-loop3-style-entrypoint-consistency/`|
+|20260810-loop3-style-entrypoint-consistency|Style entry-point consistency|2026-08-10|5c6d72b|Complete and verified|`.planning/quick/20260810-loop3-style-entrypoint-consistency/`|
 
 ## Quick Task 260801-003 Verification
 

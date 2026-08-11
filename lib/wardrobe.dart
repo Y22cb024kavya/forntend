@@ -22,7 +22,6 @@ import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/widgets/ahvi_header.dart';
 import 'package:myapp/widgets/ahvi_stylist_chat.dart';
 import 'package:myapp/widgets/ahvi_item_detail_modal.dart';
-import 'package:myapp/widgets/ahvi_3step_upload_flow.dart';
 import 'package:myapp/util/wardrobe_image_resolver.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -1129,7 +1128,7 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
         .map((v) => v.trim())
         .where((v) => v.isNotEmpty)
         .toList();
-    final nextPrivateWear = _isPrivateWearText(
+    final nextPrivateWear = isPrivateWearText(
       '$nextName $selectedCat ${nextOccasions.join(' ')}',
     );
     if (nextPrivateWear) {
@@ -1919,6 +1918,9 @@ class _DetectedItem {
   final String? regenProvider;
   final String? inputType;
   bool selected;
+  // Set post-construction via the inline notes field (_ItemEditCtrls), not
+  // a constructor argument — no detection response carries a starting note.
+  String notes = '';
 
   _DetectedItem({
     required this.id,
@@ -1946,13 +1948,13 @@ class _DetectedItem {
     this.inputType,
     bool? selected,
   }) : validationStatus = validationStatus.trim().toLowerCase().isEmpty
-      ? 'ok'
-      : validationStatus.trim().toLowerCase(),
-        selectedByDefault =
-            selectedByDefault ?? validationStatus.trim().toLowerCase() == 'ok',
-        selected =
-            selected ??
-                (selectedByDefault ?? validationStatus.trim().toLowerCase() == 'ok');
+           ? 'ok'
+           : validationStatus.trim().toLowerCase(),
+       selectedByDefault =
+           selectedByDefault ?? validationStatus.trim().toLowerCase() == 'ok',
+       selected =
+           selected ??
+           (selectedByDefault ?? validationStatus.trim().toLowerCase() == 'ok');
 
   bool get isApproved => validationStatus == 'ok';
   bool get isNeedsReview => validationStatus == 'needs_review';
@@ -2008,6 +2010,7 @@ class _DetectedItem {
       'color_code': colorCode,
       'pattern': pattern,
       'occasions': occasions,
+      if (notes.trim().isNotEmpty) 'notes': notes.trim(),
       'label_source': labelSource,
       'requires_manual_entry': requiresManualEntry,
       'confidence': confidence,
@@ -2028,7 +2031,7 @@ class _DetectedItem {
     // restores the bytes from the token. This collapses a ~MB upload to a few
     // bytes (the big driver of slow saves on weak networks).
     final hasCacheToken =
-    (raw['image_cache_token']?.toString().trim().isNotEmpty ?? false);
+        (raw['image_cache_token']?.toString().trim().isNotEmpty ?? false);
     if (hasCacheToken) {
       payload.remove('raw_image_base64');
       payload.remove('rawImageBase64');
@@ -2159,10 +2162,15 @@ class _DetectedItem {
         'Skincare': 'SKN',
         'Needs Review': 'REV',
       }[cat] ??
-          'ITM';
+      'ITM';
 }
 
-bool _isPrivateWearText(String value) {
+/// Whether `value` (name/category/subcategory joined) reads as a private-wear
+/// garment. Exposed (non-underscore) and [visibleForTesting] purely so
+/// regression tests can prove the backend payload normalization it drives —
+/// it is not meant as general public API.
+@visibleForTesting
+bool isPrivateWearText(String value) {
   final clean = value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ');
   const aliases = [
     'boxer',
@@ -2185,6 +2193,26 @@ bool _isPrivateWearText(String value) {
     'lounge shorts',
   ];
   return aliases.any((alias) => clean.contains(alias));
+}
+
+/// Turns a raw occasion value (possibly an internal/localisation key like
+/// `upload_occasion_everyday`, or a snake_case backend value) into a
+/// human-readable label. Never renders raw keys in the review UI.
+@visibleForTesting
+String humanizeOccasion(String raw) {
+  var v = raw.trim();
+  if (v.isEmpty) return v;
+  v = v.replaceFirst(RegExp(r'^upload_occasion_', caseSensitive: false), '');
+  v = v.replaceAll(RegExp(r'[_\-]+'), ' ').trim();
+  if (v.isEmpty) return v;
+  return v
+      .split(' ')
+      .map(
+        (w) => w.isEmpty
+            ? w
+            : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}',
+      )
+      .join(' ');
 }
 
 // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ MODAL STEP ENUM ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
@@ -2270,19 +2298,19 @@ _DetectedTaxonomy _normalizeDetectedTaxonomy(Map<String, dynamic> data) {
   ]);
   final weakAccessory =
       category == 'Accessories' &&
-          !_hasAnyText(text, [
-            'watch',
-            'belt',
-            'scarf',
-            'hat',
-            'cap',
-            'sunglass',
-            'accessory',
-          ]);
+      !_hasAnyText(text, [
+        'watch',
+        'belt',
+        'scarf',
+        'hat',
+        'cap',
+        'sunglass',
+        'accessory',
+      ]);
   final needsReview =
       genericUnknown ||
-          category == 'Needs Review' ||
-          (confidence > 0 && confidence < 0.35 && weakAccessory);
+      category == 'Needs Review' ||
+      (confidence > 0 && confidence < 0.35 && weakAccessory);
 
   if (needsReview) {
     return _DetectedTaxonomy(
@@ -2303,7 +2331,50 @@ _DetectedTaxonomy _normalizeDetectedTaxonomy(Map<String, dynamic> data) {
   );
 }
 
-enum _ModalStep { camera, detecting, results, editing }
+enum _ModalStep { camera, detecting, reviewing, saving, success, error }
+
+/// Per-item inline-edit controllers for the unified review page. One set is
+/// created per detected item (keyed by item id) so multiple items can be
+/// edited inline on the same scrollable page without a separate edit step.
+class _ItemEditCtrls {
+  final TextEditingController name;
+  final TextEditingController subCategory;
+  final TextEditingController color;
+  final TextEditingController pattern;
+  final TextEditingController notes;
+
+  _ItemEditCtrls(_DetectedItem item)
+    : name = TextEditingController(text: item.name),
+      subCategory = TextEditingController(text: item.subCategory),
+      color = TextEditingController(text: item.color ?? ''),
+      pattern = TextEditingController(text: item.pattern ?? ''),
+      notes = TextEditingController(text: item.notes);
+
+  // `onPrivacyFieldChanged` rebuilds the review card so private-wear status
+  // (derived from name + subCategory) never goes stale on screen — the other
+  // fields don't feed that classification, so they skip the rebuild.
+  void bindTo(_DetectedItem item, {VoidCallback? onPrivacyFieldChanged}) {
+    name.addListener(() {
+      item.name = name.text;
+      onPrivacyFieldChanged?.call();
+    });
+    subCategory.addListener(() {
+      item.subCategory = subCategory.text;
+      onPrivacyFieldChanged?.call();
+    });
+    color.addListener(() => item.color = color.text);
+    pattern.addListener(() => item.pattern = pattern.text);
+    notes.addListener(() => item.notes = notes.text);
+  }
+
+  void dispose() {
+    name.dispose();
+    subCategory.dispose();
+    color.dispose();
+    pattern.dispose();
+    notes.dispose();
+  }
+}
 
 // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ADD ITEM MODAL ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Camera embedded inside ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
 class _AddItemModal extends StatefulWidget {
@@ -2339,20 +2410,26 @@ class _AddItemModalState extends State<_AddItemModal>
   bool _isSavingWardrobe = false;
   // Timing: when the detection preview was shown, to measure review-gap.
   DateTime? _previewShownAt;
-  bool _saveComplete = false;
-  // Guards the one-shot launch of the 3-step review modal per detection cycle.
-  bool _threeStepShown = false;
+  // Sanitized, user-safe failure message for the error/retry screen. Never a
+  // raw exception/HTTP/JSON/Appwrite string.
+  String? _saveError;
+
+  // Truthful outcome of the last save call, captured from the backend's own
+  // saved_count/rows — the success screen must never infer this from the
+  // (pre-save) selected-items list, or a partial save would read as a full
+  // success.
+  int _savedCount = 0;
+  int _savedRequestedCount = 0;
+  String? _savedSingleName;
+  String? _savedSingleColor;
+  String? _savedSinglePattern;
+
+  // Inline per-item edit controllers for the unified review page, keyed by
+  // detected-item id. Built lazily so edits made before a save failure are
+  // preserved verbatim across Retry.
+  final Map<String, _ItemEditCtrls> _itemCtrls = {};
 
   // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Edit form ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
-  final _nameCtrl = TextEditingController();
-  final _subCategoryCtrl = TextEditingController();
-  final _colorCtrl = TextEditingController();
-  final _patternCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
-  String _selectedCat = '';
-  final List<String> _selectedOccs = [];
-  int? _editingIndex;
-
   static const _cats = [
     'Tops',
     'Bottoms',
@@ -2367,7 +2444,32 @@ class _AddItemModalState extends State<_AddItemModal>
     'Accessories',
     'Needs Review',
   ];
-  static const _occs = ['Casual', 'Work', 'Dinner', 'Sport', 'Travel'];
+  static const _occs = [
+    'Everyday',
+    'Casual',
+    'Work',
+    'Dinner',
+    'Travel',
+    'Sport',
+  ];
+
+  _ItemEditCtrls _ctrlsFor(_DetectedItem item) {
+    final existing = _itemCtrls[item.id];
+    if (existing != null) return existing;
+    final created = _ItemEditCtrls(item)
+      ..bindTo(item, onPrivacyFieldChanged: () {
+        if (mounted) setState(() {});
+      });
+    _itemCtrls[item.id] = created;
+    return created;
+  }
+
+  void _disposeItemCtrls() {
+    for (final c in _itemCtrls.values) {
+      c.dispose();
+    }
+    _itemCtrls.clear();
+  }
 
   AppThemeTokens get t => context.themeTokens;
 
@@ -2385,11 +2487,11 @@ class _AddItemModalState extends State<_AddItemModal>
     );
     _slideAnim = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero)
         .animate(
-      CurvedAnimation(
-        parent: _slideCtrl,
-        curve: const Cubic(0.22, 1, 0.36, 1),
-      ),
-    );
+          CurvedAnimation(
+            parent: _slideCtrl,
+            curve: const Cubic(0.22, 1, 0.36, 1),
+          ),
+        );
     _fadeAnim = Tween<double>(
       begin: 0,
       end: 1,
@@ -2427,7 +2529,7 @@ class _AddItemModalState extends State<_AddItemModal>
 
   Future<void> _toggleFlash() async {
     setState(
-          () => _flash = _flash == FlashMode.off ? FlashMode.torch : FlashMode.off,
+      () => _flash = _flash == FlashMode.off ? FlashMode.torch : FlashMode.off,
     );
     await _camCtrl?.setFlashMode(_flash);
   }
@@ -2525,7 +2627,7 @@ class _AddItemModalState extends State<_AddItemModal>
       if (!mounted) return;
       setState(() {
         _detectError = 'Could not load images. Please try again.';
-        _step = _ModalStep.results;
+        _step = _ModalStep.reviewing;
         _detected = [];
       });
     }
@@ -2541,8 +2643,8 @@ class _AddItemModalState extends State<_AddItemModal>
   }
 
   List<_DetectedItem> _detectedItemsFromAnalyzeResponse(
-      Map<String, dynamic>? data,
-      ) {
+    Map<String, dynamic>? data,
+  ) {
     if (data == null) {
       throw Exception('Backend returned no scan response');
     }
@@ -2565,15 +2667,15 @@ class _AddItemModalState extends State<_AddItemModal>
           : validationStatus.toLowerCase();
       final selectedByDefault =
           _captureBool(data, 'selected_by_default', 'selectedByDefault') ??
-              safeValidationStatus == 'ok';
+          safeValidationStatus == 'ok';
       final occasions = data['occasions'] is List
           ? List<String>.from(
-        (data['occasions'] as List).map((v) => v.toString()),
-      )
+              (data['occasions'] as List).map((v) => v.toString()),
+            )
           : <String>[];
       return _DetectedItem(
         id:
-        data['item_id']?.toString() ??
+            data['item_id']?.toString() ??
             data['id']?.toString() ??
             UniqueKey().toString(),
         name: taxonomy.name,
@@ -2594,16 +2696,16 @@ class _AddItemModalState extends State<_AddItemModal>
         sourceImageIndex: data['source_image_index'] is num
             ? (data['source_image_index'] as num).toInt()
             : (data['batch_index'] is num
-            ? (data['batch_index'] as num).toInt()
-            : null),
+                  ? (data['batch_index'] as num).toInt()
+                  : null),
         raw: data,
         validationStatus: safeValidationStatus,
         rejectionReason:
-        _captureString(
-          data,
-          'rejection_reason',
-          'rejectionReason',
-        ).isNotEmpty
+            _captureString(
+              data,
+              'rejection_reason',
+              'rejectionReason',
+            ).isNotEmpty
             ? _captureString(data, 'rejection_reason', 'rejectionReason')
             : null,
         selectedByDefault: selectedByDefault,
@@ -2613,11 +2715,11 @@ class _AddItemModalState extends State<_AddItemModal>
           'cropQualityScore',
         ),
         detectionMode:
-        _captureString(data, 'detection_mode', 'detectionMode').isNotEmpty
+            _captureString(data, 'detection_mode', 'detectionMode').isNotEmpty
             ? _captureString(data, 'detection_mode', 'detectionMode')
             : null,
         regenProvider:
-        _captureString(data, 'regen_provider', 'regenProvider').isNotEmpty
+            _captureString(data, 'regen_provider', 'regenProvider').isNotEmpty
             ? _captureString(data, 'regen_provider', 'regenProvider')
             : null,
         inputType: _captureString(data, 'input_type', 'inputType').isNotEmpty
@@ -2638,8 +2740,8 @@ class _AddItemModalState extends State<_AddItemModal>
         .length;
     debugPrint(
       'wardrobe_capture.validation total=${items.length} ok=$okCount '
-          'needs_review=$reviewCount rejected=$rejectedCount '
-          'selected_approved=$selectedApprovedCount',
+      'needs_review=$reviewCount rejected=$rejectedCount '
+      'selected_approved=$selectedApprovedCount',
     );
     return items;
   }
@@ -2651,7 +2753,10 @@ class _AddItemModalState extends State<_AddItemModal>
       if (mounted) {
         setState(() {
           _detected = items;
-          _step = _ModalStep.results;
+          _step = _ModalStep.reviewing;
+          _detectError = items.isEmpty
+              ? 'No items detected in this photo.'
+              : null;
         });
         _previewShownAt = DateTime.now();
       }
@@ -2690,8 +2795,8 @@ class _AddItemModalState extends State<_AddItemModal>
           ),
         ];
         _detectError =
-        'AI needs a quick review. Edit labels if needed, then save.';
-        _step = _ModalStep.results;
+            'AI needs a quick review. Edit labels if needed, then save.';
+        _step = _ModalStep.reviewing;
       });
     }
   }
@@ -2713,7 +2818,7 @@ class _AddItemModalState extends State<_AddItemModal>
       if (allItems.isEmpty) {
         final results = await Future.wait(
           bytesList.map(
-                (bytes) => _detectOneImage(bytes).catchError((error) {
+            (bytes) => _detectOneImage(bytes).catchError((error) {
               debugPrint('Single image fallback failed: $error');
               return <_DetectedItem>[];
             }),
@@ -2748,7 +2853,7 @@ class _AddItemModalState extends State<_AddItemModal>
       if (mounted) {
         setState(() {
           _detected = allItems;
-          _step = _ModalStep.results;
+          _step = _ModalStep.reviewing;
           if (allItems.isEmpty) {
             _detectError = 'No items detected in any of the images.';
           }
@@ -2759,7 +2864,7 @@ class _AddItemModalState extends State<_AddItemModal>
       if (mounted) {
         setState(() {
           _detectError = 'Detection failed: ${_shortScanError(e)}';
-          _step = _ModalStep.results;
+          _step = _ModalStep.reviewing;
           _detected = [];
         });
       }
@@ -2773,6 +2878,7 @@ class _AddItemModalState extends State<_AddItemModal>
   }
 
   void _retake() {
+    _disposeItemCtrls();
     setState(() {
       _step = _ModalStep.camera;
       _capturedBytes = null;
@@ -2794,6 +2900,7 @@ class _AddItemModalState extends State<_AddItemModal>
       _retake();
       return;
     }
+    _disposeItemCtrls();
     setState(() {
       _step = _ModalStep.detecting;
       _detectError = null;
@@ -2806,121 +2913,15 @@ class _AddItemModalState extends State<_AddItemModal>
     }
   }
 
-  void _editItem(int index) {
-    final item = _detected[index];
-    _nameCtrl.text = item.name;
-    _subCategoryCtrl.text = item.subCategory;
-    _colorCtrl.text = item.color ?? '';
-    _patternCtrl.text = item.pattern ?? '';
-    _notesCtrl.text = '';
-    _selectedCat = item.category;
-    _selectedOccs
-      ..clear()
-      ..addAll(item.occasions);
-    setState(() {
-      _editingIndex = index;
-      _step = _ModalStep.editing;
-    });
-  }
-
-  void _saveEditedItem() {
-    if (_nameCtrl.text.trim().isEmpty || _selectedCat.isEmpty) {
-      _toast(AppLocalizations.t(context, 'wardrobe_name_category_required'));
-      return;
-    }
-    if (_editingIndex != null) {
-      final privateWear = _isPrivateWearText(
-        '${_nameCtrl.text} $_selectedCat ${_subCategoryCtrl.text}',
-      );
-      setState(() {
-        _detected[_editingIndex!].name = _nameCtrl.text.trim();
-        _detected[_editingIndex!].category = privateWear
-            ? 'Innerwear'
-            : _selectedCat;
-        _detected[_editingIndex!].subCategory = privateWear
-            ? 'Private Wear'
-            : _subCategoryCtrl.text.trim();
-        _detected[_editingIndex!].color = _colorCtrl.text.trim();
-        _detected[_editingIndex!].pattern = _patternCtrl.text.trim();
-        _detected[_editingIndex!].occasions = privateWear
-            ? ['Home', 'Private', 'Lounge']
-            : List<String>.from(_selectedOccs);
-        _editingIndex = null;
-        _step = _ModalStep.results;
-      });
-    }
-  }
-
-  // ============================================================
-  // 3-STEP REVIEW GRAFT
-  // Maps the private _DetectedItem list into UI-only UploadPreviewItem DTOs
-  // (boundary only — no public DetectedItem, no WardrobeItem move), shows the
-  // premium 3-step modal, and on confirm reuses the existing _confirmAndSave().
-  // ============================================================
-  void _launchThreeStepReview() {
-    final previews = _detected
-        .map(
-          (d) => UploadPreviewItem(
-        id: d.id,
-        name: d.name,
-        color: d.color ?? '',
-        style: d.subCategory,
-        category: d.category,
-        occasions: List<String>.from(d.occasions),
-        imageUrl: d.displayUrl,
-        previewBytes: d.previewBytes,
-        validationStatus: d.validationStatus,
-        rejectionReason: d.rejectionReason,
-        selectedByDefault: d.selectedByDefault,
-        cropQualityScore: d.cropQualityScore,
-        detectionMode: d.detectionMode,
-        regenProvider: d.regenProvider,
-        inputType: d.inputType,
-        isSelected: d.selected && d.isSaveable,
-      ),
-    )
-        .toList();
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => Ahvi3StepUploadModal(
-        items: previews,
-        originalImageUrl: null,
-        // Modal closes itself on confirm via onClose; this only handles the
-        // user dismissing it (X / back) — pop once, leave inline UI underneath.
-        onClose: () => Navigator.of(context).pop(),
-        onConfirm: (selected) {
-          final selectedById = {
-            for (final s in selected.where((s) => s.isSaveable)) s.id: s,
-          };
-          final ids = selectedById.keys.toSet();
-          for (final d in _detected) {
-            d.selected = d.isSaveable && ids.contains(d.id);
-            final edited = selectedById[d.id];
-            if (edited != null) {
-              d.name = _cleanUiText(edited.name, fallback: d.name);
-              d.category = _cleanCategory(edited.category);
-              d.subCategory = _cleanUiText(edited.style);
-              d.occasions = _cleanStringList(edited.occasions);
-            }
-          }
-          // Reuse existing save path (saveWardrobeLabels + widget.onSave).
-          // The modal pops itself via onClose; _confirmAndSave pops the
-          // capture sheet when the save completes — no double pop.
-          _confirmAndSave();
-        },
-      ),
-    );
-  }
-
   // Downscale a (data-uri) base64 image to <= maxDim px before upload, so the
   // save payload stays small on weak networks (the dominant cost of slow
   // saves). Safe for quality: the catalog re-renders generatively
   // (ghost-mannequin), so a moderate downscale doesn't affect the output.
   // Returns the original string on any failure.
-  Future<String> _downscaleBase64ForUpload(String dataB64,
-      {int maxDim = 1536}) async {
+  Future<String> _downscaleBase64ForUpload(
+    String dataB64, {
+    int maxDim = 1536,
+  }) async {
     try {
       var b64 = dataB64;
       String prefix = '';
@@ -2943,8 +2944,9 @@ class _AddItemModalState extends State<_AddItemModal>
         targetHeight: (h * scale).round(),
       );
       final frame2 = await codec2.getNextFrame();
-      final byteData =
-      await frame2.image.toByteData(format: ui.ImageByteFormat.png);
+      final byteData = await frame2.image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
       frame2.image.dispose();
       if (byteData == null) return dataB64;
       final out = base64Encode(byteData.buffer.asUint8List());
@@ -2967,13 +2969,36 @@ class _AddItemModalState extends State<_AddItemModal>
       _toast('Maximum 6 items per outfit');
       return;
     }
+    // Privacy safety net: inline edits keep item.name/subCategory live via
+    // the controllers in bindTo(), but nothing else enforces the
+    // private-wear contract — the review UI only disables a few occasion
+    // chips. Re-derive private-wear status from the latest field values
+    // here and force the same category/subCategory/occasions the previous
+    // (now-removed) edit-confirm step used, so the backend payload can
+    // never carry a private-wear item under its normal classification.
+    for (final item in selected) {
+      if (isPrivateWearText('${item.name} ${item.category} ${item.subCategory}')) {
+        item.category = 'Innerwear';
+        item.subCategory = 'Private Wear';
+        item.occasions = const ['Home', 'Private', 'Lounge'];
+      }
+    }
+    // Guard set SYNCHRONOUSLY, before any awaited preprocessing (image
+    // downscaling, request construction, backend call) — a second tap that
+    // lands before the first `await` above must see _isSavingWardrobe==true
+    // and no-op via the early return at the top of this function.
+    setState(() {
+      _isSavingWardrobe = true;
+      _step = _ModalStep.saving;
+      _saveError = null;
+    });
     HapticFeedback.lightImpact();
     final payloads = selected.map((item) => item.toBackendPayload()).toList();
     // Shrink the upload: downscale heavy base64 before sending. Skipped when a
     // server cache token is present (base64 already dropped via toBackendPayload).
     for (final p in payloads) {
       final hasToken =
-      (p['image_cache_token']?.toString().trim().isNotEmpty ?? false);
+          (p['image_cache_token']?.toString().trim().isNotEmpty ?? false);
       if (hasToken) continue;
       for (final key in const ['masked_image_base64', 'raw_image_base64']) {
         final b64 = p[key]?.toString();
@@ -2999,23 +3024,21 @@ class _AddItemModalState extends State<_AddItemModal>
       'AHVI_SAVE_TIMING review_ms=$reviewMs payload_kb=$payloadKb items=${selected.length}',
     );
     final saveSw = Stopwatch()..start();
-    setState(() {
-      _isSavingWardrobe = true;
-      _saveComplete = false;
-    });
     final saveResult = await backendService.saveWardrobeLabels(payloads);
     debugPrint('AHVI_SAVE_TIMING save_call_ms=${saveSw.elapsedMilliseconds}');
     if (!mounted) return;
     final savedCount = saveResult == null
         ? 0
         : (saveResult['saved_count'] is int
-        ? saveResult['saved_count'] as int
-        : int.tryParse(saveResult['saved_count']?.toString() ?? '') ?? 0);
+              ? saveResult['saved_count'] as int
+              : int.tryParse(saveResult['saved_count']?.toString() ?? '') ?? 0);
     if (saveResult == null || savedCount <= 0) {
-      setState(() => _isSavingWardrobe = false);
-      _toast(
-        "Couldn't save clean wardrobe items from this photo. Try a single garment photo or retake.",
-      );
+      setState(() {
+        _isSavingWardrobe = false;
+        _step = _ModalStep.error;
+        _saveError =
+            "Something went wrong while saving. Your changes haven't been lost.";
+      });
       return;
     }
 
@@ -3023,17 +3046,23 @@ class _AddItemModalState extends State<_AddItemModal>
         ? (saveResult['items'] as List).whereType<Map>().toList()
         : <Map>[];
 
+    final savedDisplay = <Map<String, String?>>[];
     if (savedRows.isEmpty) {
       for (final item in selected.take(savedCount)) {
+        savedDisplay.add({
+          'name': _cleanUiText(item.name, fallback: 'Item'),
+          'color': item.color,
+          'pattern': item.pattern,
+        });
         final remoteUrl = item.maskedUrl ?? item.rawUrl;
         Uint8List? displayBytes = item.maskedImageBytes;
         if (displayBytes == null && (remoteUrl == null || remoteUrl.isEmpty)) {
           final index = item.sourceImageIndex;
           displayBytes =
-          _isGalleryPick &&
-              index != null &&
-              index >= 0 &&
-              index < _galleryImages.length
+              _isGalleryPick &&
+                  index != null &&
+                  index >= 0 &&
+                  index < _galleryImages.length
               ? _galleryImages[index]
               : _capturedBytes;
         }
@@ -3058,19 +3087,28 @@ class _AddItemModalState extends State<_AddItemModal>
     } else {
       for (final raw in savedRows) {
         final row = Map<String, dynamic>.from(raw);
+        savedDisplay.add({
+          'name': _cleanUiText(row['name'], fallback: 'Item'),
+          'color': row['color_name']?.toString() ?? row['color']?.toString(),
+          'pattern': row['pattern']?.toString(),
+        });
         final displayUrl =
             row['display_image_url']?.toString() ??
-                row['displayImageUrl']?.toString();
+            row['displayImageUrl']?.toString();
         final normalizedUrl =
             displayUrl ??
-                row['normalized_url']?.toString() ??
-                row['normalizedUrl']?.toString();
+            row['normalized_url']?.toString() ??
+            row['normalizedUrl']?.toString();
         final maskedUrl =
             row['masked_url']?.toString() ?? row['maskedUrl']?.toString();
         final imageUrl =
             row['image_url']?.toString() ?? row['imageUrl']?.toString();
         widget.onSave({
-          'id': row[r'$id']?.toString() ?? row['id']?.toString() ?? row['item_id']?.toString() ?? UniqueKey().toString(),
+          'id':
+              row[r'$id']?.toString() ??
+              row['id']?.toString() ??
+              row['item_id']?.toString() ??
+              UniqueKey().toString(),
           'name': _cleanUiText(row['name'], fallback: 'Item'),
           'cat': _cleanCategory(row['category']),
           'occasions': _cleanStringList(row['occasions']),
@@ -3082,20 +3120,34 @@ class _AddItemModalState extends State<_AddItemModal>
           'worn': row['worn'] is int ? row['worn'] as int : 0,
           'liked': row['liked'] == true,
           'remoteSaved': true,
-          'catalogStatus':
-              (row['catalogStatus'] ?? row['catalog_status'])?.toString(),
+          'catalogStatus': (row['catalogStatus'] ?? row['catalog_status'])
+              ?.toString(),
         });
       }
     }
     HapticFeedback.mediumImpact();
+    final requestedCount = selected.length;
     setState(() {
       _isSavingWardrobe = false;
-      _saveComplete = true;
+      _step = _ModalStep.success;
+      _savedCount = savedCount;
+      _savedRequestedCount = requestedCount;
+      _savedSingleName = savedDisplay.length == 1
+          ? savedDisplay.first['name']
+          : null;
+      _savedSingleColor = savedDisplay.length == 1
+          ? savedDisplay.first['color']
+          : null;
+      _savedSinglePattern = savedDisplay.length == 1
+          ? savedDisplay.first['pattern']
+          : null;
     });
-    final requestedCount = selected.length;
     final catalogScheduledCount = saveResult['catalog_scheduled_count'] is int
         ? saveResult['catalog_scheduled_count'] as int
-        : int.tryParse(saveResult['catalog_scheduled_count']?.toString() ?? '') ?? 0;
+        : int.tryParse(
+                saveResult['catalog_scheduled_count']?.toString() ?? '',
+              ) ??
+              0;
     if (savedCount < requestedCount) {
       _toast(
         'Saved $savedCount of $requestedCount items. Some were skipped because AHVI could not create clean wardrobe images.'
@@ -3107,34 +3159,34 @@ class _AddItemModalState extends State<_AddItemModal>
         'Catalog enhancement is processing on a best-effort basis.',
       );
     } else {
-      _toast('Saved $savedCount item${savedCount == 1 ? '' : 's'} to wardrobe.');
+      _toast(
+        'Saved $savedCount item${savedCount == 1 ? '' : 's'} to wardrobe.',
+      );
     }
-    await Future.delayed(const Duration(milliseconds: 650));
-    if (!mounted) return;
-    Navigator.of(context).pop();
   }
 
-  void _manualSave() {
-    if (_nameCtrl.text.trim().isEmpty || _selectedCat.isEmpty) {
-      _toast(AppLocalizations.t(context, 'wardrobe_name_category_required'));
-      return;
-    }
-    Navigator.of(context).pop();
-    widget.onSave({
-      'id': DateTime.now().millisecondsSinceEpoch.toString(),
-      'name': _nameCtrl.text.trim(),
-      'cat': _selectedCat,
-      'occasions': List<String>.from(_selectedOccs),
-      'notes': _notesCtrl.text.trim(),
-      'imageBytes': _capturedBytes,
-      'galleryImages': _isGalleryPick
-          ? List<Uint8List>.from(_galleryImages)
-          : null,
-      'imageUrl': null,
-      'maskedUrl': null,
-      'worn': 0,
-      'liked': false,
+  /// Retry after a failed save: re-enters the single _confirmAndSave() path
+  /// with the same detected/edited items, no re-analysis. The reentry guard
+  /// in _confirmAndSave already limits this to exactly one save call.
+  void _retrySave() {
+    if (_isSavingWardrobe) return;
+    _confirmAndSave();
+  }
+
+  /// Resets the flow back to source selection for another capture, without
+  /// closing the surrounding dialog/route.
+  void _startAnotherItem() {
+    _disposeItemCtrls();
+    setState(() {
+      _step = _ModalStep.camera;
+      _capturedBytes = null;
+      _galleryImages = [];
+      _isGalleryPick = false;
+      _detected = [];
+      _detectError = null;
+      _saveError = null;
     });
+    _initCamera();
   }
 
   void _toast(String msg) {
@@ -3158,11 +3210,7 @@ class _AddItemModalState extends State<_AddItemModal>
   void dispose() {
     _slideCtrl.dispose();
     _camCtrl?.dispose();
-    _nameCtrl.dispose();
-    _subCategoryCtrl.dispose();
-    _colorCtrl.dispose();
-    _patternCtrl.dispose();
-    _notesCtrl.dispose();
+    _disposeItemCtrls();
     super.dispose();
   }
 
@@ -3171,115 +3219,130 @@ class _AddItemModalState extends State<_AddItemModal>
     final bool isFullScreen =
         _step == _ModalStep.camera || _step == _ModalStep.detecting;
 
-    return FadeTransition(
-      opacity: _fadeAnim,
-      child: Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: isFullScreen
-            ? EdgeInsets.zero
-            : const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
-        child: isFullScreen
-        // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Full-screen camera / detecting ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
-            ? AnnotatedRegion<SystemUiOverlayStyle>(
-          value: SystemUiOverlayStyle.light,
-          child: ClipRRect(
-            borderRadius: BorderRadius.zero,
-            child: Material(
-              color: Colors.black,
-              child: SafeArea(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _buildBody(),
-                    // Close button top-right
-                    Positioned(
-                      top: 12,
-                      right: 16,
-                      child: GestureDetector(
-                        onTap: () => Navigator.of(context).pop(),
-                        child: Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.45),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.20),
+    // Hardware back / route-pop is disabled while a save is in flight, so a
+    // stray back gesture can't dismiss the sheet mid-save and strand the
+    // guard or the underlying wardrobe UI in a half-saved state.
+    return PopScope(
+      canPop: !_isSavingWardrobe,
+      child: FadeTransition(
+        opacity: _fadeAnim,
+        child: Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: isFullScreen
+              ? EdgeInsets.zero
+              : const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+          child: isFullScreen
+              // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Full-screen camera / detecting ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
+              ? AnnotatedRegion<SystemUiOverlayStyle>(
+                  value: SystemUiOverlayStyle.light,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.zero,
+                    child: Material(
+                      color: Colors.black,
+                      child: SafeArea(
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            _buildBody(),
+                            // Close button top-right
+                            Positioned(
+                              top: 12,
+                              right: 16,
+                              child: GestureDetector(
+                                onTap: () => Navigator.of(context).pop(),
+                                child: Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.45),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.white.withOpacity(0.20),
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.close,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                          child: const Icon(
-                            Icons.close,
-                            color: Colors.white,
-                            size: 18,
-                          ),
+                          ],
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        )
-        // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Card modal for results / editing ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
-            : SlideTransition(
-          position: _slideAnim,
-          child: ScaleTransition(
-            scale: _scaleAnim,
-            child: Container(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.92,
-              ),
-              decoration: BoxDecoration(
-                color: t.backgroundSecondary.withValues(alpha: 0.97),
-                borderRadius: BorderRadius.circular(32),
-                border: Border.all(color: t.cardBorder),
-                boxShadow: [
-                  BoxShadow(
-                    color: t.backgroundPrimary.withValues(alpha: 0.5),
-                    blurRadius: 80,
-                    offset: const Offset(0, 40),
                   ),
-                  BoxShadow(
-                    color: t.accent.primary.withValues(alpha: 0.15),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
+                )
+              // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Card modal for results / editing ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
+              : SlideTransition(
+                  position: _slideAnim,
+                  child: ScaleTransition(
+                    scale: _scaleAnim,
+                    child: Container(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.92,
+                      ),
+                      decoration: BoxDecoration(
+                        color: t.backgroundSecondary.withValues(alpha: 0.97),
+                        borderRadius: BorderRadius.circular(32),
+                        border: Border.all(color: t.cardBorder),
+                        boxShadow: [
+                          BoxShadow(
+                            color: t.backgroundPrimary.withValues(alpha: 0.5),
+                            blurRadius: 80,
+                            offset: const Offset(0, 40),
+                          ),
+                          BoxShadow(
+                            color: t.accent.primary.withValues(alpha: 0.15),
+                            blurRadius: 24,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildHeader(),
+                            Flexible(child: _buildBody()),
+                            _buildFooter(),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildHeader(),
-                    Flexible(child: _buildBody()),
-                    _buildFooter(),
-                  ],
                 ),
-              ),
-            ),
-          ),
         ),
       ),
     );
   }
 
   Widget _buildHeader() {
+    final multi = _detected.length > 1;
     final titles = {
       _ModalStep.camera: 'Scan outfit',
       _ModalStep.detecting: 'Detecting...',
-      _ModalStep.results: 'Tap to select items',
-      _ModalStep.editing: _editingIndex != null ? 'Edit item' : 'AI Detected',
+      _ModalStep.reviewing: multi ? 'Review items' : 'Review item',
+      _ModalStep.saving: 'Saving to wardrobe...',
+      _ModalStep.success: 'Added to wardrobe',
+      _ModalStep.error: "Couldn't add this item",
     };
     final subtitles = {
       _ModalStep.camera: 'Point camera at your outfit',
       _ModalStep.detecting: 'AI is analysing your photo',
-      _ModalStep.results: 'Tap item to select - use Edit labels to correct AI',
-      _ModalStep.editing: _editingIndex != null
-          ? 'Review and confirm item details'
-          : 'AI filled details - review and save',
+      _ModalStep.reviewing: multi
+          ? '${_detected.length} items'
+          : 'Edit details directly on this page',
+      _ModalStep.saving: 'Please wait a moment',
+      _ModalStep.success: '',
+      _ModalStep.error: '',
     };
+    // Back arrow only makes sense on the review step; saving/success/error
+    // have their own in-body navigation (Retry/Cancel, View/Add another).
+    final showBack = _step == _ModalStep.reviewing;
+    final showClose = _step != _ModalStep.saving;
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 18, 14, 14),
       decoration: BoxDecoration(
@@ -3289,23 +3352,9 @@ class _AddItemModalState extends State<_AddItemModal>
       ),
       child: Row(
         children: [
-          if (_step == _ModalStep.results || _step == _ModalStep.editing)
+          if (showBack)
             GestureDetector(
-              onTap: _isSavingWardrobe
-                  ? null
-                  : _step == _ModalStep.editing
-                  ? (_editingIndex != null
-                  ? () => setState(() {
-                _editingIndex = null;
-                _step = _ModalStep.results;
-              })
-                  : (_detected.length > 1
-                  ? () => setState(() {
-                _editingIndex = null;
-                _step = _ModalStep.results;
-              })
-                  : _retake))
-                  : _retake,
+              onTap: _isSavingWardrobe ? null : _retake,
               child: Container(
                 width: 34,
                 height: 34,
@@ -3336,30 +3385,36 @@ class _AddItemModalState extends State<_AddItemModal>
                     letterSpacing: -0.3,
                   ),
                 ),
-                Text(
-                  subtitles[_step]!,
-                  style: TextStyle(
-                    fontFamily: GoogleFonts.inter().fontFamily,
-                    fontSize: 11,
-                    color: t.mutedText,
+                if (subtitles[_step]!.isNotEmpty)
+                  Text(
+                    subtitles[_step]!,
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.inter().fontFamily,
+                      fontSize: 11,
+                      color: t.mutedText,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
-          GestureDetector(
-            onTap: _isSavingWardrobe ? null : () => Navigator.of(context).pop(),
-            child: Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: t.panel,
-                shape: BoxShape.circle,
-                border: Border.all(color: t.cardBorder),
+          if (showClose)
+            Semantics(
+              button: true,
+              label: 'Close',
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: t.panel,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: t.cardBorder),
+                  ),
+                  child: Icon(Icons.close, size: 14, color: t.mutedText),
+                ),
               ),
-              child: Icon(Icons.close, size: 14, color: t.mutedText),
             ),
-          ),
         ],
       ),
     );
@@ -3372,23 +3427,35 @@ class _AddItemModalState extends State<_AddItemModal>
       switchOutCurve: Curves.easeIn,
       transitionBuilder: (child, anim) =>
           FadeTransition(opacity: anim, child: child),
-      child: _saveComplete
-          ? _buildSaveCompleteBody()
-          : switch (_step) {
+      child: switch (_step) {
         _ModalStep.camera => _buildCameraBody(),
         _ModalStep.detecting => _buildDetectingBody(),
-        _ModalStep.results => _buildResultsBody(),
-        _ModalStep.editing => _buildEditingBody(),
+        _ModalStep.reviewing => _buildReviewBody(),
+        _ModalStep.saving => _buildSavingBody(),
+        _ModalStep.success => _buildSuccessBody(),
+        _ModalStep.error => _buildErrorBody(),
       },
     );
   }
 
-  Widget _buildSaveCompleteBody() {
-    final savedCount = _detected.where((i) => i.selected).length;
+  Widget _buildSuccessBody() {
+    // Truthful counts from the actual backend save result — never inferred
+    // from the (pre-save) selected-items list, so a partial save can never
+    // read as "all items saved".
+    final savedCount = _savedCount;
+    final requestedCount = _savedRequestedCount;
+    final isPartial = savedCount < requestedCount;
+    final single = savedCount == 1
+        ? (
+            name: _savedSingleName ?? '',
+            color: _savedSingleColor,
+            pattern: _savedSinglePattern,
+          )
+        : null;
     return Container(
-      key: const ValueKey('wardrobe-save-complete'),
+      key: const ValueKey('wardrobe-success'),
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 36, 24, 40),
+      padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -3412,7 +3479,11 @@ class _AddItemModalState extends State<_AddItemModal>
           ),
           const SizedBox(height: 18),
           Text(
-            savedCount == 1 ? 'Added to wardrobe' : '$savedCount items added',
+            !isPartial && savedCount == 1
+                ? 'Added to your wardrobe!'
+                : isPartial
+                ? 'Added $savedCount of $requestedCount items'
+                : 'Added $savedCount items to your wardrobe!',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: GoogleFonts.inter().fontFamily,
@@ -3421,9 +3492,266 @@ class _AddItemModalState extends State<_AddItemModal>
               color: t.textPrimary,
             ),
           ),
+          if (isPartial) ...[
+            const SizedBox(height: 8),
+            Text(
+              '${requestedCount - savedCount} item${requestedCount - savedCount == 1 ? '' : 's'} '
+              "could not be saved. What did save is safely in your wardrobe.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: GoogleFonts.inter().fontFamily,
+                fontSize: 12,
+                color: t.mutedText,
+              ),
+            ),
+          ],
+          if (single != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              single.name,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: GoogleFonts.inter().fontFamily,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: t.textPrimary,
+              ),
+            ),
+            if ([
+              single.color,
+              single.pattern,
+            ].where((s) => (s ?? '').trim().isNotEmpty).isNotEmpty)
+              Text(
+                [
+                  single.color,
+                  single.pattern,
+                ].where((s) => (s ?? '').trim().isNotEmpty).join(' • '),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: GoogleFonts.inter().fontFamily,
+                  fontSize: 12,
+                  color: t.mutedText,
+                ),
+              ),
+          ] else ...[
+            const SizedBox(height: 8),
+            Text(
+              'Saved with AI labels and ready for outfit styling.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: GoogleFonts.inter().fontFamily,
+                fontSize: 13,
+                height: 1.4,
+                color: t.mutedText,
+              ),
+            ),
+          ],
+          const SizedBox(height: 28),
+          SizedBox(
+            width: double.infinity,
+            child: Semantics(
+              button: true,
+              label: 'View in wardrobe',
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [t.accent.primary, t.accent.tertiary],
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'View in wardrobe',
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.inter().fontFamily,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: t.textPrimary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: Semantics(
+              button: true,
+              label: 'Add another item',
+              child: GestureDetector(
+                onTap: _startAnotherItem,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  decoration: BoxDecoration(
+                    color: t.panel,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: t.cardBorder, width: 1.5),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'Add another item',
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.inter().fontFamily,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: t.mutedText,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.lock_outline_rounded, size: 12, color: t.mutedText),
+              const SizedBox(width: 6),
+              Text(
+                'Your data is private and secure',
+                style: TextStyle(
+                  fontFamily: GoogleFonts.inter().fontFamily,
+                  fontSize: 10,
+                  color: t.mutedText,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSavingBody() {
+    return Container(
+      key: const ValueKey('wardrobe-saving'),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 40, 24, 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.auto_awesome_rounded, size: 32, color: t.accent.primary),
+          const SizedBox(height: 20),
+          Text(
+            'Saving to wardrobe...',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: GoogleFonts.inter().fontFamily,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: t.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Please wait a moment',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: GoogleFonts.inter().fontFamily,
+              fontSize: 12,
+              color: t.mutedText,
+            ),
+          ),
+          const SizedBox(height: 28),
+          const SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          ),
+          const SizedBox(height: 28),
+          ..._savingStages.asMap().entries.map(
+            // Only the first (in-flight) stage gets a checkmark — we only
+            // know a save was *initiated*, not that any stage completed.
+            // The rest stay as pending markers so the checklist never claims
+            // a success we haven't observed.
+            (entry) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    entry.key == 0 ? Icons.check_circle : Icons.circle_outlined,
+                    size: 15,
+                    color: entry.key == 0
+                        ? t.accent.primary.withValues(alpha: 0.75)
+                        : t.mutedText.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    entry.value,
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.inter().fontFamily,
+                      fontSize: 13,
+                      color: entry.key == 0 ? t.textPrimary : t.mutedText,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.lock_outline_rounded, size: 12, color: t.mutedText),
+              const SizedBox(width: 6),
+              Text(
+                'Your data is private and secure',
+                style: TextStyle(
+                  fontFamily: GoogleFonts.inter().fontFamily,
+                  fontSize: 10,
+                  color: t.mutedText,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorBody() {
+    final failed = _detected.where((i) => i.selected && i.isSaveable).toList();
+    final single = failed.length == 1 ? failed.first : null;
+    return Container(
+      key: const ValueKey('wardrobe-error'),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: t.accent.primary.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.priority_high_rounded,
+              color: t.accent.primary,
+              size: 32,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            "Couldn't add this item",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: GoogleFonts.inter().fontFamily,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: t.textPrimary,
+            ),
+          ),
           const SizedBox(height: 8),
           Text(
-            'Saved with AI labels and ready for outfit styling.',
+            _saveError ??
+                "Something went wrong while saving. Your changes haven't been lost.",
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: GoogleFonts.inter().fontFamily,
@@ -3432,10 +3760,143 @@ class _AddItemModalState extends State<_AddItemModal>
               color: t.mutedText,
             ),
           ),
+          if (single != null) ...[
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: t.panel,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: t.cardBorder),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: t.backgroundSecondary,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: single.previewBytes != null
+                        ? Image.memory(
+                            single.previewBytes!,
+                            fit: BoxFit.contain,
+                          )
+                        : Center(
+                            child: Text(
+                              _DetectedItem.catEmoji(single.category),
+                              style: const TextStyle(fontSize: 16),
+                            ),
+                          ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          single.name,
+                          style: TextStyle(
+                            fontFamily: GoogleFonts.inter().fontFamily,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: t.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          [single.color, single.pattern]
+                              .where((s) => (s ?? '').trim().isNotEmpty)
+                              .join(' • '),
+                          style: TextStyle(
+                            fontFamily: GoogleFonts.inter().fontFamily,
+                            fontSize: 11,
+                            color: t.mutedText,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: Semantics(
+              button: true,
+              label: 'Retry',
+              child: GestureDetector(
+                key: const ValueKey('wardrobe-retry-cta'),
+                onTap: _isSavingWardrobe ? null : _retrySave,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [t.accent.primary, t.accent.tertiary],
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'Retry',
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.inter().fontFamily,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: t.textPrimary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: Semantics(
+              button: true,
+              label: 'Cancel',
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  decoration: BoxDecoration(
+                    color: t.panel,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: t.cardBorder, width: 1.5),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.inter().fontFamily,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: t.mutedText,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
+
+  // Broad, honest save stages — no fake completion of stages we don't know
+  // succeeded. All shown at once (indeterminate spinner above carries the
+  // "in progress" signal) rather than claiming per-stage completion we can't
+  // observe from a single awaited backend call.
+  static const _savingStages = [
+    'Saving item',
+    'Processing image',
+    'Securing your wardrobe',
+    'Finalizing',
+  ];
 
   Widget _buildCameraBody() {
     return Stack(
@@ -3446,28 +3907,28 @@ class _AddItemModalState extends State<_AddItemModal>
         _camReady && _camCtrl != null
             ? CameraPreview(_camCtrl!)
             : Container(
-          color: Colors.black,
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(
-                  color: t.accent.primary,
-                  strokeWidth: 2,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  AppLocalizations.t(context, 'wardrobe_starting_camera'),
-                  style: TextStyle(
-                    fontFamily: GoogleFonts.inter().fontFamily,
-                    fontSize: 13,
-                    color: Colors.white60,
+                color: Colors.black,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(
+                        color: t.accent.primary,
+                        strokeWidth: 2,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        AppLocalizations.t(context, 'wardrobe_starting_camera'),
+                        style: TextStyle(
+                          fontFamily: GoogleFonts.inter().fontFamily,
+                          fontSize: 13,
+                          color: Colors.white60,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
-        ),
+              ),
         // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Corner frame guides ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
         if (_camReady)
           Positioned.fill(
@@ -3592,9 +4053,6 @@ class _AddItemModalState extends State<_AddItemModal>
   }
 
   Widget _buildDetectingBody() {
-    // New detection cycle in progress -> allow the 3-step modal to show again
-    // once results are ready. Plain assignment (no setState) — safe in build.
-    _threeStepShown = false;
     final isMulti = _isGalleryPick && _galleryImages.length > 1;
     return Stack(
       key: const ValueKey('detecting'),
@@ -3646,688 +4104,77 @@ class _AddItemModalState extends State<_AddItemModal>
   }
 
   // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ STEP 3: Results ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Essemble style ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
-  Widget _buildResultsBody() {
-    // One-shot: launch the premium 3-step review over the inline results UI.
-    // Guarded so it shows once per detection cycle; the inline UI stays
-    // underneath as a fallback if the user closes the modal.
-    if (!_threeStepShown && _detected.isNotEmpty) {
-      _threeStepShown = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _step == _ModalStep.results) _launchThreeStepReview();
-      });
-    }
-    return Column(
-      key: const ValueKey('results'),
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Photo strip / thumbnails ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
-        if (_isGalleryPick && _galleryImages.length > 1) ...[
-          // Multi-image thumbnail row with retake button
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 72,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _galleryImages.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 6),
-                      itemBuilder: (_, idx) => ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.memory(
-                          _galleryImages[idx],
-                          width: 72,
-                          height: 72,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: _retake,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: t.panel,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: t.cardBorder),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.refresh, size: 13, color: t.mutedText),
-                        const SizedBox(width: 5),
-                        Text(
-                          AppLocalizations.t(context, 'wardrobe_retake'),
-                          style: TextStyle(
-                            fontFamily: GoogleFonts.inter().fontFamily,
-                            fontSize: 12,
-                            color: t.mutedText,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ] else if (_capturedBytes != null)
-          Stack(
-            children: [
-              Container(
-                height: 176,
-                width: double.infinity,
-                color: t.panel.withValues(alpha: 0.72),
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 10,
-                    ),
-                    child: Image.memory(
-                      _capturedBytes!,
-                      fit: BoxFit.contain,
-                      alignment: Alignment.center,
-                    ),
-                  ),
-                ),
-              ),
-              // Gradient fade bottom
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  height: 48,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, t.backgroundSecondary],
-                    ),
-                  ),
-                ),
-              ),
-              // Retake button
-              Positioned(
-                bottom: 10,
-                right: 14,
-                child: GestureDetector(
-                  onTap: _retake,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.60),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.refresh,
-                          color: Colors.white,
-                          size: 13,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          AppLocalizations.t(context, 'wardrobe_retake'),
-                          style: TextStyle(
-                            fontFamily: GoogleFonts.inter().fontFamily,
-                            fontSize: 12,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-        // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Error banner ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
-        if (_detectError != null)
-          Container(
-            margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: t.accent.primary.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: t.accent.primary.withValues(alpha: 0.2),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 15, color: t.accent.primary),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _detectError!,
-                        style: TextStyle(
-                          fontFamily: GoogleFonts.inter().fontFamily,
-                          fontSize: 12,
-                          color: t.mutedText,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                GestureDetector(
-                  onTap: _tryAgain,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [t.accent.primary, t.accent.tertiary],
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      AppLocalizations.t(context, 'wardrobe_try_again'),
-                      style: TextStyle(
-                        fontFamily: GoogleFonts.inter().fontFamily,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: t.textPrimary,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-        // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Detected items ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
-        if (_detected.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-            child: Row(
-              children: [
-                // AI badge
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: t.accent.primary.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: t.accent.primary.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.auto_awesome,
-                        size: 12,
-                        color: t.accent.primary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        "${_detected.length} ${AppLocalizations.t(context, 'wardrobe_detected')}",
-                        style: TextStyle(
-                          fontFamily: GoogleFonts.inter().fontFamily,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: t.accent.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Spacer(),
-                GestureDetector(
-                  onTap: () {
-                    if (_isSavingWardrobe) return;
-                    final saveable = _detected
-                        .where((i) => i.isSaveable)
-                        .toList();
-                    if (saveable.isEmpty) {
-                      _toast(AppLocalizations.t(context, 'wardrobe_no_items_to_add'));
-                      return;
-                    }
-                    final all =
-                        saveable.isNotEmpty &&
-                            saveable.every((i) => i.selected);
-                    if (all) {
-                      // deselect all
-                      setState(() {
-                        for (final i in saveable) {
-                          i.selected = false;
-                        }
-                      });
-                    } else {
-                      // select up to 6
-                      int count = 0;
-                      setState(() {
-                        for (final i in _detected) {
-                          if (i.isSaveable && count < 6) {
-                            i.selected = true;
-                            count++;
-                          } else {
-                            i.selected = false;
-                          }
-                        }
-                      });
-                      if (_detected.length > 6) {
-                        _toast('Maximum 6 items selected');
-                      }
-                    }
-                  },
-                  child: Text(
-                    _detected.where((i) => i.isSaveable).isNotEmpty &&
-                        _detected
-                            .where((i) => i.isSaveable)
-                            .every((i) => i.selected)
-                        ? AppLocalizations.t(context, 'wardrobe_deselect_all')
-                        : AppLocalizations.t(context, 'wardrobe_select_all'),
-                    style: TextStyle(
-                      fontFamily: GoogleFonts.inter().fontFamily,
-                      fontSize: 12,
-                      color: t.accent.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
-              primary: false,
-              physics: const ClampingScrollPhysics(),
-              itemCount: _detected.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (_, i) {
-                final item = _detected[i];
-                return GestureDetector(
-                  onTap: () {
-                    if (_isSavingWardrobe) return;
-                    if (!item.isSaveable) {
-                      _toast(item.statusLabel ?? 'Item is not approved');
-                      return;
-                    }
-                    final selCount = _detected
-                        .where((d) => d.selected && d.isSaveable)
-                        .length;
-                    if (!item.selected && selCount >= 6) {
-                      _toast('Maximum 6 items per outfit');
-                      return;
-                    }
-                    setState(() => item.selected = !item.selected);
-                  },
-                  onLongPress: _isSavingWardrobe ? null : () => _editItem(i),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 13,
-                      vertical: 11,
-                    ),
-                    decoration: BoxDecoration(
-                      color: item.selected
-                          ? t.accent.primary.withValues(alpha: 0.09)
-                          : t.panel,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: item.selected
-                            ? t.accent.primary.withValues(alpha: 0.5)
-                            : t.cardBorder,
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        // Item crop preview: masked/raw crop first (always
-                        // BoxFit.contain so garments are never cut off),
-                        // category emoji as final fallback.
-                        Container(
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: item.selected
-                                ? t.accent.primary.withValues(alpha: 0.14)
-                                : t.backgroundSecondary,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: item.previewBytes != null
-                              ? Image.memory(
-                            item.previewBytes!,
-                            fit: BoxFit.contain,
-                            gaplessPlayback: true,
-                            errorBuilder: (_, _, _) => Center(
-                              child: Text(
-                                _DetectedItem.catEmoji(item.category),
-                                style: const TextStyle(fontSize: 20),
-                              ),
-                            ),
-                          )
-                              : (item.displayUrl != null
-                              ? Image.network(
-                            item.displayUrl!,
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, _, _) => Center(
-                              child: Text(
-                                _DetectedItem.catEmoji(
-                                  item.category,
-                                ),
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                ),
-                              ),
-                            ),
-                          )
-                              : Center(
-                            child: Text(
-                              _DetectedItem.catEmoji(item.category),
-                              style: const TextStyle(fontSize: 20),
-                            ),
-                          )),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                item.name,
-                                style: TextStyle(
-                                  fontFamily: GoogleFonts.inter().fontFamily,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: t.textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 5),
-                              Wrap(
-                                spacing: 5,
-                                runSpacing: 4,
-                                children: [
-                                  _SmallPill(item.category, t.accent.secondary),
-                                  if (item.color != null &&
-                                      item.color!.isNotEmpty &&
-                                      item.color != 'null')
-                                    _SmallPill(item.color!, t.accent.tertiary),
-                                  if (item.pattern != null &&
-                                      item.pattern!.isNotEmpty &&
-                                      item.pattern != 'null')
-                                    _SmallPill(item.pattern!, t.accent.primary),
-                                  // labelSource is an internal pipeline value
-                                  // (vision:gemini_multi, heuristic, ...) —
-                                  // never show it as a user-facing chip.
-                                  if (item.requiresManualEntry)
-                                    _SmallPill(
-                                      'review labels',
-                                      t.accent.secondary,
-                                    ),
-                                  if (item.statusLabel != null)
-                                    _SmallPill(
-                                      item.statusLabel!,
-                                      item.isRejected
-                                          ? t.accent.tertiary
-                                          : t.accent.secondary,
-                                    ),
-                                ],
-                              ),
-                              if ((item.rejectionReason ?? '').isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  item.rejectionReason!,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontFamily: GoogleFonts.inter().fontFamily,
-                                    fontSize: 10.5,
-                                    color: t.mutedText,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => _editItem(i),
-                          child: Container(
-                            margin: const EdgeInsets.only(right: 8),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 7,
-                            ),
-                            decoration: BoxDecoration(
-                              color: t.panel,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: t.cardBorder),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.edit_outlined,
-                                  size: 13,
-                                  color: t.accent.primary,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Edit labels',
-                                  style: TextStyle(
-                                    fontFamily: GoogleFonts.inter().fontFamily,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: t.accent.primary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        // Checkbox
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: item.selected
-                                ? LinearGradient(
-                              colors: [
-                                t.accent.primary,
-                                t.accent.tertiary,
-                              ],
-                            )
-                                : null,
-                            color: item.selected ? null : t.backgroundSecondary,
-                            border: Border.all(
-                              color: item.selected
-                                  ? t.accent.primary
-                                  : t.cardBorder,
-                              width: 1.5,
-                            ),
-                          ),
-                          child: item.selected
-                              ? Icon(
-                            Icons.check,
-                            color: t.textPrimary,
-                            size: 14,
-                          )
-                              : null,
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ] else if (_detectError == null)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.search_off, size: 40),
-                const SizedBox(height: 12),
-                Text(
-                  AppLocalizations.t(context, 'wardrobe_no_items'),
-                  style: TextStyle(
-                    fontFamily: GoogleFonts.inter().fontFamily,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: t.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  AppLocalizations.t(context, 'wardrobe_no_items_desc'),
-                  style: TextStyle(
-                    fontFamily: GoogleFonts.inter().fontFamily,
-                    fontSize: 12,
-                    color: t.mutedText,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                GestureDetector(
-                  onTap: _tryAgain,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 11,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [t.accent.primary, t.accent.tertiary],
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      AppLocalizations.t(context, 'wardrobe_retake_photo'),
-                      style: TextStyle(
-                        fontFamily: GoogleFonts.inter().fontFamily,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: t.textPrimary,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ STEP 4: Confirm / Edit detected item form ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
-  Widget _buildEditingBody() {
-    final bool isAiFilled = _detected.isNotEmpty && _editingIndex == null;
-    final privateWearDetected = _isPrivateWearText(
-      [
-        _nameCtrl.text,
-        _selectedCat,
-        _subCategoryCtrl.text,
-        _selectedOccs.join(' '),
-      ].join(' '),
-    );
+  // Unified review + edit page (Screen 3). Single scrollable page for both
+  // the single-item and 2-6 item multi-garment case — no separate Edit page,
+  // no per-item modal. Fields write straight back into the _DetectedItem via
+  // the per-item controllers bound in _ctrlsFor().
+  Widget _buildReviewBody() {
+    final multi = _detected.length > 1;
+    final saveableCount = _detected.where((i) => i.isSaveable).length;
+    final allSelected =
+        saveableCount > 0 &&
+        _detected.where((i) => i.isSaveable).every((i) => i.selected);
     return SingleChildScrollView(
-      key: const ValueKey('editing'),
+      key: const ValueKey('review'),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Photo banner ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
-          if (_isGalleryPick && _galleryImages.isNotEmpty) ...[
-            // Multi-image horizontal strip
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+          if (_detectError != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: t.accent.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: t.accent.primary.withValues(alpha: 0.2),
+                ),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: t.accent.primary.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: t.accent.primary.withValues(alpha: 0.3),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.photo_library_outlined,
-                              size: 12,
-                              color: t.accent.primary,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              "${_galleryImages.length} ${AppLocalizations.t(context, 'wardrobe_photos_selected')}",
-                              style: TextStyle(
-                                fontFamily: GoogleFonts.inter().fontFamily,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: t.accent.primary,
-                              ),
-                            ),
-                          ],
-                        ),
+                      Icon(
+                        Icons.info_outline,
+                        size: 15,
+                        color: t.accent.primary,
                       ),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: _retake,
+                      const SizedBox(width: 8),
+                      Expanded(
                         child: Text(
-                          AppLocalizations.t(context, 'wardrobe_change'),
+                          _detectError!,
                           style: TextStyle(
                             fontFamily: GoogleFonts.inter().fontFamily,
                             fontSize: 12,
-                            color: t.accent.primary,
-                            fontWeight: FontWeight.w600,
+                            color: t.mutedText,
                           ),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 10),
-                  SizedBox(
-                    height: 90,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _galleryImages.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 8),
-                      itemBuilder: (_, idx) => ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.memory(
-                          _galleryImages[idx],
-                          width: 90,
-                          height: 90,
-                          fit: BoxFit.cover,
+                  GestureDetector(
+                    onTap: _tryAgain,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [t.accent.primary, t.accent.tertiary],
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        AppLocalizations.t(context, 'wardrobe_try_again'),
+                        style: TextStyle(
+                          fontFamily: GoogleFonts.inter().fontFamily,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: t.textPrimary,
                         ),
                       ),
                     ),
@@ -4335,225 +4182,402 @@ class _AddItemModalState extends State<_AddItemModal>
                 ],
               ),
             ),
-          ] else if (_capturedBytes != null)
-            Stack(
-              children: [
-                SizedBox(
-                  height: 160,
-                  width: double.infinity,
-                  child: Image.memory(_capturedBytes!, fit: BoxFit.cover),
+          Row(
+            children: [
+              Text(
+                multi ? '${_detected.length} items' : '1 of 1',
+                style: TextStyle(
+                  fontFamily: GoogleFonts.inter().fontFamily,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: t.mutedText,
                 ),
-                // Gradient fade bottom
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: Container(
-                    height: 60,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, t.backgroundSecondary],
-                      ),
+              ),
+              const Spacer(),
+              if (multi && saveableCount > 0)
+                GestureDetector(
+                  onTap: _isSavingWardrobe
+                      ? null
+                      : () => _toggleSelectAll(!allSelected),
+                  child: Text(
+                    allSelected
+                        ? AppLocalizations.t(context, 'wardrobe_deselect_all')
+                        : AppLocalizations.t(context, 'wardrobe_select_all'),
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.inter().fontFamily,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: t.accent.primary,
                     ),
                   ),
                 ),
-                // AI-detected badge (only when auto-filled)
-                if (isAiFilled)
-                  Positioned(
-                    bottom: 14,
-                    left: 16,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [t.accent.primary, t.accent.tertiary],
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: t.accent.primary.withValues(alpha: 0.35),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.auto_awesome,
-                            size: 12,
-                            color: t.textPrimary,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            AppLocalizations.t(context, 'wardrobe_ai_filled'),
-                            style: TextStyle(
-                              fontFamily: GoogleFonts.inter().fontFamily,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: t.textPrimary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (final item in _detected) ...[
+            _buildItemCard(item, large: !multi),
+            const SizedBox(height: 14),
+          ],
+        ],
+      ),
+    );
+  }
 
-          // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Form fields ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _ModalField(
-                  label: AppLocalizations.t(context, 'wardrobe_item_name'),
-                  child: _StyledInput(
-                    controller: _nameCtrl,
-                    hint: 'e.g. White linen shirt',
+  void _toggleSelectAll(bool select) {
+    final tooMany = select && _detected.where((i) => i.isSaveable).length > 6;
+    setState(() {
+      var count = 0;
+      for (final i in _detected) {
+        if (!i.isSaveable) {
+          i.selected = false;
+          continue;
+        }
+        i.selected = select && count < 6;
+        if (i.selected) count++;
+      }
+    });
+    if (tooMany) _toast('Maximum 6 items selected');
+  }
+
+  Widget _buildItemCard(_DetectedItem item, {required bool large}) {
+    if (!item.isSaveable) {
+      return _buildUnapprovedCard(item);
+    }
+    final ctrls = _ctrlsFor(item);
+    final privateWear = isPrivateWearText(
+      '${ctrls.name.text} ${item.category} ${ctrls.subCategory.text}',
+    );
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.panel,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: item.selected
+              ? t.accent.primary.withValues(alpha: 0.5)
+              : t.cardBorder,
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: large ? 240 : 140,
+                  child: Container(
+                    color: t.backgroundSecondary,
+                    child: item.previewBytes != null
+                        ? Image.memory(
+                            item.previewBytes!,
+                            fit: BoxFit.contain,
+                            gaplessPlayback: true,
+                          )
+                        : (item.displayUrl != null
+                              ? Image.network(
+                                  item.displayUrl!,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, _, _) => Center(
+                                    child: Text(
+                                      _DetectedItem.catEmoji(item.category),
+                                      style: const TextStyle(fontSize: 28),
+                                    ),
+                                  ),
+                                )
+                              : Center(
+                                  child: Text(
+                                    _DetectedItem.catEmoji(item.category),
+                                    style: const TextStyle(fontSize: 28),
+                                  ),
+                                )),
                   ),
                 ),
-                const SizedBox(height: 14),
-                _ModalField(
-                  label: AppLocalizations.t(
-                    context,
-                    'wardrobe_category_required',
-                  ),
-                  child: _CategoryDropdown(
-                    value: _selectedCat,
-                    categories: _cats,
-                    onChanged: (v) => setState(() => _selectedCat = v ?? ''),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _ModalField(
-                  label: 'Sub-category',
-                  child: _StyledInput(
-                    controller: _subCategoryCtrl,
-                    hint: 'e.g. Shirt, Saree, Sneakers',
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _ModalField(
-                        label: 'Color',
-                        child: _StyledInput(
-                          controller: _colorCtrl,
-                          hint: 'e.g. blue',
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Semantics(
+                  button: true,
+                  label: item.selected
+                      ? 'Included in this upload'
+                      : 'Excluded from this upload',
+                  child: GestureDetector(
+                    onTap: _isSavingWardrobe
+                        ? null
+                        : () {
+                            final selCount = _detected
+                                .where((d) => d.selected && d.isSaveable)
+                                .length;
+                            if (!item.selected && selCount >= 6) {
+                              _toast('Maximum 6 items per outfit');
+                              return;
+                            }
+                            setState(() => item.selected = !item.selected);
+                          },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: item.selected
+                            ? LinearGradient(
+                                colors: [t.accent.primary, t.accent.tertiary],
+                              )
+                            : null,
+                        color: item.selected
+                            ? null
+                            : Colors.black.withOpacity(0.45),
+                        border: Border.all(
+                          color: item.selected
+                              ? t.accent.primary
+                              : Colors.white70,
+                          width: 1.5,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _ModalField(
-                        label: 'Pattern',
-                        child: _StyledInput(
-                          controller: _patternCtrl,
-                          hint: 'plain, checked',
-                        ),
+                      child: Icon(
+                        item.selected ? Icons.check : Icons.close,
+                        size: 15,
+                        color: Colors.white,
                       ),
                     ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 14),
-                if (privateWearDetected) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            ctrls.name.text.isEmpty ? item.category : ctrls.name.text,
+            style: TextStyle(
+              fontFamily: GoogleFonts.inter().fontFamily,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: t.textPrimary,
+            ),
+          ),
+          if ([
+            item.color,
+            item.pattern,
+          ].where((s) => (s ?? '').trim().isNotEmpty).isNotEmpty)
+            Text(
+              [
+                item.color,
+                item.pattern,
+              ].where((s) => (s ?? '').trim().isNotEmpty).join(' • '),
+              style: TextStyle(
+                fontFamily: GoogleFonts.inter().fontFamily,
+                fontSize: 12,
+                color: t.mutedText,
+              ),
+            ),
+          const SizedBox(height: 14),
+          _ModalField(
+            label: AppLocalizations.t(context, 'wardrobe_item_name'),
+            child: _StyledInput(
+              controller: ctrls.name,
+              hint: 'e.g. White linen shirt',
+            ),
+          ),
+          const SizedBox(height: 12),
+          _ModalField(
+            label: AppLocalizations.t(context, 'wardrobe_category_required'),
+            child: _CategoryDropdown(
+              value: item.category,
+              categories: _cats,
+              onChanged: (v) =>
+                  setState(() => item.category = v ?? item.category),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _ModalField(
+            label: 'Sub-category',
+            child: _StyledInput(
+              controller: ctrls.subCategory,
+              hint: 'e.g. Shirt, Saree, Sneakers',
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _ModalField(
+                  label: 'Color',
+                  child: _StyledInput(
+                    controller: ctrls.color,
+                    hint: 'e.g. blue',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ModalField(
+                  label: 'Pattern',
+                  child: _StyledInput(
+                    controller: ctrls.pattern,
+                    hint: 'plain, checked',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (privateWear) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: t.accent.secondary.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: t.accent.secondary.withValues(alpha: 0.25),
+                ),
+              ),
+              child: Text(
+                "This item is marked as private wear and won't be used in public outfit boards.",
+                style: TextStyle(
+                  fontFamily: GoogleFonts.inter().fontFamily,
+                  color: t.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          _ModalField(
+            label: 'Best for',
+            child: Wrap(
+              spacing: 7,
+              runSpacing: 7,
+              children: _occs.map((occ) {
+                final active = item.occasions.any(
+                  (o) =>
+                      humanizeOccasion(o).toLowerCase() == occ.toLowerCase(),
+                );
+                final disabled =
+                    privateWear && {'Work', 'Dinner', 'Travel'}.contains(occ);
+                return GestureDetector(
+                  onTap: disabled
+                      ? null
+                      : () => setState(() {
+                          if (active) {
+                            item.occasions = item.occasions
+                                .where(
+                                  (o) =>
+                                      humanizeOccasion(o).toLowerCase() !=
+                                      occ.toLowerCase(),
+                                )
+                                .toList();
+                          } else {
+                            item.occasions = [...item.occasions, occ];
+                          }
+                        }),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 7,
+                    ),
                     decoration: BoxDecoration(
-                      color: t.accent.secondary.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(14),
+                      gradient: active
+                          ? LinearGradient(
+                              colors: [t.accent.primary, t.accent.tertiary],
+                            )
+                          : null,
+                      color: active
+                          ? null
+                          : t.backgroundSecondary.withValues(
+                              alpha: disabled ? 0.45 : 1,
+                            ),
+                      borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: t.accent.secondary.withValues(alpha: 0.25),
+                        color: active ? t.accent.primary : t.cardBorder,
+                        width: 1.5,
                       ),
                     ),
                     child: Text(
-                      "This item is marked as private wear and won't be used in public outfit boards.",
+                      occ,
                       style: TextStyle(
                         fontFamily: GoogleFonts.inter().fontFamily,
-                        color: t.textPrimary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: disabled
+                            ? t.mutedText.withValues(alpha: 0.45)
+                            : (active ? t.textPrimary : t.mutedText),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 14),
-                ],
-                _ModalField(
-                  label: AppLocalizations.t(context, 'occasion'),
-                  child: Wrap(
-                    spacing: 7,
-                    runSpacing: 7,
-                    children: _occs.map((occ) {
-                      final active = _selectedOccs.contains(occ);
-                      final disabled =
-                          privateWearDetected &&
-                              {'Work', 'Dinner', 'Travel'}.contains(occ);
-                      return GestureDetector(
-                        onTap: disabled
-                            ? null
-                            : () => setState(
-                              () => active
-                              ? _selectedOccs.remove(occ)
-                              : _selectedOccs.add(occ),
-                        ),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 7,
-                          ),
-                          decoration: BoxDecoration(
-                            gradient: active
-                                ? LinearGradient(
-                              colors: [
-                                t.accent.primary,
-                                t.accent.tertiary,
-                              ],
-                            )
-                                : null,
-                            color: active
-                                ? null
-                                : t.panel.withValues(
-                              alpha: disabled ? 0.45 : 1,
-                            ),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: active ? t.accent.primary : t.cardBorder,
-                              width: 1.5,
-                            ),
-                          ),
-                          child: Text(
-                            occ,
-                            style: TextStyle(
-                              fontFamily: GoogleFonts.inter().fontFamily,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: disabled
-                                  ? t.mutedText.withValues(alpha: 0.45)
-                                  : (active ? t.textPrimary : t.mutedText),
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _ModalField(
+            label: AppLocalizations.t(context, 'wardrobe_notes_optional'),
+            child: _StyledInput(
+              controller: ctrls.notes,
+              hint: 'Colour, material, where you got it...',
+              maxLines: 3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUnapprovedCard(_DetectedItem item) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.panel.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: t.cardBorder),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: t.backgroundSecondary,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: item.previewBytes != null
+                ? Image.memory(item.previewBytes!, fit: BoxFit.contain)
+                : Center(
+                    child: Text(
+                      _DetectedItem.catEmoji(item.category),
+                      style: const TextStyle(fontSize: 20),
+                    ),
+                  ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.name,
+                  style: TextStyle(
+                    fontFamily: GoogleFonts.inter().fontFamily,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: t.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 14),
-                _ModalField(
-                  label: AppLocalizations.t(context, 'wardrobe_notes_optional'),
-                  child: _StyledInput(
-                    controller: _notesCtrl,
-                    hint: 'Colour, material, where you got it...',
-                    maxLines: 3,
+                const SizedBox(height: 3),
+                Text(
+                  item.statusLabel ?? 'Not approved',
+                  style: TextStyle(
+                    fontFamily: GoogleFonts.inter().fontFamily,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: t.mutedText,
                   ),
                 ),
               ],
@@ -4565,13 +4589,20 @@ class _AddItemModalState extends State<_AddItemModal>
   }
 
   Widget _buildFooter() {
-    if (_saveComplete) return const SizedBox.shrink();
+    // The saving/success/error screens carry their own primary actions
+    // in-body (Screens 4-6) — the footer must not offer a second Save/Retry
+    // control while any of those states are active.
+    if (_step == _ModalStep.saving ||
+        _step == _ModalStep.success ||
+        _step == _ModalStep.error) {
+      return const SizedBox.shrink();
+    }
 
     final int selCount = _detected
         .where((i) => i.selected && i.isSaveable)
         .length;
 
-    // Camera step ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â only Cancel, no manual option
+    // Camera step — only Cancel, no manual option.
     if (_step == _ModalStep.camera) {
       return Container(
         padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
@@ -4605,9 +4636,13 @@ class _AddItemModalState extends State<_AddItemModal>
       );
     }
 
-    // No items selected OR error state ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â hide primary button, show only Cancel
-    if (_step == _ModalStep.results &&
-        (_detected.where((i) => i.selected && i.isSaveable).isEmpty)) {
+    // Detecting — no footer controls; the scanning screen owns its own UI.
+    if (_step == _ModalStep.detecting) {
+      return const SizedBox.shrink();
+    }
+
+    // Reviewing with nothing approved/selected — hide primary button.
+    if (_step == _ModalStep.reviewing && selCount == 0) {
       return Container(
         padding: const EdgeInsets.fromLTRB(18, 12, 18, 20),
         decoration: BoxDecoration(
@@ -4640,34 +4675,11 @@ class _AddItemModalState extends State<_AddItemModal>
       );
     }
 
-    final String primaryLabel = _isSavingWardrobe
-        ? 'Saving to wardrobe...'
-        : switch (_step) {
-      _ModalStep.camera => '',
-      _ModalStep.detecting => 'Detecting...',
-      _ModalStep.results =>
-      selCount == 0
-          ? 'No approved items to add'
-          : 'Add $selCount approved item${selCount != 1 ? 's' : ''}',
-      _ModalStep.editing =>
-      _editingIndex != null ? 'Save changes' : 'Save to wardrobe',
-    };
-    final bool primaryDisabled =
-        _isSavingWardrobe ||
-            (_step == _ModalStep.results && selCount == 0) ||
-            _step == _ModalStep.detecting;
-    final VoidCallback? primaryAction = _isSavingWardrobe
-        ? null
-        : switch (_step) {
-      _ModalStep.camera => null,
-      _ModalStep.detecting => null,
-      _ModalStep.results =>
-      (selCount == 0 || _detected.isEmpty)
-          ? null
-          : () => _confirmAndSave(),
-      _ModalStep.editing =>
-      _editingIndex != null ? _saveEditedItem : _manualSave,
-    };
+    // Single active final "Add to wardrobe" entry point for the whole
+    // capture session — this is the ONLY call site of _confirmAndSave().
+    final String primaryLabel = selCount == 1
+        ? 'Add to wardrobe'
+        : 'Add $selCount items to wardrobe';
 
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 20),
@@ -4678,7 +4690,7 @@ class _AddItemModalState extends State<_AddItemModal>
       child: Row(
         children: [
           GestureDetector(
-            onTap: _isSavingWardrobe ? null : () => Navigator.of(context).pop(),
+            onTap: () => Navigator.of(context).pop(),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
               decoration: BoxDecoration(
@@ -4698,52 +4710,30 @@ class _AddItemModalState extends State<_AddItemModal>
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: GestureDetector(
-              onTap: primaryAction,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 13),
-                decoration: BoxDecoration(
-                  gradient: primaryDisabled
-                      ? LinearGradient(
-                    colors: [
-                      t.accent.primary.withValues(alpha: 0.4),
-                      t.accent.tertiary.withValues(alpha: 0.4),
-                    ],
-                  )
-                      : LinearGradient(
-                    colors: [t.accent.primary, t.accent.tertiary],
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                alignment: Alignment.center,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_isSavingWardrobe) ...[
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            t.textPrimary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                    ],
-                    Text(
-                      primaryLabel,
-                      style: TextStyle(
-                        fontFamily: GoogleFonts.inter().fontFamily,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: t.textPrimary,
-                      ),
+            child: Semantics(
+              button: true,
+              label: primaryLabel,
+              child: GestureDetector(
+                key: const ValueKey('wardrobe-confirm-cta'),
+                onTap: _confirmAndSave,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [t.accent.primary, t.accent.tertiary],
                     ),
-                  ],
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    primaryLabel,
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.inter().fontFamily,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: t.textPrimary,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -4966,31 +4956,6 @@ class _FramePainter extends CustomPainter {
 }
 
 // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ SMALL PILL TAG ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
-class _SmallPill extends StatelessWidget {
-  final String label;
-  final Color color;
-  const _SmallPill(this.label, this.color);
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.14),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontFamily: GoogleFonts.inter().fontFamily,
-          fontSize: 10,
-          color: color,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-  }
-}
-
 class _ModalField extends StatelessWidget {
   final String label;
   final Widget child;

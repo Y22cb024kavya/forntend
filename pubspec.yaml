@@ -51,6 +51,10 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # Used directly by test/wardrobe_upload_flow_test.dart to fake image
+  # picking (ImagePickerPlatform.instance) — was previously only a
+  # transitive dependency via image_picker.
+  image_picker_platform_interface: ^2.11.1
 
 flutter:
   uses-material-design: true

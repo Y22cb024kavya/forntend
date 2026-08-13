@@ -82,19 +82,16 @@ class HomeTodayCard {
 
 @immutable
 class HomeContextUsage {
-  final String contextVersion;
-  final String contextUsage;
+  final Map<String, dynamic> values;
 
   const HomeContextUsage({
-    required this.contextVersion,
-    required this.contextUsage,
+    this.values = const <String, dynamic>{},
   });
 
-  static const empty = HomeContextUsage(contextVersion: '', contextUsage: '');
+  static const empty = HomeContextUsage();
 
   factory HomeContextUsage.fromMap(Map<String, dynamic> m) => HomeContextUsage(
-    contextVersion: (m['context_version'] as String? ?? '').trim(),
-    contextUsage: (m['context_usage'] as String? ?? '').trim(),
+    values: Map<String, dynamic>.from(m),
   );
 }
 
@@ -104,6 +101,7 @@ class HomeContextUsage {
 class HomeTodaySummary {
   final String date;
   final String timezone;
+  final String contextVersion;
   final HomeContextUsage contextUsage;
   final HomeTodayCard wear;
   final HomeTodayCard move;
@@ -114,6 +112,7 @@ class HomeTodaySummary {
   const HomeTodaySummary({
     required this.date,
     required this.timezone,
+    required this.contextVersion,
     required this.contextUsage,
     required this.wear,
     required this.move,
@@ -139,6 +138,7 @@ class HomeTodaySummary {
     return HomeTodaySummary(
       date: (m['date'] as String? ?? '').trim(),
       timezone: (m['timezone'] as String? ?? '').trim(),
+      contextVersion: (m['context_version'] ?? '').toString().trim(),
       contextUsage: m['context_usage'] is Map
           ? HomeContextUsage.fromMap(
               Map<String, dynamic>.from(m['context_usage'] as Map),

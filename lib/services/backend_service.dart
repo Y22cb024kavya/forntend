@@ -169,6 +169,15 @@ class BackendService {
   final AppwriteService _appwriteService;
   final LocationContextService _locationContextService;
 
+  @visibleForTesting
+  http.Client? debugHttpClient;
+
+  @visibleForTesting
+  Future<String> Function()? debugAuthenticatedUserIdProvider;
+
+  @visibleForTesting
+  Future<Map<String, String>> Function()? debugAuthHeadersProvider;
+
   BackendService({
     AppwriteService? appwriteService,
     LocationContextService? locationContextService,
@@ -263,6 +272,8 @@ class BackendService {
   }
 
   Future<String> _currentUserId() async {
+    final debugUserId = debugAuthenticatedUserIdProvider;
+    if (debugUserId != null) return debugUserId();
     final user = await _appwriteService.getCurrentUser();
 
     if (user != null && user.$id.trim().isNotEmpty) {
@@ -283,6 +294,8 @@ class BackendService {
   }
 
   Future<Map<String, String>> _authHeaders() async {
+    final debugHeaders = debugAuthHeadersProvider;
+    if (debugHeaders != null) return debugHeaders();
     final jwt = await _appwriteService.account.createJWT();
     final token = jwt.jwt;
     if (token.isEmpty) throw Exception('Could not create Appwrite JWT');
@@ -1781,18 +1794,24 @@ class BackendService {
   @visibleForTesting
   Future<HomeTodaySummary> Function()? debugHomeSummaryFetcher;
 
-  Future<HomeTodaySummary> getHomeTodaySummary() async {
+  Future<HomeTodaySummary> getHomeTodaySummary({String? timezone}) async {
     debugPrint('home.summary.requested');
     final root = baseUrl.replaceAll(RegExp(r'/+$'), '');
     try {
-      final userId = await _currentUserId();
-      final location = await _locationContext(userId);
-      final uri = Uri.parse(
-        '$root/api/home/today-summary',
-      ).replace(queryParameters: {'location_context': jsonEncode(location)});
+      await _currentUserId();
+      final query = <String, String>{
+        if (timezone != null && timezone.trim().isNotEmpty)
+          'timezone': timezone.trim(),
+      };
+      final baseUri = Uri.parse('$root/api/home/today-summary');
+      final uri = query.isEmpty
+          ? baseUri
+          : baseUri.replace(queryParameters: query);
       final headers = await _authHeaders();
-      final response = await http
-          .get(uri, headers: headers)
+      final client = debugHttpClient;
+      final response = await (client != null
+              ? client.get(uri, headers: headers)
+              : http.get(uri, headers: headers))
           .timeout(const Duration(seconds: 20));
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final raw = await compute(_parseJsonMap, response.body);

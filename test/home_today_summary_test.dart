@@ -5,6 +5,7 @@
 // Test 15: static Home hero is not driven by HomeCardSummaryProvider.
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -13,6 +14,27 @@ import 'package:myapp/home_card_summary_provider.dart';
 import 'package:myapp/models/home_today_summary.dart';
 import 'package:myapp/services/appwrite_service.dart';
 import 'package:myapp/services/backend_service.dart';
+import 'package:http/http.dart' as http;
+
+class _RecordingClient extends http.BaseClient {
+  Uri? lastUri;
+  Map<String, String>? lastHeaders;
+  final Map<String, dynamic> responseBody;
+
+  _RecordingClient(this.responseBody);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    lastUri = request.url;
+    lastHeaders = request.headers;
+    final body = utf8.encode(jsonEncode(responseBody));
+    return http.StreamedResponse(
+      Stream<List<int>>.value(body),
+      200,
+      headers: const {'content-type': 'application/json'},
+    );
+  }
+}
 
 // ── Shared test helpers ───────────────────────────────────────────────────────
 
@@ -52,7 +74,8 @@ HomeTodaySummary _makeSummary({
 }) => HomeTodaySummary.fromMap({
   'date': date,
   'timezone': 'Asia/Kolkata',
-  'context_usage': {'context_version': 'v2', 'context_usage': 'full'},
+  'context_version': 'v2',
+  'context_usage': {'weather_used': true},
   'cards': {
     'wear':     {'headline': wearHeadline, 'context': wearContext,  'status': 'Pick outfit', 'available': true,  'action': 'open_daily_wear'},
     'move':     {'headline': moveHeadline, 'context': '',           'status': 'Start',       'available': true,  'action': 'open_fitness'},
@@ -95,7 +118,73 @@ void main() {
     expect(s.medicine.headline, 'One reminder today');
     expect(s.date, '2024-01-15');
     expect(s.timezone, 'Asia/Kolkata');
-    expect(s.contextUsage.contextVersion, 'v2');
+    expect(s.contextVersion, 'v2');
+  });
+
+  test('today-summary request omits location context and preserves auth', () async {
+    final client = _RecordingClient({
+      'date': '2024-01-15',
+      'timezone': 'UTC',
+      'context_version': 'v3',
+      'cards': {},
+    });
+    final backend = BackendService()..debugHttpClient = client;
+    backend.debugAuthenticatedUserIdProvider = () async => 'user-1';
+    backend.debugAuthHeadersProvider = () async => const {
+      'Authorization': 'Bearer test-token',
+    };
+
+    await backend.getHomeTodaySummary();
+
+    expect(client.lastUri.toString(), 'https://api.test/api/home/today-summary');
+    expect(client.lastUri!.queryParameters, isEmpty);
+    expect(client.lastHeaders!['Authorization'], 'Bearer test-token');
+  });
+
+  test('today-summary sends optional timezone only when supplied', () async {
+    final client = _RecordingClient({
+      'date': '2024-01-15',
+      'timezone': 'Asia/Kolkata',
+      'context_version': 'v3',
+      'cards': {},
+    });
+    final backend = BackendService()..debugHttpClient = client;
+    backend.debugAuthenticatedUserIdProvider = () async => 'user-1';
+    backend.debugAuthHeadersProvider = () async => const {
+      'Authorization': 'Bearer test-token',
+    };
+
+    await backend.getHomeTodaySummary(timezone: ' Asia/Kolkata ');
+
+    expect(client.lastUri!.queryParameters, {'timezone': 'Asia/Kolkata'});
+  });
+
+  test('top-level context version and optional operational context are tolerant', () {
+    final base = <String, dynamic>{
+      'date': '2024-01-15',
+      'timezone': 'UTC',
+      'context_version': 'v3',
+      'cards': {},
+    };
+    final missing = HomeTodaySummary.fromMap(base);
+    expect(missing.contextVersion, 'v3');
+    expect(missing.contextUsage.values, isEmpty);
+
+    final partial = HomeTodaySummary.fromMap({
+      ...base,
+      'context_usage': {'weather_used': true},
+    });
+    expect(partial.contextUsage.values['weather_used'], isTrue);
+
+    final extra = HomeTodaySummary.fromMap({
+      ...base,
+      'context_usage': {
+        'location_used': true,
+        'weather': {'provider': 'open-meteo'},
+        'future_operational_field': {'nested': true},
+      },
+    });
+    expect(extra.contextUsage.values['future_operational_field'], isA<Map>());
   });
 
   // ── 2. Malformed one-card payload does not fail other cards ──────────────

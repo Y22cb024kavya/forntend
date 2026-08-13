@@ -44,6 +44,29 @@ void main() {
     expect(request, contains("'request': 'daily_board'"));
   });
 
+  test('Daily Wear saves use canonical Saved Board v2 content', () {
+    final source = File('lib/daily_wear.dart').readAsStringSync();
+    final saveSection = source.substring(
+      source.indexOf('Future<void> _persistCurrentLook'),
+      source.indexOf('void _toggleMic'),
+    );
+
+    expect(saveSection, contains('buildSavedBoardContent('));
+    expect(saveSection, contains("bucket: 'everything_else'"));
+    expect(saveSection, contains("originalOccasion: 'daily'"));
+    expect(saveSection, contains('_savedDailyWearItems(board)'));
+    expect(saveSection, contains('content: content'));
+    for (final deprecated in [
+      'outfitDescription:',
+      'emoji:',
+      'boardCategory:',
+      'boardCategoryLabel:',
+      'board_payload:',
+    ]) {
+      expect(saveSection, isNot(contains(deprecated)));
+    }
+  });
+
   test('Daily Wear keeps the pending Style loader neutral', () {
     final source = File('lib/daily_wear.dart').readAsStringSync();
     final messages = source.substring(source.indexOf('Widget _chatMessages()'));

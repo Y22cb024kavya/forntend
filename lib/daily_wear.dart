@@ -18,6 +18,7 @@ import 'package:myapp/wardrobe.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/style_board/board_models.dart';
 import 'package:myapp/style_board/editorial_board_renderer.dart';
+import 'package:myapp/style_board/saved_board_persistence.dart';
 import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
 import 'package:myapp/widgets/try_on_coming_soon.dart';
@@ -1307,56 +1308,78 @@ class _DailyWearScreenState extends State<DailyWearScreen>
     return items;
   }
 
-  List<String> _currentOutfitItemIds() {
-    final ids = <String>{};
-    for (final item in _currentOutfitItems()) {
-      final rawId =
-          item['id'] ?? item['item_id'] ?? item['itemId'] ?? item[r'$id'];
-      final id = rawId?.toString().trim() ?? '';
-      if (id.isNotEmpty) ids.add(id);
-    }
-    return ids.toList(growable: false);
+  List<Map<String, dynamic>> _savedDailyWearItems(StyleBoardData board) {
+    return board.items.map((item) {
+      final saved = Map<String, dynamic>.from(item.raw)
+        ..['id'] = item.id
+        ..['item_id'] = item.id
+        ..['role'] = item.role.name
+        ..['name'] = item.name
+        ..['source'] = item.source;
+      final originalImage = (saved['image_url'] ?? saved['imageUrl'])
+          ?.toString()
+          .trim();
+      final resolved = item.resolveImage(surface: 'style_board');
+      if (originalImage != null &&
+          originalImage.isNotEmpty &&
+          resolved.field != 'image_url') {
+        saved['original_image_url'] = originalImage;
+      }
+      if (resolved.field != 'image_url') {
+        saved.remove('image_url');
+        saved.remove('imageUrl');
+      }
+      if (item.maskedUrl.isNotEmpty) saved['masked_url'] = item.maskedUrl;
+      if (item.normalizedUrl.isNotEmpty) {
+        saved['normalized_url'] = item.normalizedUrl;
+      }
+      if (item.boardImageUrl.isNotEmpty) {
+        saved['board_image_url'] = item.boardImageUrl;
+      }
+      if (resolved.field == 'image_url' && resolved.url != null) {
+        saved['image_url'] = resolved.url;
+      }
+      return saved;
+    }).toList(growable: false);
   }
 
   Future<void> _persistCurrentLook() async {
     final outfit = _currentOutfit;
-    final imageUrl = (outfit['img'] ?? '').toString().trim();
+    final board = _styleBoardFromOutfit(outfit);
     final title = (outfit['name'] ?? outfit['nameKey'] ?? 'Daily Look')
         .toString()
         .trim();
-    final description =
-    (outfit['desc'] ?? outfit['tip'] ?? 'AHVI curated daily drop')
-        .toString()
-        .trim();
-    final itemIds = _currentOutfitItemIds();
-    final outfitItems = _currentOutfitItems();
+    if (board == null) {
+      _showToast(AppLocalizations.t(context, 'daily_wear_save_failed'));
+      return;
+    }
+    final outfitItems = _savedDailyWearItems(board);
+    final imageUrl = board.items
+        .map((item) => item.displayImageUrl.trim())
+        .firstWhere(
+          (url) => url.isNotEmpty,
+          orElse: () => '',
+        );
+    if (imageUrl.isEmpty) {
+      _showToast(AppLocalizations.t(context, 'daily_wear_save_failed'));
+      return;
+    }
 
     try {
-      final saved = await AppwriteService().saveBoardToCollection(
-        occasion: 'daily',
-        outfitDescription:
-        description.isEmpty ? 'AHVI curated daily drop' : description,
-        imageUrl: imageUrl.isEmpty ? null : imageUrl,
-        boardCategory: 'daily',
-        boardCategoryLabel: 'Daily Wear',
-        title: title.isEmpty ? 'Daily Look' : title,
-        prompt: 'Saved from Daily Wear',
-        extra: {
-          'itemIds': itemIds,
-          'outfitItems': outfitItems,
-          'items': outfitItems,
-          'board_payload': {
-            'title': title.isEmpty ? 'Daily Look' : title,
-            'occasion': 'daily',
-            'items': outfitItems,
-          },
-          'boardPayload': {
-            'title': title.isEmpty ? 'Daily Look' : title,
-            'occasion': 'daily',
-            'items': outfitItems,
-          },
+      final content = buildSavedBoardContent(
+        board: {
+          'board_id': outfit['id'],
+          'revision': 1,
+          'source_policy': 'wardrobe',
         },
-        emoji: '✨',
+        items: outfitItems,
+        selection: const SavedBoardSelection(bucket: 'everything_else'),
+        title: title.isEmpty ? 'Saved Look' : title,
+        originalOccasion: 'daily',
+      );
+      final saved = await AppwriteService().saveBoardToCollection(
+        imageUrl: imageUrl,
+        content: content,
       );
 
       if (!mounted) return;
@@ -1382,63 +1405,35 @@ class _DailyWearScreenState extends State<DailyWearScreen>
   }
 
   Future<void> _saveOutfitToBoards(Map<String, dynamic> outfit) async {
-    final imageUrl = (outfit['img'] ?? '').toString().trim();
+    final board = _styleBoardFromOutfit(outfit);
     final title = (outfit['name'] ?? outfit['nameKey'] ?? 'Daily Look')
         .toString()
         .trim();
-    final description =
-    (outfit['desc'] ?? outfit['tip'] ?? 'AHVI curated daily drop')
-        .toString()
-        .trim();
-
-    final outfitItems = <Map<String, dynamic>>[];
-    void addAllFrom(dynamic raw) {
-      if (raw is! Iterable) return;
-      for (final entry in raw) {
-        if (entry is Map) {
-          outfitItems.add(Map<String, dynamic>.from(entry));
-        }
-      }
-    }
-
-    addAllFrom(outfit['items']);
-    addAllFrom(outfit['used_wardrobe_items']);
-
-    final itemIds = outfitItems
-        .map(
-          (item) =>
-      (item['id'] ??
-          item['item_id'] ??
-          item['itemId'] ??
-          item[r'$id'])
-          ?.toString()
-          .trim() ??
-          '',
-    )
-        .where((id) => id.isNotEmpty)
-        .toList();
+    if (board == null) return;
+    final outfitItems = _savedDailyWearItems(board);
+    final imageUrl = board.items
+        .map((item) => item.displayImageUrl.trim())
+        .firstWhere(
+          (url) => url.isNotEmpty,
+          orElse: () => '',
+        );
+    if (imageUrl.isEmpty) return;
 
     try {
-      await AppwriteService().saveBoardToCollection(
-        occasion: 'daily',
-        outfitDescription:
-        description.isEmpty ? 'AHVI curated daily drop' : description,
-        imageUrl: imageUrl.isEmpty ? null : imageUrl,
-        boardCategory: 'daily',
-        boardCategoryLabel: 'Daily Wear',
-        title: title.isEmpty ? 'Daily Look' : title,
-        prompt: 'Saved from Daily Wear',
-        extra: {
-          'itemIds': itemIds,
-          'outfitItems': outfitItems,
-          'items': outfitItems,
-          'board_payload': {
-            'title': title.isEmpty ? 'Daily Look' : title,
-            'occasion': 'daily',
-            'items': outfitItems,
-          },
+      final content = buildSavedBoardContent(
+        board: {
+          'board_id': outfit['id'],
+          'revision': 1,
+          'source_policy': 'wardrobe',
         },
-        emoji: '✨',
+        items: outfitItems,
+        selection: const SavedBoardSelection(bucket: 'everything_else'),
+        title: title.isEmpty ? 'Saved Look' : title,
+        originalOccasion: 'daily',
+      );
+      await AppwriteService().saveBoardToCollection(
+        imageUrl: imageUrl,
+        content: content,
       );
     } catch (e) {
       debugPrint('Failed to save daily look to boards: $e');

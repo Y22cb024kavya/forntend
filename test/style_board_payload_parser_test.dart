@@ -228,6 +228,31 @@ void main() {
       }
     });
 
+    test('packing envelopes never become Style boards or directions', () {
+      for (final response in [
+        {
+          'type': 'checklists',
+          'style_boards': const [],
+          'cards': [_board('pack-type')],
+        },
+        {
+          'intent': 'plan_pack',
+          'data': {
+            'style_boards': const [],
+            'cards': [_board('pack-intent')],
+          },
+        },
+        {
+          'visual_type': 'visual_packing_checklist',
+          'visual_directions': [_board('pack-direction')],
+          'cards': [_board('pack-visual')],
+        },
+      ]) {
+        expect(styleResponseRendererKindForTesting(response), 'text');
+        expect(selectStyleBoardAlias(response).boards, isEmpty);
+      }
+    });
+
     test('composite rendered board retains a canonical visual item', () {
       final response = {
         'route': 'visual_inspiration',

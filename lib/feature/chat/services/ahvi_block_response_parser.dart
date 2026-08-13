@@ -10,6 +10,7 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
 
   final parsed = AhviResponse.fromMap(response);
   final responsePolicy = AhviResponsePolicy.fromResponse(response);
+  final isPackingResponse = isAhviPackingEnvelope(response);
   final rawMessage = response['message'];
   final data = _dataMap(response);
   final isStyleThisResponse =
@@ -53,7 +54,8 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
     'ENABLE_VISUAL_BOARD_85_LAYOUT',
     defaultValue: true,
   );
-  var visualDirections = responsePolicy.canRenderBoards(response)
+  var visualDirections = responsePolicy.canRenderBoards(response) &&
+          !isPackingResponse
       ? _extractVisualDirections(response, data)
       : <Map<String, dynamic>>[];
   final hasStyleThisDirections =
@@ -68,7 +70,8 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
       responsePolicy.canRenderBoards(response) &&
       hasStyleThisAnchor &&
       responsePolicy.hasValidatedAnchorIn(response) &&
-      !_looksLikeModuleResponse(response, data)) {
+      !_looksLikeModuleResponse(response, data) &&
+      !isPackingResponse) {
     final styleDirections = _extractStyleThisDirections(response, data);
     if (styleDirections.isNotEmpty) {
       final anchor = _anchorItemMap(response, data);
@@ -112,7 +115,8 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
       responsePolicy.canRenderBoards(response) &&
       hasStyleThisAnchor &&
       !hasStyleThisDirections &&
-      !_looksLikeModuleResponse(response, data)) {
+      !_looksLikeModuleResponse(response, data) &&
+      !isPackingResponse) {
     final wardrobeBoards = responsePolicy.boardCollection(response).boards;
     if (wardrobeBoards.isNotEmpty) {
       visualDirections = wardrobeBoards.map(_styleBoardToDirection).toList();
@@ -149,6 +153,7 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   final hasVisualDirections = visualDirections.isNotEmpty;
   final hasVisualBoard =
       responsePolicy.canRenderBoards(response) &&
+      !isPackingResponse &&
       (AhviVisualBoard.isVisualBoard(response) ||
           response['visual_board'] != null ||
           response['visualBoard'] != null ||
@@ -158,6 +163,7 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   // Visual inspiration board.
   final visualInspiration = _extractVisualInspiration(response, data);
   if (responsePolicy.canRenderBoards(response) &&
+      !isPackingResponse &&
       visualInspiration.isNotEmpty &&
       !(kVisualBoard85Enabled && (hasVisualDirections || hasVisualBoard))) {
     blocks.add(
@@ -251,6 +257,7 @@ AhviParsedResponse parseAhviResponse(Map<String, dynamic> response) {
   }
 
   if (responsePolicy.canRenderBoards(response) &&
+      !isPackingResponse &&
       !_looksLikeModuleResponse(response, data) &&
       !convertedWardrobeBoards) {
     final styleBoards = responsePolicy.boardCollection(response).boards;

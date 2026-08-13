@@ -114,4 +114,36 @@ void main() {
       AhviChatRendererKind.text,
     );
   });
+
+  test('suppresses packing cards from the Style board renderer', () {
+    final response = {
+      'visual_type': 'visual_packing_checklist',
+      'cards': [
+        {'title': 'Pack chargers'},
+      ],
+    };
+
+    expect(
+      AhviChatResponseRendererRegistry.select(response).kind,
+      AhviChatRendererKind.text,
+    );
+    expect(AhviChatResponseRendererRegistry.moduleCards(response), isEmpty);
+  });
+
+  test('keeps the dedicated packing renderer for visual sections', () {
+    final response = {
+      'intent': 'plan_pack',
+      'visual_sections': [
+        {
+          'title': 'Essentials',
+          'items': ['Passport'],
+        },
+      ],
+    };
+
+    expect(
+      AhviChatResponseRendererRegistry.select(response).kind,
+      AhviChatRendererKind.visualPackingChecklist,
+    );
+  });
 }

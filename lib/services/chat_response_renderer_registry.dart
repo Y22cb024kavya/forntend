@@ -41,6 +41,7 @@ class AhviChatResponseRendererRegistry {
   static AhviChatRendererSelection select(Map<String, dynamic> response) {
     final data = _map(response['data']);
     final policy = AhviResponsePolicy.fromResponse(response);
+    final packing = _packingCard(response, data);
     final responseType = _firstText([
       response['response_type'],
       response['type'],
@@ -69,9 +70,12 @@ class AhviChatResponseRendererRegistry {
       reason = policy.isSafetySensitive
           ? 'safety_text_first'
           : 'canonical_board_policy_suppressed';
-    } else if (_packingCard(response, data) != null) {
+    } else if (packing != null) {
       kind = AhviChatRendererKind.visualPackingChecklist;
       reason = 'visual_sections';
+    } else if (isAhviPackingEnvelope(response)) {
+      kind = AhviChatRendererKind.text;
+      reason = 'packing_style_renderer_suppressed';
     } else if (policy.canRenderBoards(response) &&
         (AhviVisualBoard.isVisualBoard(response) ||
             response['visual_board'] is Map ||
@@ -151,6 +155,7 @@ class AhviChatResponseRendererRegistry {
 
     final packing = _packingCard(response, data);
     if (packing != null) return [packing];
+    if (isAhviPackingEnvelope(response)) return const [];
     add(response['card']);
     add(response['moduleCard']);
     add(data['card']);

@@ -2590,7 +2590,7 @@ class _StyleBoardPayload {
         );
 
   static _StyleBoardPayload fromResponse(Map<String, dynamic> response) {
-    if (_isModuleResponse(response)) {
+    if (_isModuleResponse(response) || isAhviPackingEnvelope(response)) {
       return const _StyleBoardPayload(
         cards: [],
         renderedBoards: [],
@@ -2689,6 +2689,9 @@ class _VisualDirectionPayload {
       );
 
   static _VisualDirectionPayload fromResponse(Map<String, dynamic> response) {
+    if (isAhviPackingEnvelope(response)) {
+      return const _VisualDirectionPayload(directions: []);
+    }
     final parsed = parseAhviResponse(response);
     for (final block in parsed.blocks) {
       if (block.type != AhviBlockType.visualDirections) continue;
@@ -2726,6 +2729,7 @@ int styleBoardCountForTesting(Map<String, dynamic> response) =>
     ).length;
 
 bool _isModuleResponse(Map<String, dynamic> response) {
+  if (isAhviPackingEnvelope(response)) return false;
   final type = (response['type'] ?? '').toString().toLowerCase();
   final module = (response['module'] ?? response['domain'] ?? '')
       .toString()

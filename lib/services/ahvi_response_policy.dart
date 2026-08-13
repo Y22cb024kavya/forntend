@@ -26,6 +26,48 @@ const Set<String> ahviBoardSuppressedRoutes = {
   'planner_action',
 };
 
+bool isAhviPackingEnvelope(Map<String, dynamic> response) {
+  final data = response['data'] is Map
+      ? Map<String, dynamic>.from(response['data'] as Map)
+      : const <String, dynamic>{};
+  final values = [
+    response['type'],
+    response['intent'],
+    response['module'],
+    response['domain'],
+    response['visual_type'],
+    response['visualType'],
+    data['type'],
+    data['intent'],
+    data['module'],
+    data['domain'],
+    data['visual_type'],
+    data['visualType'],
+  ].map((value) => value?.toString().trim().toLowerCase() ?? '');
+  final hasPackingPayload = [
+    response['cards'],
+    response['module_cards'],
+    response['visual_sections'],
+    response['visualSections'],
+    response['style_boards'],
+    data['cards'],
+    data['module_cards'],
+    data['visual_sections'],
+    data['visualSections'],
+    data['style_boards'],
+  ].any((value) => value is List || value is Map);
+  return values.any(
+        (value) =>
+            value == 'checklists' ||
+            value == 'plan-pack' ||
+            value == 'plan_pack_response' ||
+            value.contains('packing') ||
+            value.contains('checklist'),
+      ) ||
+      (values.contains('plan_pack') && hasPackingPayload) ||
+      values.contains('plan_pack_response');
+}
+
 class AhviBoardCollection {
   final String path;
   final List<Map<String, dynamic>> boards;

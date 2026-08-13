@@ -314,6 +314,48 @@ void main() {
   });
 
   testWidgets(
+    'item-level Build Outfit contract stays text-only even with stale board fields',
+    (tester) async {
+      var calls = 0;
+      await _pumpItemDetail(
+        tester,
+        styleCall:
+            ({
+              required requestedItemId,
+              required requestedScenario,
+              requestAnchorItem,
+              occasion,
+            }) async {
+              calls++;
+              return {
+                'success': false,
+                'intent': 'try_on_coming_soon',
+                'action': 'try_on_coming_soon',
+                'response_mode': 'text_only',
+                'message': 'Try-On is coming soon.',
+                'outfit': {
+                  'board_id': 'stale-board',
+                  'revision': 1,
+                  'items': [_boardItem('stale-top', 'top')],
+                },
+              };
+            },
+      );
+
+      expect(find.text('Try-On'), findsOneWidget);
+      expect(find.text('Build Outfit'), findsNothing);
+      await tester.tap(find.text('Try-On'));
+      await tester.pumpAndSettle();
+
+      expect(calls, 0);
+      expect(find.byType(TryOnComingSoonDialog), findsOneWidget);
+      expect(find.byType(AhviOutfitBoardCard), findsNothing);
+      expect(find.byType(EditorialBoardCanvas), findsNothing);
+      expect(find.text('Coming soon'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'Style This keeps valid directions when one direction is malformed',
     (tester) async {
       final response = _successfulResponse();

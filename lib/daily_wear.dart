@@ -1496,7 +1496,7 @@ class _DailyWearScreenState extends State<DailyWearScreen>
 
     try {
       final response = await BackendService().sendModuleChat(
-        domain: 'style',
+        domain: 'daily_wear',
         message: userText,
         chatHistory: List<Map<String, String>>.from(history),
         context: {

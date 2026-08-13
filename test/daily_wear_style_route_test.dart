@@ -7,26 +7,42 @@ void main() {
     'Daily Wear conversational Style uses canonical continuity contract',
     () {
       final source = File('lib/daily_wear.dart').readAsStringSync();
+      final request = source.substring(
+        source.indexOf('Future<void> _callBackendStylist'),
+        source.indexOf('void _speakMessage'),
+      );
 
-      expect(source, contains('BackendService().sendModuleChat('));
-      expect(source, contains("domain: 'style'"));
-      expect(source, contains('message: userText'));
+      expect(request, contains('BackendService().sendModuleChat('));
+      expect(request, contains("domain: 'daily_wear'"));
+      expect(request, isNot(contains("domain: 'style'")));
+      expect(request, contains('message: userText'));
       expect(
-        source,
+        request,
         contains('chatHistory: List<Map<String, String>>.from(history)'),
       );
-      expect(source, contains("'conversation_id': _currentSessionId"));
-      expect(source, contains("'session_id': _currentSessionId"));
-      expect(source, contains("'surface': 'daily_wear'"));
+      expect(request, contains("'conversation_id': _currentSessionId"));
+      expect(request, contains("'session_id': _currentSessionId"));
+      expect(request, contains("'surface': 'daily_wear'"));
       expect(
-        source,
+        request,
         contains("'current_outfit': Map<String, dynamic>.from(currentOutfit)"),
       );
-      expect(source, contains("'weather_context': _weatherContext"));
-      expect(source, isNot(contains('BackendService().sendChatQuery(')));
-      expect(source, isNot(contains("'Current outfit:")));
+      expect(request, contains("'weather_context': _weatherContext"));
+      expect(request, isNot(contains('BackendService().sendChatQuery(')));
+      expect(request, isNot(contains("'Current outfit:")));
     },
   );
+
+  test('Daily Board generation retains the style domain', () {
+    final source = File('lib/services/backend_service.dart').readAsStringSync();
+    final request = source.substring(
+      source.indexOf('Future<Map<String, dynamic>?> getDailyBoard'),
+      source.indexOf('// --- ACCOUNT & PROFILE ---'),
+    );
+
+    expect(request, contains("domain: 'style'"));
+    expect(request, contains("'request': 'daily_board'"));
+  });
 
   test('Daily Wear keeps the pending Style loader neutral', () {
     final source = File('lib/daily_wear.dart').readAsStringSync();

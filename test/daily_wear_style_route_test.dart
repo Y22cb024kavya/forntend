@@ -53,6 +53,18 @@ void main() {
     expect(request, contains("I'm having a moment - try again."));
   });
 
+  test('Daily Wear board items use canonical StyleBoardItem parsing', () {
+    final source = File('lib/daily_wear.dart').readAsStringSync();
+    final mapper = source.substring(
+      source.indexOf('StyleBoardItem _styleBoardItemFromMap'),
+      source.indexOf('/// Builds the Style Board', source.indexOf('StyleBoardItem _styleBoardItemFromMap')),
+    );
+
+    expect(mapper, contains('return StyleBoardItem.fromJson(item);'));
+    expect(mapper, isNot(contains("item['img']")));
+    expect(mapper, isNot(contains("item['photo_url']")));
+  });
+
   test('pending loader is independent of prior visual board responses', () {
     final source = File('lib/daily_wear.dart').readAsStringSync();
     final messages = source.substring(source.indexOf('Widget _chatMessages()'));

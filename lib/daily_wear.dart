@@ -476,53 +476,8 @@ class _DailyWearScreenState extends State<DailyWearScreen>
     return (fallback[index % fallback.length]['localImg'] ?? '').toString();
   }
 
-  BoardItemRole _boardItemRoleFromString(String? raw) {
-    switch ((raw ?? '').toLowerCase().trim()) {
-      case 'top':
-        return BoardItemRole.top;
-      case 'bottom':
-        return BoardItemRole.bottom;
-      case 'footwear':
-      case 'shoe':
-      case 'shoes':
-        return BoardItemRole.footwear;
-      case 'outerwear':
-      case 'jacket':
-      case 'coat':
-        return BoardItemRole.outerwear;
-      case 'dress':
-        return BoardItemRole.dress;
-      case 'accessory':
-      case 'accessories':
-        return BoardItemRole.accessory;
-      default:
-        return BoardItemRole.unknown;
-    }
-  }
-
   StyleBoardItem _styleBoardItemFromMap(Map<String, dynamic> item) {
-    final imageUrl = (item['image_url'] ??
-        item['imageUrl'] ??
-        item['img'] ??
-        item['photo_url'] ??
-        '')
-        .toString()
-        .trim();
-    final id = (item['id'] ?? item['item_id'] ?? item['itemId'] ?? imageUrl)
-        .toString();
-    final name = (item['name'] ?? item['title'] ?? item['label'] ?? '')
-        .toString();
-    final category = (item['category'] ?? item['type'] ?? '').toString();
-    return StyleBoardItem(
-      id: id,
-      name: name,
-      imageUrl: imageUrl,
-      category: category,
-      role: _boardItemRoleFromString(
-        (item['role'] ?? item['category'] ?? item['type'])?.toString(),
-      ),
-      raw: item,
-    );
+    return StyleBoardItem.fromJson(item);
   }
 
   /// Builds the Style Board for [outfit] from the wardrobe items the

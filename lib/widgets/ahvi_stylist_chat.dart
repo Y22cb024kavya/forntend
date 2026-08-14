@@ -1924,7 +1924,10 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
                 : null,
           ),
         );
-        _chatHistory.add({'role': 'assistant', 'content': displayText});
+        if (selectedEndpoint != '/api/module-chat' ||
+            shouldAppendModuleChatResponseToSemanticHistory(response)) {
+          _chatHistory.add({'role': 'assistant', 'content': displayText});
+        }
       });
       _scrollToBottom();
       _saveCurrentSession();

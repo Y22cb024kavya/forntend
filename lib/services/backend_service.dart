@@ -118,6 +118,30 @@ class BackendRequestException implements Exception {
   String toString() => message;
 }
 
+const int moduleChatHistoryLimit = 20;
+
+@visibleForTesting
+List<Map<String, String>> buildModuleChatHistoryForRequest(
+  List<Map<String, String>> chatHistory,
+  String query,
+) {
+  final history = List<Map<String, String>>.from(chatHistory);
+  if (history.isEmpty ||
+      history.last['role'] != 'user' ||
+      history.last['content'] != query) {
+    history.add({'role': 'user', 'content': query});
+  }
+  if (history.length <= moduleChatHistoryLimit) return history;
+  return history.sublist(history.length - moduleChatHistoryLimit);
+}
+
+bool shouldAppendModuleChatResponseToSemanticHistory(
+  Map<String, dynamic> response,
+) {
+  final meta = response['meta'];
+  return meta is! Map || meta['used_local_fallback'] != true;
+}
+
 /// Honest, debuggable fallback copy. Replaces the previous
 /// "AHVI is still styling/preparing this" placeholders that hid real
 /// HTTP / timeout / parser failures.
@@ -829,12 +853,10 @@ class BackendService {
           'type': 'module_response',
         };
       }
-      final historyForRequest = List<Map<String, String>>.from(chatHistory);
-      if (historyForRequest.isEmpty ||
-          historyForRequest.last['role'] != 'user' ||
-          historyForRequest.last['content'] != query) {
-        historyForRequest.add({'role': 'user', 'content': query});
-      }
+      final historyForRequest = buildModuleChatHistoryForRequest(
+        chatHistory,
+        query,
+      );
 
       final moduleContext = <String, dynamic>{...?context};
       final needsWardrobe =

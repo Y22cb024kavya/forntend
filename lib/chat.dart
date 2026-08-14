@@ -1882,7 +1882,13 @@ class _ChatScreenState extends State<ChatScreen>
               _messages.isNotEmpty &&
               !_messages.last.isMe &&
               _messages.last.text.trim() == aiText.trim();
-      _chatHistory.add({'role': 'assistant', 'content': closestEmptyFallback});
+      if (styleViaText ||
+          shouldAppendModuleChatResponseToSemanticHistory(response)) {
+        _chatHistory.add({
+          'role': 'assistant',
+          'content': closestEmptyFallback,
+        });
+      }
       setState(() {
         _activeBoardMutationState = null;
         if (duplicateWeakMatch && !isClosestAction) return;

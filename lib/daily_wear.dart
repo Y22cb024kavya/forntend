@@ -1484,6 +1484,7 @@ class _DailyWearScreenState extends State<DailyWearScreen>
 
     final history = _messages
         .take(_messages.length - 1)
+        .where((m) => !m.excludeFromSemanticHistory)
         .map(
           (m) => {'role': m.isUser ? 'user' : 'assistant', 'content': m.text},
     )
@@ -1520,6 +1521,8 @@ class _DailyWearScreenState extends State<DailyWearScreen>
             : "I'm having a moment - try again.",
         isUser: false,
         createdAt: DateTime.now(),
+        excludeFromSemanticHistory:
+            !shouldAppendModuleChatResponseToSemanticHistory(response),
       );
       setState(() {
         _isTyping = false;
@@ -3755,11 +3758,13 @@ class _ChatMessage {
   final String text;
   final bool isUser;
   final DateTime createdAt;
+  final bool excludeFromSemanticHistory;
   _ChatMessage({
     required this.id,
     required this.text,
     required this.isUser,
     required this.createdAt,
+    this.excludeFromSemanticHistory = false,
   });
 }
 

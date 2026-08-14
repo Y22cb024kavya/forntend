@@ -3309,7 +3309,6 @@ class _VisualDirectionCards extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = math.min(MediaQuery.sizeOf(context).width - 40, 390.0);
     debugPrint(
       'AHVI_LIVE_STYLE_RENDERER '
       'source_file=ahvi_stylist_chat.dart function=_VisualDirectionCards.build '
@@ -3326,14 +3325,23 @@ class _VisualDirectionCards extends StatelessWidget {
       finalRenderedCount: payload.directions.length,
       staleResponseDiscardedCount: 0,
     );
-    return SizedBox(
-      width: width,
-      child: VisualDirectionCarousel(
-        directions: payload.directions,
-        cardWidth: width,
-        onSendMessage: onPrompt,
-        onBoardStateChanged: onBoardStateChanged,
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final boardWidth = math.min(constraints.maxWidth - 24, 360.0);
+
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+            width: boardWidth,
+            child: VisualDirectionCarousel(
+              directions: payload.directions,
+              cardWidth: boardWidth,
+              onSendMessage: onPrompt,
+              onBoardStateChanged: onBoardStateChanged,
+            ),
+          ),
+        );
+      },
     );
   }
 }

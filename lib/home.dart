@@ -8,7 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:myapp/models/calendar_event_record.dart';
 import 'package:myapp/models/planner_actions.dart';
 import 'package:myapp/navigation/ahvi_back_navigation.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter/services.dart';
 import 'package:myapp/boards.dart';
 import 'package:myapp/profile.dart' as profile;
@@ -21,6 +20,7 @@ import 'package:myapp/theme/theme_tokens.dart';
 import 'package:provider/provider.dart';
 import 'package:myapp/services/appwrite_service.dart';
 import 'package:myapp/services/backend_service.dart';
+import 'package:myapp/services/ahvi_speech_service.dart';
 import 'package:myapp/widgets/ahvi_stylist_chat.dart'; // AhVi single chat implementation
 import 'package:myapp/app_localizations.dart'; // 🆕 Localization
 import 'package:myapp/daily_wear.dart';
@@ -545,7 +545,7 @@ class _Screen4State extends State<Screen4>
   final ValueNotifier<double> _keyboardHeight = ValueNotifier<double>(0.0);
 
   // ── Voice ──────────────────────────────────────────────────────────────────
-  final stt.SpeechToText _speech = stt.SpeechToText();
+  final AhviSpeechService _speech = AhviSpeechService.instance;
   bool _isListening = false;
   bool _speechAvailable = false;
   final Map<String, List<List<bool>>> _prepareExactChecksByTitle = {};
@@ -1533,46 +1533,46 @@ class _Screen4State extends State<Screen4>
 
   // ── Voice methods ──────────────────────────────────────────────────────────
   Future<void> _initSpeech() async {
-    _speechAvailable = await _speech.initialize(
-      onStatus: (status) {
-        if (status == 'done' || status == 'notListening') {
-          if (mounted) setState(() => _isListening = false);
-        }
-      },
-      onError: (_) {
-        if (mounted) setState(() => _isListening = false);
-      },
-    );
+    _speechAvailable = await _speech.ensureReady();
     if (mounted) setState(() {});
   }
 
   Future<void> _toggleListening() async {
-    if (!_speechAvailable) return;
     if (_isListening) {
       await _speech.stop();
-      setState(() => _isListening = false);
-    } else {
-      setState(() => _isListening = true);
-      await _speech.listen(
-        onResult: (result) {
-          setState(() {
-            _chatController.text = result.recognizedWords;
-            _chatController.selection = TextSelection.fromPosition(
-              TextPosition(offset: _chatController.text.length),
-            );
-          });
-          if (result.finalResult && result.recognizedWords.trim().isNotEmpty) {
-            _speech.stop();
-            setState(() => _isListening = false);
-          }
-        },
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 4),
-        localeId: 'en_IN',
-        cancelOnError: true,
-        partialResults: true,
-      );
+      if (mounted) setState(() => _isListening = false);
+      return;
     }
+
+    _speechAvailable = await _speech.ensureReady();
+    if (!_speechAvailable) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Microphone access is unavailable. You can still type your message.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (mounted) setState(() => _isListening = true);
+    await _speech.start(
+      onText: (text) {
+        if (!mounted) return;
+        setState(() {
+          _chatController.text = text;
+          _chatController.selection = TextSelection.collapsed(
+            offset: text.length,
+          );
+        });
+      },
+      onDone: () {
+        if (mounted) setState(() => _isListening = false);
+      },
+    );
   }
 
   void _onChatFocusChange() {
@@ -1602,7 +1602,7 @@ class _Screen4State extends State<Screen4>
     _chatFocusNode.removeListener(_onChatFocusChange);
     WidgetsBinding.instance.removeObserver(this);
     _keyboardHeight.dispose();
-    _speech.stop();
+    _speech.cancel();
     _aurora1Ctrl.dispose();
     _aurora2Ctrl.dispose();
     _aurora3Ctrl.dispose();

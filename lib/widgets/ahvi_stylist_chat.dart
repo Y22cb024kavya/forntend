@@ -3099,13 +3099,6 @@ class _Bubble extends StatelessWidget {
         // Internal visual-direction data still renders through the board path.
         if (msg.stylistReasoning != null)
           StylistReasoningCard(data: msg.stylistReasoning!),
-        if (msg.visualDirectionPayload != null)
-          _VisualDirectionCards(
-            payload: msg.visualDirectionPayload!,
-            onPrompt: onPrompt,
-            onBoardStateChanged: onBoardStateChanged,
-            diagnosticCorrelationId: msg.diagnosticCorrelationId,
-          ),
         if (msg.boardPayload != null)
           _StyleBoardCarousel(
             payload: msg.boardPayload!,
@@ -3119,34 +3112,48 @@ class _Bubble extends StatelessWidget {
       ],
     );
 
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Row(
-        mainAxisSize: MainAxisSize.max,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 6, right: 6),
-            child: Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [t.accent.secondary, t.accent.primary],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                shape: BoxShape.circle,
+    final assistantRow = Row(
+      mainAxisSize: MainAxisSize.max,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 6, right: 6),
+          child: Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [t.accent.secondary, t.accent.primary],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              child: const Center(
-                child: Text(
-                  '',
-                  style: TextStyle(fontSize: 11, color: Colors.white),
-                ),
+              shape: BoxShape.circle,
+            ),
+            child: const Center(
+              child: Text(
+                '',
+                style: TextStyle(fontSize: 11, color: Colors.white),
               ),
             ),
           ),
-          Expanded(child: aiContent),
+        ),
+        Expanded(child: aiContent),
+      ],
+    );
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          assistantRow,
+          if (msg.visualDirectionPayload != null)
+            _VisualDirectionCards(
+              payload: msg.visualDirectionPayload!,
+              onPrompt: onPrompt,
+              onBoardStateChanged: onBoardStateChanged,
+              diagnosticCorrelationId: msg.diagnosticCorrelationId,
+            ),
         ],
       ),
     );
@@ -3381,18 +3388,16 @@ class _VisualDirectionCards extends StatelessWidget {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        final boardWidth = math.min(constraints.maxWidth - 24, 360.0);
+        final boardWidth = constraints.maxWidth;
 
-        return Align(
-          alignment: Alignment.centerLeft,
-          child: SizedBox(
-            width: boardWidth,
-            child: VisualDirectionCarousel(
-              directions: payload.directions,
-              cardWidth: boardWidth,
-              onSendMessage: onPrompt,
-              onBoardStateChanged: onBoardStateChanged,
-            ),
+        return SizedBox(
+          key: const ValueKey('active-chat-style-board-surface'),
+          width: boardWidth,
+          child: VisualDirectionCarousel(
+            directions: payload.directions,
+            cardWidth: boardWidth,
+            onSendMessage: onPrompt,
+            onBoardStateChanged: onBoardStateChanged,
           ),
         );
       },

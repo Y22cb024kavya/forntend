@@ -471,7 +471,10 @@ void main() {
     expect(canvasHeights, everyElement(closeTo(canvasHeights.first, 0.01)));
     expect(
       canvasHeights.first,
-      closeTo(editorialBoardCanvasHeightForWidth(320), 0.01),
+      closeTo(
+        editorialBoardCanvasHeightForWidth(320, itemCount: 4),
+        0.01,
+      ),
     );
   });
 
@@ -504,7 +507,10 @@ void main() {
     );
     expect(
       tester.getSize(canvas).height,
-      closeTo(editorialBoardCanvasHeightForWidth(320), 0.01),
+      closeTo(
+        editorialBoardCanvasHeightForWidth(320, itemCount: 4),
+        0.01,
+      ),
     );
     expect(why.maxLines, isNull);
     expect(tip.maxLines, isNull);

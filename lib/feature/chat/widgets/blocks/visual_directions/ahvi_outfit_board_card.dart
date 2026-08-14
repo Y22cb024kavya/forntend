@@ -33,32 +33,21 @@ typedef OutfitBoardStateChanged = void Function(Map<String, dynamic> board);
 
 const double editorialBoardHeaderHeight = 30;
 const double editorialBoardContextHeight = 72;
-const double editorialBoardReasoningHeight = 220;
-const double editorialBoardActionHeight = 48;
-const double editorialBoardMutationHeight = 52;
 
-/// Reserves the visual canvas independently from copy length and action state.
-double editorialBoardCanvasHeightForWidth(double width) {
+/// Sizes the canonical composition to its item-count template.
+double editorialBoardCanvasHeightForWidth(double width, {int itemCount = 3}) {
   final safeWidth = width.isFinite && width > 0 ? width : 320.0;
-  return (safeWidth * 0.68).clamp(194.0, 270.0).toDouble();
-}
-
-double editorialBoardCardHeightForWidth(
-  double width, {
-  bool includeMutationBar = false,
-}) {
-  final canvasHeight = editorialBoardCanvasHeightForWidth(width);
-  final actionHeight =
-      editorialBoardActionHeight +
-      (includeMutationBar ? editorialBoardMutationHeight : 0);
-  return math.max(
-    includeMutationBar ? 520.0 : 480.0,
-    editorialBoardHeaderHeight +
-        editorialBoardContextHeight +
-        canvasHeight +
-        editorialBoardReasoningHeight +
-        actionHeight,
-  );
+  final ratio = switch (itemCount.clamp(1, 8)) {
+    1 => 0.76,
+    2 => 0.68,
+    3 => 0.68,
+    4 => 0.72,
+    5 => 0.74,
+    6 => 0.66,
+    7 => 0.72,
+    _ => 0.74,
+  };
+  return safeWidth * ratio;
 }
 
 /// Keeps bounded display copy at a word or sentence boundary instead of using
@@ -591,11 +580,8 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
     final textScale = MediaQuery.textScalerOf(context).scale(1);
 
     return SizedBox(
+      key: const ValueKey('active-chat-outfit-board-card'),
       width: widget.width,
-      height: editorialBoardCardHeightForWidth(
-        widget.width,
-        includeMutationBar: _controller != null,
-      ),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: theme.colorScheme.surface,
@@ -611,79 +597,72 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(18),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: RepaintBoundary(
-                  key: _shareBoundaryKey,
-                  child: SingleChildScrollView(
-                    physics: const ClampingScrollPhysics(),
-                    child: Column(
-                      children: [
-                        SizedBox(
-                          height: editorialBoardHeaderHeight,
-                          child: _PremiumBoardHeader(mode: mode),
-                        ),
-                        SizedBox(
-                          height: editorialBoardContextHeight,
-                          child: ClipRect(
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: widget.onTapBoard == null
-                                  ? null
-                                  : () => widget.onTapBoard!(_currentDirection),
-                              child: textScale > 1
-                                  ? SingleChildScrollView(
-                                      physics: const ClampingScrollPhysics(),
-                                      child: contextStrip,
-                                    )
-                                  : contextStrip,
-                            ),
-                          ),
-                        ),
-                        SizedBox(
-                          height: editorialBoardCanvasHeightForWidth(
-                            widget.width,
-                          ),
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: widget.onTapBoard == null
-                                ? null
-                                : () => widget.onTapBoard!(_currentDirection),
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
-                              child: renderable
-                                  ? EditorialBoardCanvas(
-                                      key: const ValueKey(
-                                        'editorial-outfit-canvas',
-                                      ),
-                                      board: board,
-                                      lockedItemIds:
-                                          _controller?.state.lockedItemIds ??
-                                          const {},
-                                      onToggleLock: mode.supportsMutation
-                                          ? _controller?.toggleLock
-                                          : null,
-                                    )
-                                  : _IncompleteBoardFallback(
-                                      title: board.title,
-                                      whyItWorks: board.whyItWorks,
-                                    ),
-                            ),
-                          ),
-                        ),
-                        SizedBox(
-                          height: editorialBoardReasoningHeight,
-                          child: SingleChildScrollView(
-                            physics: const ClampingScrollPhysics(),
-                            child: OutfitReasoningStrip(
-                              model: _model,
-                              mode: mode,
-                            ),
-                          ),
-                        ),
-                      ],
+              RepaintBoundary(
+                key: _shareBoundaryKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      height: editorialBoardHeaderHeight,
+                      child: _PremiumBoardHeader(mode: mode),
                     ),
-                  ),
+                    SizedBox(
+                      height: editorialBoardContextHeight,
+                      child: ClipRect(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: widget.onTapBoard == null
+                              ? null
+                              : () => widget.onTapBoard!(_currentDirection),
+                          child: textScale > 1
+                              ? SingleChildScrollView(
+                                  physics: const ClampingScrollPhysics(),
+                                  child: contextStrip,
+                                )
+                              : contextStrip,
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      height: editorialBoardCanvasHeightForWidth(
+                        widget.width,
+                        itemCount: board.items.length,
+                      ),
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: widget.onTapBoard == null
+                            ? null
+                            : () => widget.onTapBoard!(_currentDirection),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
+                          child: renderable
+                              ? EditorialBoardCanvas(
+                                  key: const ValueKey(
+                                    'editorial-outfit-canvas',
+                                  ),
+                                  board: board,
+                                  lockedItemIds:
+                                      _controller?.state.lockedItemIds ??
+                                      const {},
+                                  onToggleLock: mode.supportsMutation
+                                      ? _controller?.toggleLock
+                                      : null,
+                                )
+                              : _IncompleteBoardFallback(
+                                  title: board.title,
+                                  whyItWorks: board.whyItWorks,
+                                ),
+                        ),
+                      ),
+                    ),
+                    OutfitReasoningStrip(
+                      key: const ValueKey('active-chat-board-reasoning'),
+                      model: _model,
+                      mode: mode,
+                    ),
+                  ],
                 ),
               ),
               if (_controller != null)

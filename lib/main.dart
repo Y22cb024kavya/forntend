@@ -1112,7 +1112,7 @@ class _NavPillPainter extends CustomPainter {
 // ═════════════════════════════════════════════════════════════════════════════
 //  AUTH WRAPPER
 //  Shows SplashScreen while auth check runs in parallel.
-//  Navigates only after BOTH the splash animation finishes (2.8 s) AND the
+//  Navigates only after BOTH the splash animation finishes (2.0 s) AND the
 //  auth result is known — whichever takes longer wins, so there is no flicker.
 // ═════════════════════════════════════════════════════════════════════════════
 class AuthWrapper extends StatefulWidget {

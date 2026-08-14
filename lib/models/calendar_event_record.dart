@@ -93,6 +93,20 @@ class CalendarPlanCounts {
   }
 }
 
+class CalendarEventsLoadResult {
+  const CalendarEventsLoadResult({
+    required this.events,
+    required this.succeeded,
+  });
+
+  const CalendarEventsLoadResult.failure()
+    : events = const <Map<String, dynamic>>[],
+      succeeded = false;
+
+  final List<Map<String, dynamic>> events;
+  final bool succeeded;
+}
+
 bool isOutfitPlanEvent(Map<String, dynamic> event) {
   final metadata = calendarJsonMap(event['metadata']) ?? const {};
   final explicitKind = metadata['plan_kind']?.toString().trim().toLowerCase();

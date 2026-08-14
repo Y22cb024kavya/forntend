@@ -1489,6 +1489,21 @@ class BackendService {
     int limit = 200,
     CalendarListSurface surface = CalendarListSurface.calendar,
   }) async {
+    final result = await getCalendarEventsResult(
+      startTime: startTime,
+      endTime: endTime,
+      limit: limit,
+      surface: surface,
+    );
+    return result.events;
+  }
+
+  Future<CalendarEventsLoadResult> getCalendarEventsResult({
+    DateTime? startTime,
+    DateTime? endTime,
+    int limit = 200,
+    CalendarListSurface surface = CalendarListSurface.calendar,
+  }) async {
     debugPrint(
       calendarListStartDiagnostic(
         surface: surface,
@@ -1513,6 +1528,10 @@ class BackendService {
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = await compute(_parseJsonMap, response.body);
+        if (data['events'] is! List) {
+          debugPrint('Calendar events load parse failed: events is not a list');
+          return const CalendarEventsLoadResult.failure();
+        }
         final batch = CalendarEventBatch.parse(
           data['events'],
           onSkipped: (eventId, field) => debugPrint(
@@ -1520,16 +1539,16 @@ class BackendService {
           ),
         );
         debugPrint(calendarListOkDiagnostic(surface: surface, batch: batch));
-        return batch.events;
+        return CalendarEventsLoadResult(events: batch.events, succeeded: true);
       }
 
       debugPrint(
         'Calendar events load failed: ${response.statusCode} ${response.body}',
       );
-      return <Map<String, dynamic>>[];
+      return const CalendarEventsLoadResult.failure();
     } catch (e) {
       debugPrint('Calendar events load error: $e');
-      return <Map<String, dynamic>>[];
+      return const CalendarEventsLoadResult.failure();
     }
   }
 

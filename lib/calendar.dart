@@ -103,6 +103,45 @@ class CalendarShell extends StatefulWidget {
   State<CalendarShell> createState() => _CalendarShellState();
 }
 
+class CalendarRefreshCoordinator {
+  CalendarRefreshCoordinator(this._refresh);
+
+  final Future<void> Function() _refresh;
+  Future<void>? _activeRefresh;
+  bool _isActive = false;
+  bool _pending = false;
+
+  bool get isActive => _isActive;
+
+  Future<void> request() {
+    if (_isActive) {
+      _pending = true;
+      return _activeRefresh ?? Future<void>.value();
+    }
+
+    _isActive = true;
+    final activeRefresh = _runRefreshes();
+    _activeRefresh = activeRefresh;
+    return activeRefresh;
+  }
+
+  Future<void> _runRefreshes() async {
+    try {
+      do {
+        _pending = false;
+        try {
+          await _refresh();
+        } catch (error, stackTrace) {
+          debugPrint('AHVI_CALENDAR_REFRESH_ERROR error=$error\n$stackTrace');
+        }
+      } while (_pending);
+    } finally {
+      _isActive = false;
+      _activeRefresh = null;
+    }
+  }
+}
+
 class _CalendarShellState extends State<CalendarShell> {
   DateTime _currentMonth = DateTime.now();
   DateTime _selectedDate = DateTime.now();
@@ -116,6 +155,7 @@ class _CalendarShellState extends State<CalendarShell> {
   bool _isChatOpen = false;
   String _activeOccasion = 'Gym';
   IconData _activeIcon = Icons.fitness_center;
+  late final CalendarRefreshCoordinator _calendarRefreshCoordinator;
 
   String _dateKey(DateTime date) => "${date.year}-${date.month}-${date.day}";
 
@@ -126,6 +166,9 @@ class _CalendarShellState extends State<CalendarShell> {
   @override
   void initState() {
     super.initState();
+    _calendarRefreshCoordinator = CalendarRefreshCoordinator(
+      _refreshCalendarEventsOnce,
+    );
     _loadCalendarEvents();
   }
 
@@ -223,19 +266,37 @@ class _CalendarShellState extends State<CalendarShell> {
   }
 
   Future<void> _loadCalendarEvents() async {
-    if (_isLoadingPlans) return;
-    setState(() => _isLoadingPlans = true);
+    if (_isLoadingPlans) {
+      await _calendarRefreshCoordinator.request();
+      return;
+    }
 
-    final eventsFuture = _backend.getCalendarEvents(
+    if (!mounted) return;
+    setState(() => _isLoadingPlans = true);
+    try {
+      await _calendarRefreshCoordinator.request();
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingPlans = false);
+      }
+    }
+  }
+
+  Future<void> _refreshCalendarEventsOnce() async {
+    final resultFuture = _backend.getCalendarEventsResult(
       limit: 300,
       surface: CalendarListSurface.calendar,
     );
     final countsFuture = _backend.getCalendarPlanCounts();
-    final events = await eventsFuture;
+    final result = await resultFuture;
     final counts = await countsFuture;
+    if (!result.succeeded) {
+      debugPrint('AHVI_CALENDAR_REFRESH_FAILED preserving_existing_state=true');
+      return;
+    }
     final next = <String, List<PlanItem>>{};
 
-    for (final event in events) {
+    for (final event in result.events) {
       final record = CalendarEventRecord.tryParse(
         event,
         onSkipped: (eventId, field) => debugPrint(
@@ -254,7 +315,6 @@ class _CalendarShellState extends State<CalendarShell> {
         ..clear()
         ..addAll(next);
       _canonicalPlanCounts = counts;
-      _isLoadingPlans = false;
     });
   }
 

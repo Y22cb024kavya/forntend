@@ -581,6 +581,9 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
   @override
   Widget build(BuildContext context) {
     final board = _currentBoard;
+    if (!board.items.any((item) => item.displayImageUrl.trim().isNotEmpty)) {
+      return const SizedBox.shrink();
+    }
     final renderable = _isRenderableOutfit(board.items);
     final theme = Theme.of(context);
     final mode = _interactionMode;

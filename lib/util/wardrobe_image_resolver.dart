@@ -789,11 +789,12 @@ ResolvedWardrobeImage resolveWardrobeImage(
   // omits it (never a raw upload). The wardrobe grid keeps every candidate.
   final boardPool = isBoardSurface
       ? available
-          .where((c) => _boardSafeSourceKinds.contains(c.sourceKind))
-          .toList()
+            .where((c) => _boardSafeSourceKinds.contains(c.sourceKind))
+            .toList()
       : available;
-  final rejectedUnsafe =
-      isBoardSurface ? available.length - boardPool.length : 0;
+  final rejectedUnsafe = isBoardSurface
+      ? available.length - boardPool.length
+      : 0;
   final selected = boardPool.isEmpty
       ? const _Candidate('none', null, 'missing', 5, false, false)
       : isBoardSurface
@@ -966,6 +967,7 @@ Map<String, dynamic> resolveStyleBoardItemImage(
         originalImage != result.url &&
         _clean(item['original_image_url'] ?? item['originalImageUrl']) == null)
       'original_image_url': originalImage,
+    if (result.url != null && result.field != 'none') result.field: result.url,
     if (result.url != null) 'image_url': result.url,
     'selected_field': result.field,
     'source_kind': result.sourceKind,

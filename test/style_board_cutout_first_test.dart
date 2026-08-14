@@ -243,8 +243,11 @@ void main() {
         isNull,
       );
       // jeans = catalog -> framed garment
-      final jeans =
-          board({'item_id': 'b', 'role': 'bottom', 'normalized_url': _catalog});
+      final jeans = board({
+        'item_id': 'b',
+        'role': 'bottom',
+        'normalized_url': _catalog,
+      });
       expect(jeans.sourceKind, 'catalog_fallback');
       expect(jeans.requiresFrame, isTrue);
       // footwear = masked cutout -> frameless
@@ -285,6 +288,21 @@ void main() {
       });
       expect(withCatalog.sourceKind, 'catalog_fallback');
       expect(withCatalog.url, _catalog);
+    });
+
+    test('wardrobe fallback materializes its selected field provenance', () {
+      final resolved = resolveStyleBoardItemImage(
+        {'item_id': 'top', 'image_url': _original},
+        {
+          'top': {'item_id': 'top', 'normalized_url': _catalog},
+        },
+        surface: 'style_board_live',
+      );
+
+      expect(resolved['selected_field'], 'normalized_url');
+      expect(resolved['normalized_url'], _catalog);
+      expect(resolved['image_url'], _catalog);
+      expect(resolved['original_image_url'], _original);
     });
   });
 }

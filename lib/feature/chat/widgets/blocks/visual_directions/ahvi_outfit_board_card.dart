@@ -2312,6 +2312,8 @@ StyleBoardData _toStyleBoardData(
       ..addAll({
         if (originalImage.isNotEmpty && originalImage != selectedImage)
           'original_image_url': originalImage,
+        if (resolved.url != null && resolved.field != 'none')
+          resolved.field: resolved.url,
       })
       ..['image_url'] = selectedImage
       ..['selected_field'] = resolved.field
@@ -2429,37 +2431,23 @@ List<StyleBoardItem> _enforceSlots(List<StyleBoardItem> items) {
   return kept;
 }
 
-/// A board is an outfit only when it carries top+bottom+footwear OR
-/// dress(fullBody)+footwear. Otherwise the caller shows the text direction
-/// instead of painting a broken board. Logs the missing slots.
+/// Admission follows the same safe-image resolver as the canvas. Partial
+/// wardrobe enrichment can legitimately produce one or two assets for a frame;
+/// the premium layout engine supports those counts and expands on update.
 bool _isRenderableOutfit(List<StyleBoardItem> items) {
-  final roles = items.map((e) => e.role).toSet();
-  final classic = roles.containsAll({
-    BoardItemRole.top,
-    BoardItemRole.bottom,
-    BoardItemRole.footwear,
-  });
-  final dressed =
-      roles.contains(BoardItemRole.dress) &&
-      roles.contains(BoardItemRole.footwear);
-
-  final knownRoleImages = items
-      .where((i) => i.role != BoardItemRole.unknown)
+  final renderableCount = items
+      .where(
+        (item) =>
+            item.resolveImage(surface: 'style_board_eligibility').url != null,
+      )
       .length;
-
-  if (!classic && !dressed && knownRoleImages < 3) {
-    final missing = <String>[];
-    if (!roles.contains(BoardItemRole.footwear)) missing.add('footwear');
-    if (!roles.contains(BoardItemRole.dress)) {
-      if (!roles.contains(BoardItemRole.top)) missing.add('top');
-      if (!roles.contains(BoardItemRole.bottom)) missing.add('bottom');
-    }
+  if (renderableCount == 0) {
     debugPrint(
-      'AHVI_BOARD_INCOMPLETE missing=${missing.join(",")} '
-      'roles=${roles.map((e) => e.name).join(",")}',
+      'AHVI_BOARD_INCOMPLETE missing=renderable_assets '
+      'item_count=${items.length}',
     );
   }
-  return classic || dressed || knownRoleImages >= 3;
+  return renderableCount > 0;
 }
 
 /// Shown instead of a broken board when required slots are missing. Keeps the

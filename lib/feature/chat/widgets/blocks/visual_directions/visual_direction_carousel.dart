@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/curation_reveal.dart';
 import 'package:myapp/theme/theme_tokens.dart';
+import 'package:myapp/util/wardrobe_image_resolver.dart';
 
 /// Public so the chat stream (ahvi_stylist_chat / block renderer) can suppress
 /// the legacy text-heavy "Visual Inspiration" card when the flat-lay 85 board
@@ -93,7 +94,7 @@ class VisualDirectionCarousel extends StatelessWidget {
                       debugPrint(
                         'AHVI_STYLE_CARD_PATH path=outfit_board '
                         'response_type=${_directionResponseType(direction, editorialCover)} '
-                        'renderable_asset_count=${_renderableAssetCount(direction)} '
+                        'renderable_asset_count=${_renderableAssetCount(direction, wardrobeById)} '
                         'underlying_item_count=$underlyingCount',
                       );
                       return AhviOutfitBoardCard(
@@ -665,19 +666,21 @@ String _boardIdentity(Map<String, dynamic> direction, int localIndex) {
   return 'vd-board-local-$localKey';
 }
 
-int _renderableAssetCount(Map<String, dynamic> direction) {
-  var count = 0;
-  for (final item in _underlyingOutfitItems(direction)) {
-    final url =
-        (item['board_image_url'] ??
-                item['transparent_image_url'] ??
-                item['cutout_url'] ??
-                '')
-            .toString()
-            .trim();
-    if (url.isNotEmpty) count++;
-  }
-  return count;
+int _renderableAssetCount(
+  Map<String, dynamic> direction,
+  Map<String, Map<String, dynamic>> wardrobeById,
+) {
+  return _underlyingOutfitItems(direction).where((item) {
+    final itemId = wardrobeItemStableId(item);
+    return resolveWardrobeImage(
+          item,
+          surface: 'style_board_eligibility',
+          itemId: itemId,
+          emitDiagnostic: false,
+          wardrobeRecord: itemId.isEmpty ? null : wardrobeById[itemId],
+        ).url !=
+        null;
+  }).length;
 }
 
 String _directionResponseType(

@@ -25,6 +25,8 @@ import 'package:myapp/services/chat_response_renderer_registry.dart';
 import 'package:myapp/services/ahvi_response_policy.dart';
 import 'package:myapp/services/style_mutation_contract.dart';
 import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
+import 'package:myapp/widgets/basic_markdown_text.dart';
+import 'package:myapp/widgets/clear_chat_dialog.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
 import 'package:myapp/widgets/ahvi_module_card.dart';
 import 'package:myapp/widgets/try_on_coming_soon.dart';
@@ -854,6 +856,31 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       _historyStorageKey,
       jsonEncode(_history.map((s) => s.toJson()).toList()),
     );
+  }
+
+  Future<void> _clearCurrentChat() async {
+    if (!await confirmClearChat(context) || !mounted) return;
+
+    _responseGuard.invalidate();
+    setState(() {
+      _history.clear();
+      _currentSessionId = DateTime.now().microsecondsSinceEpoch.toString();
+      _messages
+        ..clear()
+        ..add(_SheetMessage(textKey: _config.greetingKey, isUser: false));
+      _chatHistory.clear();
+      _runningMemory = '';
+      _lastStyleContext = null;
+      _activeBoardMutationState = null;
+      _clarificationResolvedByCards = false;
+      _typing = false;
+      _chipsVisible = true;
+      _chatHasText = false;
+      _pendingAttachment = null;
+      _inputController.clear();
+    });
+    await _persistHistoryToDisk();
+    _scrollToBottom();
   }
 
   void _saveCurrentSession() {
@@ -2273,6 +2300,20 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
                         ),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    PopupMenuButton<String>(
+                      tooltip: 'Chat options',
+                      onSelected: (value) {
+                        if (value == 'clear') _clearCurrentChat();
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem<String>(
+                          value: 'clear',
+                          child: Text('Clear chat'),
+                        ),
+                      ],
+                      icon: Icon(Icons.more_horiz_rounded, color: t.mutedText),
+                    ),
                   ],
                 ),
               ),
@@ -2995,10 +3036,23 @@ class _Bubble extends StatelessWidget {
           ),
         ],
       ),
-      child: Text(
-        msg.resolve(context),
-        style: TextStyle(color: t.textPrimary, fontSize: 12, height: 1.45),
-      ),
+      child: msg.isUser
+          ? Text(
+              msg.resolve(context),
+              style: TextStyle(
+                color: t.textPrimary,
+                fontSize: 12,
+                height: 1.45,
+              ),
+            )
+          : BasicMarkdownText(
+              msg.resolve(context),
+              style: TextStyle(
+                color: t.textPrimary,
+                fontSize: 12,
+                height: 1.45,
+              ),
+            ),
     );
 
     if (msg.isUser) {

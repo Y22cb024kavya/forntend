@@ -34,6 +34,8 @@ import 'package:myapp/models/ahvi_visual_board_model.dart';
 import 'package:myapp/widgets/ahvi_module_card.dart';
 import 'package:myapp/widgets/ahvi_visual_board.dart';
 import 'package:myapp/widgets/chat_cards/visual_packing_checklist_card.dart';
+import 'package:myapp/widgets/basic_markdown_text.dart';
+import 'package:myapp/widgets/clear_chat_dialog.dart';
 import 'package:myapp/util/safe_text.dart';
 import 'package:myapp/config/env.dart';
 import 'package:provider/provider.dart';
@@ -1237,6 +1239,32 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  Future<void> _clearCurrentChat() async {
+    if (!await confirmClearChat(context) || !mounted) return;
+
+    _responseGuard.invalidate();
+    setState(() {
+      _sessions.clear();
+      _currentSessionId = DateTime.now().microsecondsSinceEpoch.toString();
+      _messages
+        ..clear()
+        ..add(_ChatMessage(text: '', isMe: false, isGreeting: true));
+      _chatHistory.clear();
+      _runningMemory = '';
+      _lastStyleContext = null;
+      _activeBoardMutationState = null;
+      _clarificationResolvedByCards = false;
+      _isTyping = false;
+      _chatController.clear();
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _kSessionsKey,
+      jsonEncode(_sessions.map((s) => s.toJson()).toList()),
+    );
+    _scrollToBottom();
+  }
+
   void _startNewChat() {
     _scaffoldKey.currentState?.closeDrawer(); // close drawer only, not the screen
     _responseGuard.invalidate();
@@ -2084,13 +2112,34 @@ class _ChatScreenState extends State<ChatScreen>
               showBack: widget.showBackButton,
               showBorder: false,
               frosted: true,
-              right: IconButton(
-                icon: Icon(
-                  Icons.history_rounded,
-                  color: context.themeTokens.textPrimary,
-                ),
-                tooltip: AppLocalizations.t(context, 'chat_history_btn'),
-                onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+              right: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      Icons.history_rounded,
+                      color: context.themeTokens.textPrimary,
+                    ),
+                    tooltip: AppLocalizations.t(context, 'chat_history_btn'),
+                    onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Chat options',
+                    onSelected: (value) {
+                      if (value == 'clear') _clearCurrentChat();
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem<String>(
+                        value: 'clear',
+                        child: Text('Clear chat'),
+                      ),
+                    ],
+                    icon: Icon(
+                      Icons.more_horiz_rounded,
+                      color: context.themeTokens.textPrimary,
+                    ),
+                  ),
+                ],
               ),
             ),
 
@@ -2359,7 +2408,7 @@ class _ChatScreenState extends State<ChatScreen>
                 ),
               ),
               Flexible(
-                child: Text(
+                child: BasicMarkdownText(
                   m.isGreeting
                       ? AppLocalizations.t(context, 'chat_greeting')
                       : m.text,

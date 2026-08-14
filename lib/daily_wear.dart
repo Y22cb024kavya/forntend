@@ -21,6 +21,8 @@ import 'package:myapp/style_board/editorial_board_renderer.dart';
 import 'package:myapp/style_board/saved_board_persistence.dart';
 import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
+import 'package:myapp/widgets/basic_markdown_text.dart';
+import 'package:myapp/widgets/clear_chat_dialog.dart';
 import 'package:myapp/widgets/try_on_coming_soon.dart';
 
 enum _TryOnStage { preview, loading, camera, captured }
@@ -1607,6 +1609,33 @@ class _DailyWearScreenState extends State<DailyWearScreen>
     });
   }
 
+  Future<void> _clearCurrentChat() async {
+    if (!await confirmClearChat(context) || !mounted) return;
+
+    setState(() {
+      _chatHistory.clear();
+      _currentSessionId = DateTime.now().microsecondsSinceEpoch.toString();
+      _messages.clear();
+      _isTyping = false;
+      _quickPromptsVisible = true;
+      _chatController.clear();
+    });
+    _chatGreetingTimer?.cancel();
+    _chatGreetingTimer = Timer(const Duration(milliseconds: 400), () {
+      if (!mounted || _messages.isNotEmpty) return;
+      setState(() {
+        _messages.add(
+          _ChatMessage(
+            id: DateTime.now().millisecondsSinceEpoch,
+            text: AppLocalizations.t(context, 'daily_wear_ahvi_greeting'),
+            isUser: false,
+            createdAt: DateTime.now(),
+          ),
+        );
+      });
+    });
+  }
+
   void _loadSession(_ChatSession session) {
     _saveCurrentSession();
     _chatScaffoldKey.currentState?.closeDrawer();
@@ -3055,6 +3084,17 @@ class _DailyWearScreenState extends State<DailyWearScreen>
             ),
           ),
         ),
+        const SizedBox(width: 8),
+        PopupMenuButton<String>(
+          tooltip: 'Chat options',
+          onSelected: (value) {
+            if (value == 'clear') _clearCurrentChat();
+          },
+          itemBuilder: (_) => const [
+            PopupMenuItem<String>(value: 'clear', child: Text('Clear chat')),
+          ],
+          icon: Icon(Icons.more_horiz_rounded, color: mutedColor),
+        ),
       ],
     ),
   );
@@ -3836,10 +3876,23 @@ class _ChatBubble extends StatelessWidget {
                     ),
                     border: Border.all(color: t.cardBorder),
                   ),
-                  child: _RichChatText(
-                    text: message.text,
-                    color: t.textPrimary,
-                  ),
+                  child: isUser
+                      ? Text(
+                          message.text,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            height: 1.6,
+                            color: t.textPrimary,
+                          ),
+                        )
+                      : BasicMarkdownText(
+                          message.text,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            height: 1.6,
+                            color: t.textPrimary,
+                          ),
+                        ),
                 ),
                 const SizedBox(height: 4),
                 Row(
@@ -3890,48 +3943,6 @@ class _TypingBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       AhviProcessingBubble(message: message);
-}
-
-class _RichChatText extends StatelessWidget {
-  final String text;
-  final Color color;
-  const _RichChatText({required this.text, required this.color});
-  @override
-  Widget build(BuildContext context) => Text.rich(
-    TextSpan(
-      style: TextStyle(fontSize: 13.5, height: 1.6, color: color),
-      children: _parse(text),
-    ),
-  );
-  List<InlineSpan> _parse(String raw) {
-    final spans = <InlineSpan>[];
-    final regex = RegExp(r'(\*\*.*?\*\*|\*.*?\*)');
-    var last = 0;
-    for (final match in regex.allMatches(raw)) {
-      if (match.start > last) {
-        spans.add(TextSpan(text: raw.substring(last, match.start)));
-      }
-      final token = match.group(0)!;
-      spans.add(
-        TextSpan(
-          text: token.startsWith('**')
-              ? token.substring(2, token.length - 2)
-              : token.substring(1, token.length - 1),
-          style: TextStyle(
-            fontWeight: token.startsWith('**')
-                ? FontWeight.w700
-                : FontWeight.w400,
-            fontStyle: token.startsWith('**')
-                ? FontStyle.normal
-                : FontStyle.italic,
-          ),
-        ),
-      );
-      last = match.end;
-    }
-    if (last < raw.length) spans.add(TextSpan(text: raw.substring(last)));
-    return spans;
-  }
 }
 
 class _LiveDot extends StatefulWidget {

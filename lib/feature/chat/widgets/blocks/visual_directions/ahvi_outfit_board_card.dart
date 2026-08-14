@@ -34,20 +34,11 @@ typedef OutfitBoardStateChanged = void Function(Map<String, dynamic> board);
 const double editorialBoardHeaderHeight = 30;
 const double editorialBoardContextHeight = 72;
 
-/// Sizes the canonical composition to its item-count template.
-double editorialBoardCanvasHeightForWidth(double width, {int itemCount = 3}) {
+/// Approved db7f925 presentation contract. Layout templates consume both axes,
+/// so every item count must receive the same canvas aspect ratio.
+double editorialBoardCanvasHeightForWidth(double width) {
   final safeWidth = width.isFinite && width > 0 ? width : 320.0;
-  final ratio = switch (itemCount.clamp(1, 8)) {
-    1 => 0.76,
-    2 => 0.68,
-    3 => 0.68,
-    4 => 0.72,
-    5 => 0.74,
-    6 => 0.66,
-    7 => 0.72,
-    _ => 0.74,
-  };
-  return safeWidth * ratio;
+  return (safeWidth * 0.68).clamp(194.0, 270.0).toDouble();
 }
 
 /// Keeps bounded display copy at a word or sentence boundary instead of using
@@ -626,10 +617,7 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                       ),
                     ),
                     SizedBox(
-                      height: editorialBoardCanvasHeightForWidth(
-                        widget.width,
-                        itemCount: board.items.length,
-                      ),
+                      height: editorialBoardCanvasHeightForWidth(widget.width),
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: widget.onTapBoard == null
@@ -997,6 +985,8 @@ class OutfitReasoningStrip extends StatelessWidget {
             Text(
               why,
               key: const ValueKey('style-why-it-works'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colors.onSurface,
                 fontWeight: FontWeight.w500,
@@ -1019,6 +1009,8 @@ class OutfitReasoningStrip extends StatelessWidget {
             Text(
               tip,
               key: const ValueKey('style-styling-tip'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colors.onSurfaceVariant,
                 fontStyle: FontStyle.italic,

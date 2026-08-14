@@ -8,6 +8,7 @@ import 'package:myapp/home_card_summary_provider.dart';
 import 'package:myapp/profile.dart' as profile;
 import 'package:myapp/services/appwrite_service.dart';
 import 'package:myapp/services/backend_service.dart';
+import 'package:myapp/services/ahvi_speech_service.dart';
 import 'package:myapp/theme/accent_palette.dart';
 import 'package:myapp/theme/base_theme.dart';
 import 'package:myapp/theme/theme_tokens.dart';
@@ -35,6 +36,76 @@ void main() {
           'EXPO_PUBLIC_BACKEND_API_URL=https://backend.test/',
       isOptional: true,
     );
+  });
+
+  testWidgets('Style Me voice fills editable composer and uses normal send', (
+    tester,
+  ) async {
+    final backend = _HomeStyleBackend();
+    final speech = _FakeSpeechClient();
+    await _pumpDirectStyleChat(tester, backend, speech);
+
+    await tester.tap(find.byIcon(Icons.mic_none_rounded));
+    await tester.pump();
+    expect(speech.startCount, 1);
+    expect(find.byIcon(Icons.mic_rounded), findsOneWidget);
+
+    speech.emit('What should I wear for dinner tomorrow?');
+    await tester.pump();
+    final input = find.descendant(
+      of: _chatFinder,
+      matching: find.byType(TextField),
+    );
+    expect(
+      tester.widget<TextField>(input).controller?.text,
+      'What should I wear for dinner tomorrow?',
+    );
+    expect(backend.moduleRequests, isEmpty);
+
+    await tester.enterText(
+      input,
+      'What should I wear for dinner tomorrow night?',
+    );
+    await tester.tap(find.byIcon(Icons.arrow_forward_rounded));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(backend.moduleRequests, [
+      'What should I wear for dinner tomorrow night?',
+    ]);
+  });
+
+  testWidgets('Style Me voice second tap stops and denial stays typeable', (
+    tester,
+  ) async {
+    final backend = _HomeStyleBackend();
+    final speech = _FakeSpeechClient();
+    await _pumpDirectStyleChat(tester, backend, speech);
+
+    await tester.tap(find.byIcon(Icons.mic_none_rounded));
+    await tester.pump();
+    speech.finishWithError();
+    await tester.pump();
+    expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.mic_none_rounded));
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.mic_rounded));
+    await tester.pump();
+    expect(speech.stopCount, 1);
+    expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    speech.ready = false;
+    await _pumpDirectStyleChat(tester, backend, speech);
+    await tester.tap(find.byIcon(Icons.mic_none_rounded));
+    await tester.pump();
+    expect(
+      find.textContaining('Microphone access is unavailable'),
+      findsOneWidget,
+    );
+
+    await _submit(tester, 'Typed chat still works');
+    expect(backend.moduleRequests, contains('Typed chat still works'));
   });
 
   testWidgets('Home Style Me opens one prompt-free chat surface', (
@@ -402,6 +473,39 @@ Future<void> _pumpHome(
   await tester.pump(const Duration(milliseconds: 600));
 }
 
+Future<void> _pumpDirectStyleChat(
+  WidgetTester tester,
+  _HomeStyleBackend backend,
+  AhviSpeechClient speech,
+) async {
+  await tester.binding.setSurfaceSize(const Size(430, 900));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+  await tester.pumpWidget(
+    Provider<BackendService>.value(
+      value: backend,
+      child: MaterialApp(
+        theme: BaseTheme.light.copyWith(
+          extensions: [AppThemeTokens.light(_accent)],
+        ),
+        localizationsDelegates: const [_TestLocalizationsDelegate()],
+        supportedLocales: const [Locale('en')],
+        home: Builder(
+          builder: (context) => ElevatedButton(
+            onPressed: () => showAhviStylistChatSheet(
+              context,
+              moduleContext: 'style',
+              speechClient: speech,
+            ),
+            child: const Text('Open Style Me'),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('Open Style Me'));
+  await _waitForChat(tester);
+}
+
 Future<void> _submit(WidgetTester tester, String prompt) async {
   final input = find.descendant(
     of: _chatFinder,
@@ -435,6 +539,58 @@ class _RecordingNavigatorObserver extends NavigatorObserver {
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     popCount++;
     super.didPop(route, previousRoute);
+  }
+}
+
+class _FakeSpeechClient implements AhviSpeechClient {
+  bool ready = true;
+  @override
+  bool isListening = false;
+  int startCount = 0;
+  int stopCount = 0;
+  int cancelCount = 0;
+  ValueChanged<String>? _onText;
+  VoidCallback? _onDone;
+
+  @override
+  Future<bool> ensureReady() async => ready;
+
+  @override
+  Future<void> start({
+    required ValueChanged<String> onText,
+    VoidCallback? onDone,
+  }) async {
+    startCount++;
+    isListening = true;
+    _onText = onText;
+    _onDone = onDone;
+  }
+
+  void emit(String text) => _onText?.call(text);
+
+  void finishWithError() {
+    isListening = false;
+    _finish();
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCount++;
+    isListening = false;
+    _finish();
+  }
+
+  @override
+  Future<void> cancel() async {
+    cancelCount++;
+    isListening = false;
+    _finish();
+  }
+
+  void _finish() {
+    final done = _onDone;
+    _onDone = null;
+    done?.call();
   }
 }
 

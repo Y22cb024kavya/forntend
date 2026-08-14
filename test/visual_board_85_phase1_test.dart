@@ -432,8 +432,10 @@ void main() {
       tester.getTopLeft(why).dy,
       greaterThan(tester.getTopLeft(canvas).dy),
     );
-    expect(tester.widget<Text>(why).maxLines, isNull);
-    expect(tester.widget<Text>(tip).maxLines, isNull);
+    expect(tester.widget<Text>(why).maxLines, 2);
+    expect(tester.widget<Text>(tip).maxLines, 2);
+    expect(tester.widget<Text>(why).overflow, TextOverflow.ellipsis);
+    expect(tester.widget<Text>(tip).overflow, TextOverflow.ellipsis);
   });
 
   testWidgets('recommendation cards reserve equal outer and canvas heights', (
@@ -471,10 +473,7 @@ void main() {
     expect(canvasHeights, everyElement(closeTo(canvasHeights.first, 0.01)));
     expect(
       canvasHeights.first,
-      closeTo(
-        editorialBoardCanvasHeightForWidth(320, itemCount: 4),
-        0.01,
-      ),
+      closeTo(editorialBoardCanvasHeightForWidth(320), 0.01),
     );
   });
 
@@ -507,15 +506,12 @@ void main() {
     );
     expect(
       tester.getSize(canvas).height,
-      closeTo(
-        editorialBoardCanvasHeightForWidth(320, itemCount: 4),
-        0.01,
-      ),
+      closeTo(editorialBoardCanvasHeightForWidth(320), 0.01),
     );
-    expect(why.maxLines, isNull);
-    expect(tip.maxLines, isNull);
-    expect(why.overflow, isNull);
-    expect(tip.overflow, isNull);
+    expect(why.maxLines, 2);
+    expect(tip.maxLines, 2);
+    expect(why.overflow, TextOverflow.ellipsis);
+    expect(tip.overflow, TextOverflow.ellipsis);
     expect(why.data, contains('clean boundary'));
     expect(tip.data, contains('main garment lead'));
     expect(tester.takeException(), isNull);
@@ -559,12 +555,16 @@ void main() {
       expect(find.text('Save'), findsOneWidget);
       expect(find.text('Share'), findsOneWidget);
       expect(
-        tester.widget<Text>(find.byKey(const ValueKey('style-why-it-works'))).overflow,
-        isNull,
+        tester
+            .widget<Text>(find.byKey(const ValueKey('style-why-it-works')))
+            .overflow,
+        TextOverflow.ellipsis,
       );
       expect(
-        tester.widget<Text>(find.byKey(const ValueKey('style-styling-tip'))).overflow,
-        isNull,
+        tester
+            .widget<Text>(find.byKey(const ValueKey('style-styling-tip')))
+            .overflow,
+        TextOverflow.ellipsis,
       );
       expect(tester.takeException(), isNull);
     });

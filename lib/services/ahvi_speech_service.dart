@@ -4,7 +4,22 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 enum AhviSpeechState { idle, initializing, listening, stopping, error }
 
-class AhviSpeechService {
+abstract interface class AhviSpeechClient {
+  bool get isListening;
+
+  Future<bool> ensureReady();
+
+  Future<void> start({
+    required ValueChanged<String> onText,
+    VoidCallback? onDone,
+  });
+
+  Future<void> stop();
+
+  Future<void> cancel();
+}
+
+class AhviSpeechService implements AhviSpeechClient {
   AhviSpeechService._();
 
   static final AhviSpeechService instance = AhviSpeechService._();
@@ -15,9 +30,11 @@ class AhviSpeechService {
   AhviSpeechState _state = AhviSpeechState.idle;
   VoidCallback? _activeOnDone;
 
+  @override
   bool get isListening => _state == AhviSpeechState.listening;
   AhviSpeechState get state => _state;
 
+  @override
   Future<bool> ensureReady() async {
     if (_initialized) return true;
 
@@ -66,6 +83,7 @@ class AhviSpeechService {
     }
   }
 
+  @override
   Future<void> start({
     required ValueChanged<String> onText,
     VoidCallback? onDone,
@@ -113,6 +131,7 @@ class AhviSpeechService {
     }
   }
 
+  @override
   Future<void> stop() async {
     if (!_initialized) return;
     if (_state == AhviSpeechState.stopping) return;
@@ -127,6 +146,7 @@ class AhviSpeechService {
     }
   }
 
+  @override
   Future<void> cancel() async {
     if (!_initialized) return;
     if (_state == AhviSpeechState.stopping) return;

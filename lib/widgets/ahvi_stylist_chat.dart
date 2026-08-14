@@ -21,6 +21,7 @@ import 'package:myapp/feature/chat/widgets/ahvi_processing_bubble.dart';
 import 'package:myapp/models/calendar_actions.dart';
 import 'package:myapp/services/backend_service.dart';
 import 'package:myapp/services/ahvi_style_diagnostics.dart';
+import 'package:myapp/services/ahvi_speech_service.dart';
 import 'package:myapp/services/chat_response_renderer_registry.dart';
 import 'package:myapp/services/ahvi_response_policy.dart';
 import 'package:myapp/services/style_mutation_contract.dart';
@@ -555,6 +556,7 @@ Future<void> showAhviStylistChatSheet(
   Map<String, dynamic> contextData = const {},
   Future<void> Function()? onRefresh,
   String? initialPrompt,
+  AhviSpeechClient? speechClient,
 }) {
   final normalizedModuleContext = moduleContext.trim().toLowerCase();
   if (normalizedModuleContext == 'style') {
@@ -566,6 +568,7 @@ Future<void> showAhviStylistChatSheet(
           rootContext: context,
           onRefresh: onRefresh,
           initialPrompt: initialPrompt,
+          speechClient: speechClient,
           isFullScreen: true,
         ),
       ),
@@ -592,6 +595,7 @@ Future<void> showAhviStylistChatSheet(
             rootContext: context,
             onRefresh: onRefresh,
             initialPrompt: initialPrompt,
+            speechClient: speechClient,
             isFullScreen: false,
           ),
         ),
@@ -721,6 +725,7 @@ class _AhviStylistChatSheet extends StatefulWidget {
   final Future<void> Function()? onRefresh;
   final String? initialPrompt;
   final bool isFullScreen;
+  final AhviSpeechClient? speechClient;
 
   const _AhviStylistChatSheet({
     this.moduleContext = 'style',
@@ -728,6 +733,7 @@ class _AhviStylistChatSheet extends StatefulWidget {
     required this.rootContext,
     this.onRefresh,
     this.initialPrompt,
+    this.speechClient,
     required this.isFullScreen,
   });
 
@@ -754,6 +760,9 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
   bool _chipsVisible = true;
   bool _chatHasText = false;
   bool _calendarNavigationPending = false;
+  bool _isListening = false;
+  bool _ownsSpeechSession = false;
+  bool _isDisposing = false;
   Attachment? _pendingAttachment;
   final AhviSessionGenerationGuard _responseGuard =
       AhviSessionGenerationGuard();
@@ -763,6 +772,8 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
   String? _currentSessionId;
 
   AhviModuleConfig get _config => _configFor(widget.moduleContext);
+  AhviSpeechClient get _speech =>
+      widget.speechClient ?? AhviSpeechService.instance;
 
   /// Context-aware processing copy for this sheet's module.
   String get _typingMessage {
@@ -950,13 +961,72 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
 
   @override
   void dispose() {
+    _isDisposing = true;
     _responseGuard.invalidate();
     WidgetsBinding.instance.removeObserver(this);
     _saveCurrentSession(); // safety net if the sheet is swiped away mid-chat
+    if (_ownsSpeechSession) {
+      _speech.cancel();
+    }
     _inputFocusNode.dispose();
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _toggleListening() async {
+    if (_isListening || (_ownsSpeechSession && _speech.isListening)) {
+      await _speech.stop();
+      if (!mounted) return;
+      setState(() {
+        _isListening = false;
+        _ownsSpeechSession = false;
+      });
+      return;
+    }
+
+    final ready = await _speech.ensureReady();
+    if (!mounted) return;
+    if (!ready) {
+      setState(() {
+        _isListening = false;
+        _ownsSpeechSession = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Microphone access is unavailable. You can still type your message.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isListening = true;
+      _ownsSpeechSession = true;
+    });
+    await _speech.start(
+      onText: (text) {
+        if (!mounted || _isDisposing) return;
+        _inputController
+          ..text = text
+          ..selection = TextSelection.collapsed(offset: text.length);
+      },
+      onDone: () {
+        if (!mounted || _isDisposing) return;
+        setState(() {
+          _isListening = false;
+          _ownsSpeechSession = false;
+        });
+      },
+    );
+    if (mounted && !_speech.isListening && _isListening) {
+      setState(() {
+        _isListening = false;
+        _ownsSpeechSession = false;
+      });
+    }
   }
 
   @override
@@ -1355,6 +1425,10 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
   Future<void> _sendMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty && _pendingAttachment == null) return;
+    if (_ownsSpeechSession) {
+      await _speech.stop();
+      if (!mounted || _isDisposing) return;
+    }
     if (isTryOnComingSoonAction(trimmed)) {
       await showTryOnComingSoon(context);
       return;
@@ -2420,6 +2494,8 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
                     onAccent: Colors.white,
                     themeTokens: t,
                     onSendMessage: (message) => _sendMessage(message),
+                    onVoiceTap: _toggleListening,
+                    isListening: _isListening,
                     onVisualSearch: null,
                     onFindSimilar: null,
                     onAddToWardrobe: null,
@@ -3118,23 +3194,10 @@ class _Bubble extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(top: 6, right: 6),
-          child: Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [t.accent.secondary, t.accent.primary],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              shape: BoxShape.circle,
-            ),
-            child: const Center(
-              child: Text(
-                '',
-                style: TextStyle(fontSize: 11, color: Colors.white),
-              ),
-            ),
+          child: Icon(
+            Icons.auto_awesome_rounded,
+            size: 24,
+            color: t.accent.primary,
           ),
         ),
         Expanded(child: aiContent),

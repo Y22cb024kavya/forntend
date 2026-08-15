@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:myapp/style_board/board_models.dart';
-import 'package:myapp/style_board/editorial_board_renderer.dart';
+import 'package:myapp/widgets/ahvi_unified_outfit_grid.dart';
 
 /// A purpose-built, share-only outfit board.
 ///
@@ -67,11 +67,20 @@ class ShareableOutfitBoard extends StatelessWidget {
             ],
             const SizedBox(height: 10),
             Expanded(
-              child: EditorialBoardCanvas(
-                board: StyleBoardData(
-                  title: title,
-                  occasion: occasion,
-                  items: items,
+              child: FittedBox(
+                fit: BoxFit.contain,
+                child: SizedBox(
+                  width: width - 32,
+                  child: AhviUnifiedOutfitGrid(
+                    items: items
+                        .map(
+                          (item) => AhviUnifiedOutfitGridItem.fromStyleBoardItem(
+                            item,
+                            surface: 'shareable_unified_grid',
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
                 ),
               ),
             ),

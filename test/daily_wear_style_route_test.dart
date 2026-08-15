@@ -104,6 +104,13 @@ void main() {
     expect(mapper, isNot(contains("item['photo_url']")));
   });
 
+  test('active Daily Wear visuals delegate to the canonical grid', () {
+    final source = File('lib/daily_wear.dart').readAsStringSync();
+    expect(source, contains('AhviUnifiedOutfitGrid('));
+    expect(source, contains("surface: 'daily_wear_unified_grid'"));
+    expect(source, isNot(contains('EditorialBoardCanvas(board: styleBoard)')));
+  });
+
   test('pending loader is independent of prior visual board responses', () {
     final source = File('lib/daily_wear.dart').readAsStringSync();
     final messages = source.substring(source.indexOf('Widget _chatMessages()'));

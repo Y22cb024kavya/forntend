@@ -4,13 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
 import 'package:myapp/style_board/editorial_board_renderer.dart';
-import 'package:myapp/style_board/editorial_board_layout_engine.dart';
-import 'package:myapp/style_board/board_models.dart';
-import 'package:myapp/style_board/editorial_board_widgets.dart';
 import 'package:myapp/theme/accent_palette.dart';
 import 'package:myapp/theme/base_theme.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/widgets/ahvi_stylist_chat.dart';
+import 'package:myapp/widgets/ahvi_unified_outfit_grid.dart';
 import 'package:myapp/widgets/basic_markdown_text.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -34,16 +32,14 @@ void main() {
       final card = find.byKey(const ValueKey('active-chat-outfit-board-card'));
       expect(surface, findsOneWidget);
       expect(card, findsOneWidget);
-      expect(find.byType(EditorialBoardCanvas), findsOneWidget);
-      expect(find.byType(EditorialBoardItem), findsNWidgets(5));
+      expect(find.byType(AhviUnifiedOutfitGrid), findsOneWidget);
+      expect(find.byKey(AhviUnifiedOutfitGrid.gridKey), findsOneWidget);
+      expect(find.byType(EditorialBoardCanvas), findsNothing);
 
       // The chat ListView owns the only horizontal page inset (16 px/side).
       expect(tester.getSize(surface).width, closeTo(width - 32, 0.1));
       expect(tester.getSize(card).width, closeTo(width - 32, 0.1));
-      expect(
-        tester.getSize(find.byType(EditorialBoardCanvas)).height,
-        closeTo(editorialBoardCanvasHeightForWidth(width - 32), 0.1),
-      );
+      expect(tester.getSize(find.byType(AhviUnifiedOutfitGrid)).height, greaterThan(150));
 
       final assistantSparkle = find.byWidgetPredicate(
         (widget) =>
@@ -71,7 +67,7 @@ void main() {
     await tester.binding.setSurfaceSize(null);
   });
 
-  testWidgets('active 3-6 item geometry matches approved engine bounds', (
+  testWidgets('active 3-6 item canonical grid stays within phone bounds', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(384, 900));
@@ -80,25 +76,17 @@ void main() {
     for (final count in [3, 4, 5, 6]) {
       await _pumpSeededStyleChat(tester, itemCount: count);
 
-      final canvas = find.byType(EditorialBoardCanvas);
-      final canvasSize = tester.getSize(canvas);
-      expect(canvasSize.height, closeTo(239.36, 0.1));
-
-      final expected = EditorialBoardLayoutEngine.resolve(
-        _styleBoard(count),
-        width: canvasSize.width,
-        height: canvasSize.height,
-      );
-      final canvasOrigin = tester.getTopLeft(canvas);
-      for (final placement in expected.placements) {
-        final item = find.byKey(ValueKey<String>(placement.item.itemId));
+      final grid = find.byType(AhviUnifiedOutfitGrid);
+      expect(grid, findsOneWidget);
+      expect(find.byType(EditorialBoardCanvas), findsNothing);
+      final gridRect = tester.getRect(grid);
+      for (var i = 0; i < count; i++) {
+        final item = find.byKey(ValueKey<String>('item-$i'));
         expect(item, findsOneWidget);
-        final origin = tester.getTopLeft(item) - canvasOrigin;
-        final size = tester.getSize(item);
-        expect(origin.dx, closeTo(placement.x, 0.1));
-        expect(origin.dy, closeTo(placement.y, 0.1));
-        expect(size.width, closeTo(placement.width, 0.1));
-        expect(size.height, closeTo(placement.height, 0.1));
+        final itemRect = tester.getRect(item);
+        expect(gridRect.inflate(0.1).contains(itemRect.topLeft), isTrue);
+        expect(gridRect.inflate(0.1).contains(itemRect.bottomRight), isTrue);
+        expect(itemRect.shortestSide, greaterThan(60));
       }
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
@@ -195,13 +183,3 @@ Map<String, dynamic> _board(int itemCount) {
     ],
   };
 }
-
-StyleBoardData _styleBoard(int itemCount) => StyleBoardData(
-  boardId: '11111111-1111-4111-8111-111111111111',
-  revision: 1,
-  title: 'Modern Romantic',
-  items: [
-    for (final item in _board(itemCount)['board_items'] as List)
-      StyleBoardItem.fromJson(Map<String, dynamic>.from(item as Map)),
-  ],
-);

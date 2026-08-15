@@ -24,8 +24,8 @@ import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/style_board/board_models.dart';
 import 'package:myapp/style_board/saved_board_persistence.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/shareable_outfit_board.dart';
-import 'package:myapp/style_board/editorial_board_renderer.dart';
 import 'package:myapp/util/wardrobe_image_resolver.dart';
+import 'package:myapp/widgets/ahvi_unified_outfit_grid.dart';
 
 typedef OutfitBoardMessageSender = void Function(String message);
 typedef OutfitBoardTap = void Function(Map<String, dynamic> board);
@@ -564,7 +564,6 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
     if (!board.items.any((item) => item.displayImageUrl.trim().isNotEmpty)) {
       return const SizedBox.shrink();
     }
-    final renderable = _isRenderableOutfit(board.items);
     final theme = Theme.of(context);
     final mode = _interactionMode;
     final contextStrip = OutfitContextStrip(model: _model);
@@ -616,34 +615,30 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                         ),
                       ),
                     ),
-                    SizedBox(
-                      height: editorialBoardCanvasHeightForWidth(widget.width),
-                      child: GestureDetector(
+                    GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: widget.onTapBoard == null
                             ? null
                             : () => widget.onTapBoard!(_currentDirection),
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
-                          child: renderable
-                              ? EditorialBoardCanvas(
-                                  key: const ValueKey(
-                                    'editorial-outfit-canvas',
+                          padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                          child: AhviUnifiedOutfitGrid(
+                            items: board.items
+                                .map(
+                                  (item) => AhviUnifiedOutfitGridItem.fromStyleBoardItem(
+                                    item,
+                                    isLocked: _controller?.state.lockedItemIds
+                                            .contains(item.itemId) ??
+                                        item.isLocked,
+                                    surface: 'active_style_unified_grid',
                                   ),
-                                  board: board,
-                                  lockedItemIds:
-                                      _controller?.state.lockedItemIds ??
-                                      const {},
-                                  onToggleLock: mode.supportsMutation
-                                      ? _controller?.toggleLock
-                                      : null,
                                 )
-                              : _IncompleteBoardFallback(
-                                  title: board.title,
-                                  whyItWorks: board.whyItWorks,
-                                ),
+                                .toList(growable: false),
+                            onToggleLock: mode.supportsMutation
+                                ? _controller?.toggleLock
+                                : null,
+                          ),
                         ),
-                      ),
                     ),
                     OutfitReasoningStrip(
                       key: const ValueKey('active-chat-board-reasoning'),
@@ -2421,63 +2416,6 @@ List<StyleBoardItem> _enforceSlots(List<StyleBoardItem> items) {
     );
   }
   return kept;
-}
-
-/// Admission follows the same safe-image resolver as the canvas. Partial
-/// wardrobe enrichment can legitimately produce one or two assets for a frame;
-/// the premium layout engine supports those counts and expands on update.
-bool _isRenderableOutfit(List<StyleBoardItem> items) {
-  final renderableCount = items
-      .where(
-        (item) =>
-            item.resolveImage(surface: 'style_board_eligibility').url != null,
-      )
-      .length;
-  if (renderableCount == 0) {
-    debugPrint(
-      'AHVI_BOARD_INCOMPLETE missing=renderable_assets '
-      'item_count=${items.length}',
-    );
-  }
-  return renderableCount > 0;
-}
-
-/// Shown instead of a broken board when required slots are missing. Keeps the
-/// direction readable (title + why) rather than painting an incomplete collage.
-class _IncompleteBoardFallback extends StatelessWidget {
-  final String title;
-  final String? whyItWorks;
-  const _IncompleteBoardFallback({required this.title, this.whyItWorks});
-
-  @override
-  Widget build(BuildContext context) {
-    final note = (whyItWorks ?? '').trim();
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-            ),
-            if (note.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                note,
-                textAlign: TextAlign.center,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, color: Colors.black54),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 BoardItemRole _mapItemRole(OutfitRole role) {

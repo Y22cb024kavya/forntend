@@ -17,13 +17,13 @@ import 'package:myapp/tryon_safety.dart';
 import 'package:myapp/wardrobe.dart';
 import 'package:myapp/theme/theme_tokens.dart';
 import 'package:myapp/style_board/board_models.dart';
-import 'package:myapp/style_board/editorial_board_renderer.dart';
 import 'package:myapp/style_board/saved_board_persistence.dart';
 import 'package:myapp/widgets/ahvi_chat_prompt_bar.dart';
 import 'package:myapp/widgets/ahvi_home_text.dart';
 import 'package:myapp/widgets/basic_markdown_text.dart';
 import 'package:myapp/widgets/clear_chat_dialog.dart';
 import 'package:myapp/widgets/try_on_coming_soon.dart';
+import 'package:myapp/widgets/ahvi_unified_outfit_grid.dart';
 
 enum _TryOnStage { preview, loading, camera, captured }
 
@@ -530,8 +530,20 @@ class _DailyWearScreenState extends State<DailyWearScreen>
   Widget _buildOutfitVisual(Map<String, dynamic> outfit) {
     final styleBoard = _styleBoardFromOutfit(outfit);
     if (styleBoard == null) return _buildStyleBoardLoadingShell();
-    return EditorialBoardCanvas(board: styleBoard);
+    return _buildUnifiedOutfitGrid(styleBoard);
   }
+
+  Widget _buildUnifiedOutfitGrid(StyleBoardData board) =>
+      AhviUnifiedOutfitGrid(
+        items: board.items
+            .map(
+              (item) => AhviUnifiedOutfitGridItem.fromStyleBoardItem(
+                item,
+                surface: 'daily_wear_unified_grid',
+              ),
+            )
+            .toList(growable: false),
+      );
 
   List<Map<String, dynamic>> _normalizeDailyBoardCards(List<dynamic> cards) {
     return cards
@@ -2459,7 +2471,10 @@ class _DailyWearScreenState extends State<DailyWearScreen>
     return Stack(
       fit: StackFit.expand,
       children: [
-        EditorialBoardCanvas(board: styleBoard),
+        Padding(
+          padding: const EdgeInsets.all(10),
+          child: _buildUnifiedOutfitGrid(styleBoard),
+        ),
         Positioned.fill(
           child: DecoratedBox(
             decoration: BoxDecoration(
@@ -2805,7 +2820,16 @@ class _DailyWearScreenState extends State<DailyWearScreen>
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  EditorialBoardCanvas(board: styleBoard),
+                  Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: SizedBox(
+                        width: 320,
+                        child: _buildUnifiedOutfitGrid(styleBoard),
+                      ),
+                    ),
+                  ),
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: BoxDecoration(

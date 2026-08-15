@@ -10,7 +10,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/shareable_outfit_board.dart';
 import 'package:myapp/style_board/board_models.dart';
-import 'package:myapp/style_board/editorial_board_renderer.dart';
+import 'package:myapp/widgets/ahvi_unified_outfit_grid.dart';
 
 final _items = <StyleBoardItem>[
   StyleBoardItem.fromJson(const {'item_id': 'top', 'role': 'top', 'image_url': 'https://x/top.png', 'masked_url': 'https://x/top-cutout.png'}),
@@ -96,7 +96,7 @@ void main() {
 
   testWidgets('three garment roles render', (tester) async {
     await _pump(tester);
-    expect(find.byType(EditorialBoardCanvas), findsOneWidget);
+    expect(find.byType(AhviUnifiedOutfitGrid), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('top')), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('bottom')), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('shoe')), findsOneWidget);

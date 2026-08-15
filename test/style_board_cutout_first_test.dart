@@ -116,6 +116,36 @@ void main() {
     expect(r.sourceKind, 'validated_cutout');
   });
 
+  test(
+    '12. live Normal Style / Style This unified-grid surface uses the '
+    'board (cutout-first) policy',
+    () {
+      // BUILD2016 P0 Fix 1: ahvi_outfit_board_card.dart's unified grid must
+      // classify as a board surface, not fall through to catalog-first.
+      final r = board(
+        wardrobeItem(cutout: true, catalog: true, original: true),
+        surface: 'style_board_active_unified_grid',
+      );
+      expect(r.url, _cutout);
+      expect(r.sourceKind, 'validated_cutout');
+      expect(r.shouldFrame, isFalse);
+    },
+  );
+
+  test(
+    '13. live DailyWear unified-grid surface uses the board '
+    '(cutout-first) policy',
+    () {
+      final r = board(
+        wardrobeItem(cutout: true, catalog: true, original: true),
+        surface: 'style_board_daily_wear_unified_grid',
+      );
+      expect(r.url, _cutout);
+      expect(r.sourceKind, 'validated_cutout');
+      expect(r.shouldFrame, isFalse);
+    },
+  );
+
   test('11. saved-board surface retains cutout provenance', () {
     final r = board(
       wardrobeItem(cutout: true, catalog: true),

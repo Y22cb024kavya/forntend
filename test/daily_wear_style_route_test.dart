@@ -107,7 +107,7 @@ void main() {
   test('active Daily Wear visuals delegate to the canonical grid', () {
     final source = File('lib/daily_wear.dart').readAsStringSync();
     expect(source, contains('AhviUnifiedOutfitGrid('));
-    expect(source, contains("surface: 'daily_wear_unified_grid'"));
+    expect(source, contains("surface: 'style_board_daily_wear_unified_grid'"));
     expect(source, isNot(contains('EditorialBoardCanvas(board: styleBoard)')));
   });
 

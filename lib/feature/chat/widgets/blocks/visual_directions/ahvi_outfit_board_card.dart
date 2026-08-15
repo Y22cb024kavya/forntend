@@ -630,7 +630,11 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                                     isLocked: _controller?.state.lockedItemIds
                                             .contains(item.itemId) ??
                                         item.isLocked,
-                                    surface: 'active_style_unified_grid',
+                                    // 'style_board' prefix is required for
+                                    // wardrobe_image_resolver's board-safe,
+                                    // cutout-first candidate ordering to
+                                    // apply here (Normal Style + Style This).
+                                    surface: 'style_board_active_unified_grid',
                                   ),
                                 )
                                 .toList(growable: false),

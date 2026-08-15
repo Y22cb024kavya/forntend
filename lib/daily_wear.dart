@@ -547,7 +547,11 @@ class _DailyWearScreenState extends State<DailyWearScreen>
             .map(
               (item) => AhviUnifiedOutfitGridItem.fromStyleBoardItem(
                 item,
-                surface: 'daily_wear_unified_grid',
+                // 'style_board' prefix is required for
+                // wardrobe_image_resolver's board-safe, cutout-first
+                // candidate ordering to apply to the canonical Daily Wear
+                // board.
+                surface: 'style_board_daily_wear_unified_grid',
               ),
             )
             .toList(growable: false),

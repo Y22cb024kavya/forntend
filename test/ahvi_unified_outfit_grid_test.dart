@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:myapp/style_board/board_models.dart';
 import 'package:myapp/theme/accent_palette.dart';
 import 'package:myapp/theme/base_theme.dart';
 import 'package:myapp/theme/theme_tokens.dart';
@@ -98,6 +99,81 @@ void main() {
     await tester.pump();
     expect(tester.getRect(find.byKey(const ValueKey('item-0'))), before);
   });
+
+  testWidgets(
+    'image decode is constrained to the rendered card size, DPR-capped, '
+    'aspect-ratio preserved',
+    (tester) async {
+      tester.view.devicePixelRatio = 3.0; // exceeds the 2x decode cap
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await _pumpGrid(tester, width: 390, items: _items(1));
+
+      final image = tester.widget<Image>(find.byType(Image));
+      final provider = image.image;
+      expect(provider, isA<ResizeImage>());
+      final resize = provider as ResizeImage;
+      expect(resize.policy, ResizeImagePolicy.fit);
+      expect(resize.imageProvider, isA<NetworkImage>());
+      expect(
+        (resize.imageProvider as NetworkImage).url,
+        'https://example.test/fixture-0.png',
+      );
+
+      final cardSize = tester.getSize(find.byType(Image));
+      final cappedWidth = (cardSize.width * 2.0).round();
+      final cappedHeight = (cardSize.height * 2.0).round();
+      final uncappedWidth = (cardSize.width * 3.0).round();
+      expect(resize.width, cappedWidth);
+      expect(resize.height, cappedHeight);
+      // Proves the DPR cap actually did something, not a coincidental match.
+      expect(resize.width, isNot(uncappedWidth));
+    },
+  );
+
+  testWidgets(
+    'default network image path keeps frameBuilder/errorBuilder/fit intact',
+    (tester) async {
+      await _pumpGrid(tester, width: 390, items: _items(1));
+      final image = tester.widget<Image>(find.byType(Image));
+      expect(image.frameBuilder, isNotNull);
+      expect(image.errorBuilder, isNotNull);
+      expect(image.fit, BoxFit.contain);
+    },
+  );
+
+  test(
+    'surface-name change (board-surface classification fix) leaves locked '
+    'anchor identity unaffected',
+    () {
+      final anchor = StyleBoardItem.fromJson({
+        'item_id': 'anchor-1',
+        'name': 'Blazer',
+        'slot': 'top',
+        'role': 'top',
+        'source': 'wardrobe',
+        'image_url': 'https://example.test/anchor.png',
+        'board_status': 'cutout_ready',
+        'board_image_url': 'https://example.test/anchor-board.png',
+      });
+      final before = AhviUnifiedOutfitGridItem.fromStyleBoardItem(
+        anchor,
+        isAnchor: true,
+        isLocked: true,
+        surface: 'active_style_unified_grid', // pre-fix surface name
+      );
+      final after = AhviUnifiedOutfitGridItem.fromStyleBoardItem(
+        anchor,
+        isAnchor: true,
+        isLocked: true,
+        surface: 'style_board_active_unified_grid', // post-fix surface name
+      );
+      expect(after.id, before.id);
+      expect(after.id, 'anchor-1');
+      expect(after.isAnchor, isTrue);
+      expect(after.isLocked, isTrue);
+      expect(after.category, before.category);
+    },
+  );
 }
 
 List<AhviUnifiedOutfitGridItem> _items(

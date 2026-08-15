@@ -55,6 +55,10 @@ class AhviUnifiedOutfitGrid extends StatelessWidget {
   static const gridKey = ValueKey<String>('ahvi-unified-outfit-grid');
   static const double gap = 10;
   static const double _maxCardExtent = 140;
+  // Cap at 2x so a high-DPI device doesn't decode a 1500-3000px source
+  // cutout at native resolution for a ~140px card (mirrors daily_wear.dart's
+  // chat-image _cacheWidth cap).
+  static const double _maxDecodeDpr = 2.0;
 
   final List<AhviUnifiedOutfitGridItem> items;
   final ValueChanged<String>? onItemTap;
@@ -388,17 +392,19 @@ class AhviUnifiedOutfitGrid extends StatelessWidget {
             if (imageUrl.isNotEmpty)
               ClipRRect(
                 borderRadius: BorderRadius.circular(7),
-                child: Image(
-                  image:
-                      imageProviderBuilder?.call(imageUrl) ??
-                      NetworkImage(imageUrl),
-                  fit: BoxFit.contain,
-                  frameBuilder: (context, child, frame, synchronous) =>
-                      synchronous || frame != null
-                      ? child
-                          : _placeholder(accent, muted, loading: true),
-                  errorBuilder: (context, error, stackTrace) =>
-                      _placeholder(accent, muted),
+                child: LayoutBuilder(
+                  builder: (cardContext, constraints) => Image(
+                    image:
+                        imageProviderBuilder?.call(imageUrl) ??
+                        _decodeSizedProvider(cardContext, constraints, imageUrl),
+                    fit: BoxFit.contain,
+                    frameBuilder: (context, child, frame, synchronous) =>
+                        synchronous || frame != null
+                        ? child
+                            : _placeholder(accent, muted, loading: true),
+                    errorBuilder: (context, error, stackTrace) =>
+                        _placeholder(accent, muted),
+                  ),
                 ),
               )
             else
@@ -460,6 +466,39 @@ class AhviUnifiedOutfitGrid extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  /// Decodes [url] at the card's actual rendered size (DPR-capped) instead
+  /// of native resolution, via [ResizeImagePolicy.fit] so a non-square card
+  /// never distorts the source's aspect ratio -- same URL, same resolver
+  /// output, just a cheaper decode target. Falls back to an unresized
+  /// [NetworkImage] when constraints aren't usable (e.g. unbounded in a
+  /// test harness).
+  static ImageProvider _decodeSizedProvider(
+    BuildContext context,
+    BoxConstraints constraints,
+    String url,
+  ) {
+    final provider = NetworkImage(url);
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final cappedDpr = dpr.isFinite && dpr > 0
+        ? dpr.clamp(1.0, _maxDecodeDpr)
+        : _maxDecodeDpr;
+    final width = constraints.maxWidth;
+    final height = constraints.maxHeight;
+    final cacheWidth = width.isFinite && width > 0
+        ? (width * cappedDpr).round()
+        : null;
+    final cacheHeight = height.isFinite && height > 0
+        ? (height * cappedDpr).round()
+        : null;
+    if (cacheWidth == null && cacheHeight == null) return provider;
+    return ResizeImage(
+      provider,
+      width: cacheWidth,
+      height: cacheHeight,
+      policy: ResizeImagePolicy.fit,
     );
   }
 

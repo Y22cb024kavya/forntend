@@ -421,11 +421,15 @@ class _DailyWearScreenState extends State<DailyWearScreen>
       Map<String, dynamic> card,
       int index,
       ) {
-    final items = card['items'] is List
+    // The backend's board contract carries garments under `board_items`
+    // (sometimes `composition_items`) — same field names the canonical
+    // chat block parser already checks. `items` alone silently dropped
+    // every real card, leaving _styleBoardFromOutfit permanently null.
+    final rawItems =
+        card['items'] ?? card['board_items'] ?? card['composition_items'];
+    final items = rawItems is List
         ? List<Map<String, dynamic>>.from(
-      (card['items'] as List)
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e)),
+      rawItems.whereType<Map>().map((e) => Map<String, dynamic>.from(e)),
     )
         : <Map<String, dynamic>>[];
     final cover = (card['image_url'] ??
@@ -744,7 +748,17 @@ class _DailyWearScreenState extends State<DailyWearScreen>
   void _startAutoPlay() {
     _autoPlayTimer?.cancel();
     _autoPlayTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (!mounted || _userScrolling || _displayedOutfits.isEmpty) return;
+      // `_displayedOutfits` can go non-empty (weather-driven fallback sort)
+      // before the PageView carrying `_pageController` has actually mounted
+      // (still behind `_isLoading`) — animateToPage on an unattached
+      // controller throws "Bad state: No element". hasClients is the direct
+      // signal that a Scrollable is actually attached.
+      if (!mounted ||
+          _userScrolling ||
+          _displayedOutfits.isEmpty ||
+          !_pageController.hasClients) {
+        return;
+      }
       final next = (_carouselIndex + 1) % _displayedOutfits.length;
       _pageController.animateToPage(
         next,

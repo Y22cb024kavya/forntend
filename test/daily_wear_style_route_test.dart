@@ -119,4 +119,46 @@ void main() {
     expect(messages, contains('return const _TypingBubble();'));
     expect(messages, isNot(contains('styleBoard')));
   });
+
+  test(
+    'Daily Board card normalizer accepts the canonical board_items/composition_items field names',
+    () {
+      final source = File('lib/daily_wear.dart').readAsStringSync();
+      final normalizer = source.substring(
+        source.indexOf('Map<String, dynamic> _normalizeDailyBoardCard'),
+        source.indexOf('String _localOutfitImage'),
+      );
+
+      // Build 2012: the backend's board contract carries garments under
+      // `board_items` (sometimes `composition_items`) — the same field
+      // names the canonical chat block parser checks. Reading `items`
+      // alone silently dropped every real card, leaving the Daily Wear
+      // board permanently blank.
+      expect(
+        normalizer,
+        contains(
+          "card['items'] ?? card['board_items'] ?? card['composition_items']",
+        ),
+      );
+    },
+  );
+
+  test(
+    'Daily Wear autoplay never calls animateToPage on an unattached PageController',
+    () {
+      final source = File('lib/daily_wear.dart').readAsStringSync();
+      final autoplay = source.substring(
+        source.indexOf('void _startAutoPlay()'),
+        source.indexOf('Future<void> _fetchWeather'),
+      );
+
+      // Build 2012: _displayedOutfits could go non-empty (weather-driven
+      // fallback sort) before the PageView actually mounted, so
+      // animateToPage threw "Bad state: No element" on an unattached
+      // controller. hasClients is the direct attached-Scrollable signal.
+      expect(autoplay, contains('!_pageController.hasClients'));
+      expect(autoplay, contains('_displayedOutfits.isEmpty'));
+      expect(autoplay, contains('if (!mounted ||'));
+    },
+  );
 }

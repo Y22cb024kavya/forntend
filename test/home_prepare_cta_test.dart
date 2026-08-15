@@ -7,7 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/app_localizations.dart';
 import 'package:myapp/home.dart';
 import 'package:myapp/home_card_summary_provider.dart';
-import 'package:myapp/models/calendar_actions.dart';
 import 'package:myapp/profile.dart' as profile;
 import 'package:myapp/services/appwrite_service.dart';
 import 'package:myapp/services/backend_service.dart';
@@ -88,7 +87,9 @@ void main() {
       final dynamic chat = tester.widget(_chatFinder);
       expect(chat.moduleContext, 'planner');
       expect(chat.isFullScreen, isFalse);
-      expect(chat.initialPrompt, 'Prep for tomorrow');
+      // Build 2012 fix: no seeded/auto-sent prompt — the composer opens
+      // clean and the user's first typed message is the real request.
+      expect(chat.initialPrompt, isNull);
       expect(chat.contextData['source'], 'home_prep_plan_card');
       expect(chat.contextData['surface'], 'home_prepare');
       expect(chat.contextData['calendar_action'], 'calendar_prep_tomorrow');
@@ -103,10 +104,6 @@ void main() {
       expect(chat.contextData.containsKey('build_outfit'), isFalse);
       expect(chat.contextData.containsKey('anchor'), isFalse);
       expect(chat.contextData.containsKey('anchor_item_id'), isFalse);
-      expect(
-        calendarPhraseAction(chat.initialPrompt),
-        CalendarQuickAction.prepTomorrow,
-      );
       expect(find.text('Build Outfit is coming soon.'), findsNothing);
       expect(find.text('AI Stylist'), findsNothing);
       expect(find.text('Style'), findsNothing);
@@ -137,49 +134,19 @@ void main() {
   });
 
   testWidgets(
-    'opening Prepare sends one Tomorrow Prep request but creates no plan automatically',
+    'opening Prepare sends no request automatically and creates no plan',
     (tester) async {
+      // Build 2012 fix: "Prep for tomorrow" is no longer seeded/auto-sent —
+      // opening Prepare must not talk to the backend or create anything
+      // until the user actually types and sends a message.
       final backend = _HomePrepareBackend();
       await _pumpHome(tester, backend, _RecordingObserver());
       await tester.tap(find.byKey(const ValueKey('home-prepare-cta')));
       await _waitForChat(tester);
-      await _waitForModuleRequest(tester, backend);
-
-      expect(backend.moduleRequests, hasLength(1));
-      expect(backend.moduleRequests.single.domain, 'calendar');
-      expect(backend.moduleRequests.single.message, 'Prep for tomorrow');
-      expect(
-        backend.moduleRequests.single.context['calendar_action'],
-        'calendar_prep_tomorrow',
-      );
-      expect(
-        backend.moduleRequests.single.context['requested_action'],
-        'calendar_prep_tomorrow',
-      );
-      expect(
-        backend.moduleRequests.single.context['requested_plan_type'],
-        'tomorrow_prep',
-      );
-      expect(backend.moduleRequests.single.context['surface'], 'home_prepare');
-      expect(backend.moduleRequests.single.context['target_date'], isNotNull);
-      expect(
-        backend.moduleRequests.single.context['calendar_action'],
-        isNot('calendar_plan_day'),
-      );
-      expect(
-        backend.moduleRequests.single.context.containsKey('style_this'),
-        isFalse,
-      );
-      expect(
-        backend.moduleRequests.single.context.containsKey('build_outfit'),
-        isFalse,
-      );
-      expect(
-        backend.moduleRequests.single.context.containsKey('anchor'),
-        isFalse,
-      );
-      expect(backend.planCreates, 0);
       await _drainBackground(tester);
+
+      expect(backend.moduleRequests, isEmpty);
+      expect(backend.planCreates, 0);
     },
   );
 
@@ -241,17 +208,6 @@ Future<void> _waitForChat(WidgetTester tester) async {
     if (_chatFinder.evaluate().isNotEmpty) return;
   }
   fail('Prepare planner chat did not open');
-}
-
-Future<void> _waitForModuleRequest(
-  WidgetTester tester,
-  _HomePrepareBackend backend,
-) async {
-  for (var i = 0; i < 20; i++) {
-    await tester.pump(const Duration(milliseconds: 100));
-    if (backend.moduleRequests.isNotEmpty) return;
-  }
-  fail('Prepare planner request did not start');
 }
 
 Future<void> _drainBackground(WidgetTester tester) async {

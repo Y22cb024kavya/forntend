@@ -1747,8 +1747,12 @@ class _Screen4State extends State<Screen4>
     showAhviLensSheet(
       ctx,
       t: _t,
-      onVisualSearch: () => _showComingSoon(),
-      onFindSimilar: () => _showComingSoon(),
+      // null -> showAhviLensSheet's own default (_runFindSimilarFlow), the
+      // same canonical gallery-pick + backend search flow Style Me's "+"
+      // already uses. Build 2012 had this overridden with a Coming Soon
+      // stub instead of reusing it.
+      onVisualSearch: null,
+      onFindSimilar: null,
       onAddToWardrobe: () => showAddToWardrobeModal(navigator.context),
     );
   }
@@ -3040,7 +3044,9 @@ class _Screen4State extends State<Screen4>
               // Navigate to Workout screen
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const DailyWearScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const WorkoutStudioScreen(fromHome: true),
+                ),
               );
             },
           ),
@@ -3940,19 +3946,19 @@ class _Screen4State extends State<Screen4>
                         child: _AnimatedPressable(
                           liftY: -2.0,
                           scalePressed: 0.95,
-                          // "Prep & Plan" always invokes the planner with one
-                          // stable planning request. The adaptive meal/workout/
-                          // weekly recommendation rides along as non-routing
-                          // context_hint so backend routing is decided by the
-                          // explicit module + action, never by keywords in the
-                          // recommendation text (which would deflect to
-                          // Diet/Fitness/Calendar).
+                          // "Prep & Plan" opens the planner module with a
+                          // clean composer — no seeded/auto-sent message, so
+                          // the user's first typed request is the real one.
+                          // The adaptive meal/workout/weekly recommendation
+                          // still rides along as non-routing context_hint so
+                          // backend routing is decided by the explicit
+                          // module, never by keywords in the recommendation
+                          // text (which would deflect to Diet/Fitness/Calendar).
                           onTap: () {
                             final req = prepPlanCardRequest(content.prompt);
                             showAhviStylistChatSheet(
                               context,
                               moduleContext: req.module,
-                              initialPrompt: req.message,
                               contextData: req.context,
                             );
                           },
@@ -4698,8 +4704,9 @@ class _Screen4State extends State<Screen4>
         _openChatWithPrompt(text);
       },
       themeTokens: _t,
-      onVisualSearch: () => _showComingSoon(),
-      onFindSimilar: () => _showComingSoon(),
+      // null -> canonical _runFindSimilarFlow default, same as Style Me's "+".
+      onVisualSearch: null,
+      onFindSimilar: null,
       onAddToWardrobe:
           null, // uses showAddToWardrobeModal default in lens sheet
     );

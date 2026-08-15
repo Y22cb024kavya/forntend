@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -312,6 +314,52 @@ void main() {
     expect(find.byType(AhviOutfitBoardCard), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'Style This loading state presents the shared processing bubble with a '
+    'deliberate premium wrapper (shadow, constrained width) instead of a '
+    'bare pill floating on the barrier',
+    (tester) async {
+      final completer = Completer<Map<String, dynamic>?>();
+      await _pumpItemDetail(
+        tester,
+        styleCall:
+            ({
+              required requestedItemId,
+              required requestedScenario,
+              requestAnchorItem,
+              occasion,
+            }) => completer.future,
+      );
+
+      await tester.tap(find.text('Style'));
+      await tester.pump(); // let showDialog build the loading state
+
+      expect(find.byType(AhviProcessingBubble), findsOneWidget);
+
+      final wrapper = find.ancestor(
+        of: find.byType(AhviProcessingBubble),
+        matching: find.byType(DecoratedBox),
+      );
+      expect(wrapper, findsOneWidget);
+      final decoration =
+          tester.widget<DecoratedBox>(wrapper).decoration as BoxDecoration;
+      expect(decoration.boxShadow, isNotNull);
+      expect(decoration.boxShadow, isNotEmpty);
+
+      final constraint = tester.widget<ConstrainedBox>(
+        find.ancestor(
+          of: find.byType(AhviProcessingBubble),
+          matching: find.byType(ConstrainedBox),
+        ),
+      );
+      expect(constraint.constraints.maxWidth, lessThan(400));
+
+      completer.complete(null);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'item-level Build Outfit contract stays text-only even with stale board fields',

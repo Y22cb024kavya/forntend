@@ -201,6 +201,65 @@ void main() {
     expect(chat.moduleContext, 'prepare');
     expect(find.text('Plan outfits for an event'), findsOneWidget);
     expect(find.text('Wardrobe detox tips'), findsNothing);
+    // Build 2012 fix: the header now shows a "Prep & Plan" heading for the
+    // planner/prepare modules, restoring context lost behind the generic
+    // AHVI wordmark alone.
+    expect(find.byKey(const ValueKey('ahvi-chat-prep-heading')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('planner context shows the Prep & Plan heading', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(
+        rootObserver: _RecordingNavigatorObserver(),
+        nestedObserver: _RecordingNavigatorObserver(),
+        launcher: Builder(
+          builder: (context) => ElevatedButton(
+            key: const ValueKey('open-chat'),
+            onPressed: () => showAhviStylistChatSheet(
+              context,
+              moduleContext: 'planner',
+            ),
+            child: const Text('Open chat'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('open-chat')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('ahvi-chat-prep-heading')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('style context does not show the Prep & Plan heading', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(
+        rootObserver: _RecordingNavigatorObserver(),
+        nestedObserver: _RecordingNavigatorObserver(),
+        launcher: Builder(
+          builder: (context) => ElevatedButton(
+            key: const ValueKey('open-chat'),
+            onPressed: () => showAhviStylistChatSheet(
+              context,
+              moduleContext: 'style',
+            ),
+            child: const Text('Open chat'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('open-chat')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.byKey(const ValueKey('ahvi-chat-prep-heading')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

@@ -2391,6 +2391,21 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
                   ],
                 ),
               ),
+              if (widget.moduleContext == 'planner' ||
+                  widget.moduleContext == 'prepare')
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: Text(
+                    AppLocalizations.t(context, 'prep_card_title'),
+                    key: const ValueKey('ahvi-chat-prep-heading'),
+                    style: TextStyle(
+                      color: t.mutedText,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ),
               // ── Messages — bottom pad clears the pinned input bar ─
               Expanded(
                 child: ListView(

@@ -457,18 +457,37 @@ class _ItemDetailModal extends StatelessWidget {
     final rootNav = Navigator.of(appContext, rootNavigator: true);
     final diagnosticCorrelationId = AhviStyleDiagnostics.nextCorrelationId();
 
-    // Loading state.
+    // Loading state. AhviProcessingBubble is shared with the regular chat
+    // "AHVI is thinking" bubble, so its own shape/colors stay untouched —
+    // only this modal's presentation wrapper changes, giving it deliberate
+    // weight (shadow, constrained width) instead of a small pill floating
+    // alone on a bare barrier.
     showDialog<void>(
       context: appContext,
       barrierDismissible: false,
       builder: (_) => Center(
-        child: AhviProcessingBubble(
-          message: mode == 'style_this'
-              ? ahviProcessingMessage(
-                  AhviProcessingContext.styleThis,
-                  itemName: item.name,
-                )
-              : ahviProcessingMessage(AhviProcessingContext.buildOutfit),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 300),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.20),
+                  blurRadius: 28,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: AhviProcessingBubble(
+              message: mode == 'style_this'
+                  ? ahviProcessingMessage(
+                      AhviProcessingContext.styleThis,
+                      itemName: item.name,
+                    )
+                  : ahviProcessingMessage(AhviProcessingContext.buildOutfit),
+            ),
+          ),
         ),
       ),
     );

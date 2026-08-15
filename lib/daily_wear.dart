@@ -422,11 +422,15 @@ class _DailyWearScreenState extends State<DailyWearScreen>
       int index,
       ) {
     // The backend's board contract carries garments under `board_items`
-    // (sometimes `composition_items`) — same field names the canonical
-    // chat block parser already checks. `items` alone silently dropped
-    // every real card, leaving _styleBoardFromOutfit permanently null.
+    // (sometimes `composition_items`) — the same field the canonical chat
+    // board renderer (ahvi_outfit_board_card.dart) prefers first. Raw
+    // `items` is the pre-enrichment list (name/category/raw photo only,
+    // no masked/normalized cutout) and resolves to an empty imageUrl for
+    // every entry, leaving _styleBoardFromOutfit permanently null even
+    // though the card itself is non-empty. `items` stays as the last
+    // resort for cards that never got an adapted board_items at all.
     final rawItems =
-        card['items'] ?? card['board_items'] ?? card['composition_items'];
+        card['board_items'] ?? card['composition_items'] ?? card['items'];
     final items = rawItems is List
         ? List<Map<String, dynamic>>.from(
       rawItems.whereType<Map>().map((e) => Map<String, dynamic>.from(e)),
@@ -605,7 +609,23 @@ class _DailyWearScreenState extends State<DailyWearScreen>
         (response is Map<String, dynamic> ? response['cards'] as List? : null);
     final outfits = cards is List && cards.isNotEmpty
         ? _normalizeDailyBoardCards(cards)
-        : _fallbackOutfits();
+        : const <Map<String, dynamic>>[];
+
+    // No usable Daily Board came back and the backend didn't explicitly flag
+    // insufficient_wardrobe. The local demo-outfits helper used to fill this
+    // gap with garments shaped for the old renderer (no `items`), which
+    // _styleBoardFromOutfit always rejects — a permanent blank white board
+    // that also misrepresented demo pieces as the user's own wardrobe. The
+    // canonical empty-wardrobe state is the honest outcome here.
+    if (outfits.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _needsMoreClothes = true;
+        _emptyStateMessage =
+            AppLocalizations.t(context, 'daily_wear_add_clothes_unlock');
+      });
+      return;
+    }
 
     setState(() {
       _applyOutfits(outfits);

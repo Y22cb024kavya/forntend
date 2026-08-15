@@ -136,10 +136,60 @@ void main() {
       // board permanently blank.
       expect(
         normalizer,
+        contains("card['board_items']"),
+      );
+      expect(
+        normalizer,
+        contains("card['composition_items']"),
+      );
+      expect(normalizer, contains("card['items']"));
+    },
+  );
+
+  test(
+    'Daily Board card normalizer prefers board_items over raw items — Build 2013',
+    () {
+      final source = File('lib/daily_wear.dart').readAsStringSync();
+      final normalizer = source.substring(
+        source.indexOf('Map<String, dynamic> _normalizeDailyBoardCard'),
+        source.indexOf('String _localOutfitImage'),
+      );
+
+      // Build 2013: raw `items` is the pre-enrichment list (name/category/
+      // raw photo only) and always resolves to an empty imageUrl once
+      // parsed through resolveWardrobeImage, which requires a masked/
+      // normalized/cutout field before trusting an image as board-safe.
+      // `board_items` is the adapted, enriched field the canonical chat
+      // board renderer (ahvi_outfit_board_card.dart) reads first, so the
+      // Daily Board normalizer must match that same priority or every
+      // populated-wardrobe card renders as a permanent blank shell.
+      expect(
+        normalizer,
         contains(
-          "card['items'] ?? card['board_items'] ?? card['composition_items']",
+          "card['board_items'] ?? card['composition_items'] ?? card['items']",
         ),
       );
+    },
+  );
+
+  test(
+    'Daily Board falls back to the canonical empty-wardrobe UX, never demo garments — Build 2013',
+    () {
+      final source = File('lib/daily_wear.dart').readAsStringSync();
+      final fetchStart = source.indexOf('Future<void> _fetchDailyBoard');
+      final fetch = source.substring(
+        fetchStart,
+        source.indexOf('void initState() {', fetchStart),
+      );
+
+      // Build 2013: when the backend returns zero usable Daily Board cards
+      // without explicitly flagging insufficient_wardrobe, the old code
+      // fell to _fallbackOutfits() — local demo garments shaped for the
+      // retired AR renderer (no `items` field), which _styleBoardFromOutfit
+      // always rejects (permanent blank white board), and which also
+      // misrepresented demo pieces as belonging to the user's own wardrobe.
+      expect(fetch, isNot(contains('_fallbackOutfits()')));
+      expect(fetch, contains('_needsMoreClothes = true'));
     },
   );
 

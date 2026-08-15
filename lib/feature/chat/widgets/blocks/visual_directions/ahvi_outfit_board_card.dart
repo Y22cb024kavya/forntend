@@ -630,11 +630,16 @@ class _AhviOutfitBoardCardState extends State<AhviOutfitBoardCard> {
                                     isLocked: _controller?.state.lockedItemIds
                                             .contains(item.itemId) ??
                                         item.isLocked,
-                                    // 'style_board' prefix is required for
-                                    // wardrobe_image_resolver's board-safe,
-                                    // cutout-first candidate ordering to
-                                    // apply here (Normal Style + Style This).
-                                    surface: 'style_board_active_unified_grid',
+                                    // Style This uses its own typed,
+                                    // normalized-first presentation surface
+                                    // (wardrobe_image_resolver.dart) so a
+                                    // stale board/cutout asset can never
+                                    // outrank the correct normalized image.
+                                    // Other modes keep the generic board-safe
+                                    // cutout-first surface.
+                                    surface: mode == BoardInteractionMode.styleThis
+                                        ? 'style_this_unified_grid'
+                                        : 'style_board_active_unified_grid',
                                   ),
                                 )
                                 .toList(growable: false),

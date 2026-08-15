@@ -117,11 +117,12 @@ void main() {
   });
 
   test(
-    '12. live Normal Style / Style This unified-grid surface uses the '
-    'board (cutout-first) policy',
+    '12. live Normal Style unified-grid surface uses the board '
+    '(cutout-first) policy',
     () {
       // BUILD2016 P0 Fix 1: ahvi_outfit_board_card.dart's unified grid must
       // classify as a board surface, not fall through to catalog-first.
+      // (Style This moved off this surface -- see test 14/15 below.)
       final r = board(
         wardrobeItem(cutout: true, catalog: true, original: true),
         surface: 'style_board_active_unified_grid',
@@ -129,6 +130,53 @@ void main() {
       expect(r.url, _cutout);
       expect(r.sourceKind, 'validated_cutout');
       expect(r.shouldFrame, isFalse);
+    },
+  );
+
+  test(
+    '14. live Style This unified-grid surface prefers normalized_url over '
+    'a stale board/cutout asset',
+    () {
+      // BUILD2016 P0 regression: once the live Style This grid became a
+      // generic board surface it started ranking board_image_url (e.g. a
+      // stale/wrong backpack alias) above the correct normalized image.
+      // The dedicated style_this_unified_grid surface restores
+      // normalized-first, matching the backend's own supporting-piece
+      // ordering (normalized_url -> masked_url -> image_url).
+      final r = resolveWardrobeImage({
+        'item_id': 'anchor-1',
+        'source': 'wardrobe',
+        'normalized_url': _catalog,
+        'board_image_url': 'https://test/backpack-stale-alias.png',
+        'cutout_status': 'ready',
+        'masked_url': _masked,
+      }, surface: 'style_this_unified_grid');
+      expect(r.url, _catalog);
+      expect(r.field, 'normalized_url');
+      expect(r.sourceKind, 'catalog_fallback');
+    },
+  );
+
+  test(
+    '15. Style This unified grid falls back to board-safe cutout when no '
+    'normalized_url exists, and never to raw/person image',
+    () {
+      final withCutoutOnly = resolveWardrobeImage({
+        'item_id': 'anchor-2',
+        'source': 'wardrobe',
+        'cutout_status': 'ready',
+        'cutout_url': _cutout,
+        'image_url': _original,
+      }, surface: 'style_this_unified_grid');
+      expect(withCutoutOnly.url, _cutout);
+      expect(withCutoutOnly.sourceKind, 'validated_cutout');
+
+      final rawOnly = resolveWardrobeImage({
+        'item_id': 'anchor-3',
+        'source': 'wardrobe',
+        'image_url': _original,
+      }, surface: 'style_this_unified_grid');
+      expect(rawOnly.url, isNull);
     },
   );
 

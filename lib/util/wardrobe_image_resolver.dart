@@ -97,6 +97,15 @@ bool _isStyleBoardSurface(String surface) {
       s == 'boards';
 }
 
+// The live Style This grid must show the backend's normalized/catalog asset
+// first (backend's own supporting-piece ordering is normalized_url ->
+// masked_url -> image_url) -- the generic board tier ranking below prefers
+// cutout/board assets over normalized, which let a stale board_image_url
+// alias (e.g. a leftover backpack asset) win over the correct normalized
+// image once this surface started being treated as a board surface.
+bool _isStyleThisPresentationSurface(String surface) =>
+    surface.trim().toLowerCase() == 'style_this_unified_grid';
+
 bool _isCatalogObject(String? url) => _objectPathMatches(
   url,
   RegExp(
@@ -355,7 +364,8 @@ ResolvedWardrobeImage resolveWardrobeImage(
     'catalog_fallback' || 'style_asset_processed' => 3,
     _ => 4,
   };
-  final isBoardSurface = _isStyleBoardSurface(surface);
+  final isStyleThisPresentation = _isStyleThisPresentationSurface(surface);
+  final isBoardSurface = _isStyleBoardSurface(surface) || isStyleThisPresentation;
   bool explicitMaskIsSafeForBoard(String? url) =>
       isBoardSurface &&
       url != null &&
@@ -797,6 +807,15 @@ ResolvedWardrobeImage resolveWardrobeImage(
       : 0;
   final selected = boardPool.isEmpty
       ? const _Candidate('none', null, 'missing', 5, false, false)
+      : isStyleThisPresentation
+      // Style This live grid: normalized/catalog asset first (matches the
+      // backend's own normalized_url -> masked_url -> image_url ordering for
+      // supporting pieces), falling back to the board-safe cutout ranking
+      // below only when no normalized candidate survived admission.
+      ? boardPool.firstWhere(
+          (c) => c.field == 'normalized_url',
+          orElse: () => boardPool.reduce((a, b) => b.tier < a.tier ? b : a),
+        )
       : isBoardSurface
       // Board canvas: cutout-first over garment-only sources. `tier` is a
       // priority RANK, lower = higher preference (validated_cutout=0,

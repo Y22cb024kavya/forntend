@@ -31,6 +31,7 @@ import 'package:myapp/feature/chat/models/ahvi_response_block.dart';
 import 'package:myapp/feature/chat/services/ahvi_block_response_parser.dart';
 import 'package:myapp/feature/chat/services/ahvi_processing_message.dart';
 import 'package:myapp/feature/chat/widgets/ahvi_processing_bubble.dart';
+import 'package:myapp/feature/chat/widgets/ahvi_style_this_processing_card.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/visual_direction_carousel.dart';
 import 'package:myapp/widgets/try_on_coming_soon.dart';
@@ -457,38 +458,41 @@ class _ItemDetailModal extends StatelessWidget {
     final rootNav = Navigator.of(appContext, rootNavigator: true);
     final diagnosticCorrelationId = AhviStyleDiagnostics.nextCorrelationId();
 
-    // Loading state. AhviProcessingBubble is shared with the regular chat
-    // "AHVI is thinking" bubble, so its own shape/colors stay untouched —
-    // only this modal's presentation wrapper changes, giving it deliberate
-    // weight (shadow, constrained width) instead of a small pill floating
-    // alone on a bare barrier.
+    // Loading state. Style This gets the premium branded card (pitch-facing
+    // flow); every other mode keeps the original small AhviProcessingBubble
+    // pill unchanged. AhviProcessingBubble itself is shared with the regular
+    // chat "AHVI is thinking" bubble, so its own shape/colors stay untouched.
     showDialog<void>(
       context: appContext,
       barrierDismissible: false,
-      builder: (_) => Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 300),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.20),
-                  blurRadius: 28,
-                  offset: const Offset(0, 10),
+      builder: (dialogContext) => Center(
+        child: mode == 'style_this'
+            ? ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(dialogContext).size.width * 0.82,
                 ),
-              ],
-            ),
-            child: AhviProcessingBubble(
-              message: mode == 'style_this'
-                  ? ahviProcessingMessage(
-                      AhviProcessingContext.styleThis,
-                      itemName: item.name,
-                    )
-                  : ahviProcessingMessage(AhviProcessingContext.buildOutfit),
-            ),
-          ),
-        ),
+                child: AhviStyleThisProcessingCard(itemName: item.name),
+              )
+            : ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 300),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.20),
+                        blurRadius: 28,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: AhviProcessingBubble(
+                    message: ahviProcessingMessage(
+                      AhviProcessingContext.buildOutfit,
+                    ),
+                  ),
+                ),
+              ),
       ),
     );
 

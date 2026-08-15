@@ -9,6 +9,7 @@ import 'package:myapp/app_localizations.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/ahvi_outfit_board_card.dart';
 import 'package:myapp/feature/chat/widgets/blocks/visual_directions/visual_direction_carousel.dart';
 import 'package:myapp/feature/chat/widgets/ahvi_processing_bubble.dart';
+import 'package:myapp/feature/chat/widgets/ahvi_style_this_processing_card.dart';
 import 'package:myapp/style_board/editorial_board_renderer.dart';
 import 'package:myapp/theme/accent_palette.dart';
 import 'package:myapp/theme/theme_tokens.dart';
@@ -316,9 +317,8 @@ void main() {
   });
 
   testWidgets(
-    'Style This loading state presents the shared processing bubble with a '
-    'deliberate premium wrapper (shadow, constrained width) instead of a '
-    'bare pill floating on the barrier',
+    'Style This loading state presents the branded AhviStyleThisProcessingCard '
+    '(not the bare chat bubble), sized to a fraction of the barrier width',
     (tester) async {
       final completer = Completer<Map<String, dynamic>?>();
       await _pumpItemDetail(
@@ -335,25 +335,30 @@ void main() {
       await tester.tap(find.text('Style'));
       await tester.pump(); // let showDialog build the loading state
 
-      expect(find.byType(AhviProcessingBubble), findsOneWidget);
-
-      final wrapper = find.ancestor(
-        of: find.byType(AhviProcessingBubble),
-        matching: find.byType(DecoratedBox),
+      expect(find.byType(AhviStyleThisProcessingCard), findsOneWidget);
+      expect(find.byType(AhviProcessingBubble), findsNothing);
+      expect(find.text('AHVI'), findsOneWidget);
+      expect(find.text('Styling your ${_anchor.name}'), findsOneWidget);
+      expect(
+        find.text('Finding the best pieces from your wardrobe…'),
+        findsOneWidget,
       );
-      expect(wrapper, findsOneWidget);
-      final decoration =
-          tester.widget<DecoratedBox>(wrapper).decoration as BoxDecoration;
-      expect(decoration.boxShadow, isNotNull);
-      expect(decoration.boxShadow, isNotEmpty);
 
       final constraint = tester.widget<ConstrainedBox>(
         find.ancestor(
-          of: find.byType(AhviProcessingBubble),
+          of: find.byType(AhviStyleThisProcessingCard),
           matching: find.byType(ConstrainedBox),
         ),
       );
-      expect(constraint.constraints.maxWidth, lessThan(400));
+      // showDialog's root-navigator context sees the raw test window, not
+      // the 430-wide surface set for the item-detail page itself -- assert
+      // the actual ratio (78-86% of that window) rather than a hardcoded
+      // pixel value tied to a surface size the dialog doesn't inherit.
+      final dialogWidth = tester.view.physicalSize.width /
+          tester.view.devicePixelRatio;
+      final ratio = constraint.constraints.maxWidth / dialogWidth;
+      expect(ratio, greaterThanOrEqualTo(0.78));
+      expect(ratio, lessThanOrEqualTo(0.86));
 
       completer.complete(null);
       await tester.pumpAndSettle();

@@ -448,6 +448,59 @@ void main() {
     });
 
     test(
+      'locked anchor with a differing canonical image alias is preserved, '
+      'not treated as lost',
+      () async {
+        // Reproduces the BUILD2015 P0: for style_this boards the backend
+        // echoes back its own STORED canonical payload for the locked
+        // anchor (services/style_board_shuffle_service.py substitutes
+        // stored_by_id[anchor_id] before responding), which can carry a
+        // different image alias than the client's locally resolved fields
+        // for the SAME garment. Identity (item_id/source/slot/position) is
+        // unchanged; only the alias differs.
+        final initial = boardState(
+          scenario: 'style_this',
+          sourcePolicy: 'wardrobe',
+          locked: {'top'},
+        );
+        final controller = StyleBoardController(
+          initialState: initial,
+          shuffleCall: (board) async {
+            final reAliasedAnchor = StyleBoardItem.fromJson({
+              ...itemJson('top', 'top', locked: true),
+              'board_image_url':
+                  'https://cdn.example.test/top-canonical-alias.png',
+              'masked_url': 'https://cdn.example.test/top-masked-alias.png',
+            });
+            final replacements = board.items
+                .map(
+                  (item) => item.itemId == 'top'
+                      ? reAliasedAnchor
+                      : StyleBoardItem.fromJson(itemJson('${item.itemId}-new', item.slot)),
+                )
+                .toList();
+            return success(
+              board,
+              scenario: 'style_this',
+              sourcePolicy: 'wardrobe',
+              items: replacements,
+            );
+          },
+        );
+
+        expect(await controller.shuffle(), isNull);
+        expect(controller.state.revision, 2);
+        expect(controller.state.lockedItemIds, {'top'});
+        expect(
+          controller.state.items
+              .singleWhere((item) => item.itemId == 'top')
+              .isLocked,
+          isTrue,
+        );
+      },
+    );
+
+    test(
       'success increments revision, records exclusions, and supports local undo',
       () async {
         final initial = boardState(locked: {'top'});

@@ -171,13 +171,14 @@ class StyleBoardController extends ChangeNotifier {
       (item) => previous.lockedItemIds.contains(item.itemId),
     )) {
       final next = returned[old.itemId];
+      // Identity is item_id + source + slot + position, not byte-identical
+      // image URLs: for style_this boards the backend echoes back its own
+      // stored canonical payload for the locked anchor, which can carry a
+      // different (but equally board-safe) image alias than the client's
+      // locally resolved fields for the same garment.
       if (next == null ||
           old.source != next.source ||
           old.slot != next.slot ||
-          old.imageUrl != next.imageUrl ||
-          old.boardImageUrl != next.boardImageUrl ||
-          old.maskedUrl != next.maskedUrl ||
-          old.normalizedUrl != next.normalizedUrl ||
           old.position?.toJson().toString() !=
               next.position?.toJson().toString()) {
         throw const StyleBoardApiException('FIXED_ITEM_LOST');

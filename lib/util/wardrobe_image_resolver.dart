@@ -50,9 +50,7 @@ class _Candidate {
 
 final Set<String> _diagnosticKeys = <String>{};
 
-// ponytail: not @visibleForTesting anymore — called once per board parse in
-// ahvi_outfit_board_card.dart so per-board diagnostics aren't suppressed by
-// an earlier board's identical (item, surface, field, source_kind) log.
+@visibleForTesting
 void resetWardrobeImageDiagnosticCache() => _diagnosticKeys.clear();
 
 String? _clean(Object? value) {

@@ -2209,8 +2209,17 @@ StyleBoardData _toStyleBoardData(
   Map<String, dynamic> direction, {
   Map<String, Map<String, dynamic>> wardrobeById = const {},
 }) {
+  // ponytail: diagnostic-only reset — makes per-item resolver logs fire again
+  // for every board instead of only the first board in a session that hits a
+  // given (item, surface, field, source_kind) combination. See
+  // resetWardrobeImageDiagnosticCache in wardrobe_image_resolver.dart.
+  resetWardrobeImageDiagnosticCache();
+  final boardIdForDiagnostics = _text(
+    direction['board_id'] ?? direction['boardId'],
+  );
   final items = <StyleBoardItem>[];
   final seenIds = <String>{};
+  final preLoopDroppedRoles = <String>[];
   final rawItems = <Map<String, dynamic>>[
     ..._maps(direction['board_items'] ?? direction['boardItems']),
     ..._maps(direction['items'] ?? direction['pieces']),
@@ -2290,7 +2299,34 @@ StyleBoardData _toStyleBoardData(
       wardrobeRecord: wardrobeById[item.id],
     );
     final selectedImage = resolved.url ?? image;
-    if (selectedImage.isEmpty) continue;
+    if (selectedImage.isEmpty) {
+      debugPrint(
+        'AHVI_BOARD_ITEM_DROP '
+        'board_id=$boardIdForDiagnostics '
+        'revision=${_text(direction['revision'])} '
+        'item_id=${item.id} '
+        'item_role=${role.name} '
+        'resolved_url_empty=true '
+        'raw_image_url_present=${image.isNotEmpty} '
+        'masked_url_present=${(canonical?.maskedUrl ?? '').isNotEmpty} '
+        'normalized_url_present=${(canonical?.normalizedUrl ?? '').isNotEmpty} '
+        'cutout_url_present=${(canonical?.assetCutoutUrl ?? '').isNotEmpty} '
+        'selected_field=${resolved.field} '
+        'source_kind=${resolved.sourceKind} '
+        'drop_reason=no_resolved_board_image',
+      );
+      preLoopDroppedRoles.add(role.name);
+      continue;
+    }
+    debugPrint(
+      'AHVI_BOARD_ITEM_ACCEPT '
+      'board_id=$boardIdForDiagnostics '
+      'item_id=${item.id} '
+      'role=${role.name} '
+      'selected_field=${resolved.field} '
+      'source_kind=${resolved.sourceKind} '
+      'url_fingerprint=${_urlFingerprint(selectedImage)}',
+    );
     if (item.id.isNotEmpty && !seenIds.add(item.id)) continue;
     final originalImage = _text(
       carriedRaw['image_url'] ?? carriedRaw['imageUrl'],
@@ -2341,7 +2377,7 @@ StyleBoardData _toStyleBoardData(
     'rendered_items=$totalRendered '
     'skipped_items=${totalInput - totalRendered} '
     'roles_rendered=${rendered.map((e) => e.role.name).join(",")} '
-    'roles_skipped=${items.where((e) => !rendered.contains(e)).map((e) => e.role.name).join(",")}',
+    'roles_skipped=${[...preLoopDroppedRoles, ...items.where((e) => !rendered.contains(e)).map((e) => e.role.name)].join(",")}',
   );
   return StyleBoardData(
     boardId: _text(direction['board_id'] ?? direction['boardId']),
@@ -2569,6 +2605,18 @@ String resolveOutfitBoardTitle(Map<String, dynamic> direction) {
 String _text(dynamic value, {String fallback = ''}) {
   final text = value?.toString().trim() ?? '';
   return text.isEmpty ? fallback : text;
+}
+
+// ponytail: diagnostic-only. FNV-1a fingerprint so AHVI_BOARD_ITEM_DROP /
+// AHVI_BOARD_ITEM_ACCEPT never log a raw (possibly signed) URL.
+String _urlFingerprint(String value) {
+  if (value.isEmpty) return 'none';
+  var hash = 0x811c9dc5;
+  for (final codeUnit in value.codeUnits) {
+    hash ^= codeUnit;
+    hash = (hash * 0x01000193) & 0xffffffff;
+  }
+  return hash.toRadixString(16).padLeft(8, '0');
 }
 
 String _contextText(dynamic value) {

@@ -254,7 +254,7 @@ class SavedBoardCard extends StatelessWidget {
                       body: whyItWorks,
                       tokens: sheetTokens,
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                   ] else ...[
                     Text(
                       description,
@@ -271,8 +271,9 @@ class SavedBoardCard extends StatelessWidget {
                       title: 'Styling tip',
                       body: stylingTip,
                       tokens: sheetTokens,
+                      isTip: true,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
                   ],
                   Text(
                     'Items in this look',
@@ -561,49 +562,49 @@ class SavedBoardCard extends StatelessWidget {
   }
 }
 
+// Label + body treatment mirrors OutfitReasoningStrip (the canonical
+// "Why it works" / "Styling tip" presentation on the live Style This card
+// in ahvi_outfit_board_card.dart): uppercase caption label in the accent
+// color, no boxed background, italic body for the tip variant.
 class _DetailSection extends StatelessWidget {
   final String title;
   final String body;
   final AppThemeTokens tokens;
+  final bool isTip;
 
   const _DetailSection({
     required this.title,
     required this.body,
     required this.tokens,
+    this.isTip = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: tokens.backgroundSecondary,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: tokens.cardBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: tokens.textPrimary,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title.toUpperCase(),
+          style: TextStyle(
+            color: tokens.accent.primary,
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.1,
           ),
-          const SizedBox(height: 5),
-          Text(
-            body,
-            style: TextStyle(
-              color: tokens.mutedText,
-              fontSize: 13,
-              height: 1.35,
-            ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          body,
+          style: TextStyle(
+            color: isTip ? tokens.mutedText : tokens.textPrimary,
+            fontSize: 13,
+            height: isTip ? 1.22 : 1.25,
+            fontWeight: FontWeight.w500,
+            fontStyle: isTip ? FontStyle.italic : FontStyle.normal,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

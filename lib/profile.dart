@@ -3751,35 +3751,38 @@ class _EditViewState extends State<_EditView>
                       // ── Skin Tone ──
                       _FieldLabel(text: _t.skinTone, textMuted: _textMuted),
                       const SizedBox(height: 6),
-                      Row(
-                        children: List.generate(kSkinTones.length, (i) {
-                          final active = _draft.skinTone == i + 1;
-                          return GestureDetector(
-                            onTap: () => setState(() {
-                              _draft = _draft.copyWith(skinTone: i + 1);
-                              _markDirty();
-                            }),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              margin: const EdgeInsets.only(right: 10),
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: kSkinTones[i],
-                                shape: BoxShape.circle,
-                                border: active
-                                    ? Border.all(color: c.accent1, width: 3)
-                                    : Border.all(
-                                        color: Colors.transparent,
-                                        width: 3,
-                                      ),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: List.generate(kSkinTones.length, (i) {
+                            final active = _draft.skinTone == i + 1;
+                            return GestureDetector(
+                              onTap: () => setState(() {
+                                _draft = _draft.copyWith(skinTone: i + 1);
+                                _markDirty();
+                              }),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                margin: const EdgeInsets.only(right: 10),
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: kSkinTones[i],
+                                  shape: BoxShape.circle,
+                                  border: active
+                                      ? Border.all(color: c.accent1, width: 3)
+                                      : Border.all(
+                                          color: Colors.transparent,
+                                          width: 3,
+                                        ),
+                                ),
+                                transform: active
+                                    ? (Matrix4.identity()..scale(1.15))
+                                    : Matrix4.identity(),
                               ),
-                              transform: active
-                                  ? (Matrix4.identity()..scale(1.15))
-                                  : Matrix4.identity(),
-                            ),
-                          );
-                        }),
+                            );
+                          }),
+                        ),
                       ),
                       const SizedBox(height: 14),
 
@@ -3912,13 +3915,18 @@ class _EditViewState extends State<_EditView>
                                                         size: 13,
                                                       ),
                                                     ),
-                                                  Text(
-                                                    label,
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 12,
-                                                      fontWeight:
-                                                          FontWeight.w600,
+                                                  Flexible(
+                                                    child: Text(
+                                                      label,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
                                                     ),
                                                   ),
                                                 ],
@@ -5696,12 +5704,16 @@ class _AnalysisSection extends StatelessWidget {
                     children: [
                       Text(item.icon, style: const TextStyle(fontSize: 16)),
                       const SizedBox(width: 8),
-                      Text(
-                        item.label,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: textPrimary,
-                          fontWeight: FontWeight.w500,
+                      Flexible(
+                        child: Text(
+                          item.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: textPrimary,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                       if (item.swatchColor != null) ...[

@@ -107,7 +107,9 @@ class _DietAndFitnessScreenState extends State<DietAndFitnessScreen>
               physics: const NeverScrollableScrollPhysics(),
               children: const [
                 RepaintBoundary(child: diet.MainScreen()),
-                RepaintBoundary(child: fitness.WorkoutStudioScreen()),
+                RepaintBoundary(
+                  child: fitness.WorkoutStudioScreen(embedded: true),
+                ),
               ],
             ),
           ),

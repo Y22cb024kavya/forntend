@@ -1160,6 +1160,7 @@ class _ItemDetailModal extends StatelessWidget {
   void _showMoreOptions(BuildContext context, WardrobeItem item) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => ItemMoreOptionsSheet(
         item: item,
@@ -1263,12 +1264,16 @@ class _SecondaryActionButton extends StatelessWidget {
         children: [
           Icon(icon, size: 16, color: color),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: color,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
             ),
           ),
         ],
@@ -1886,12 +1891,16 @@ class _OptionRow extends StatelessWidget {
               children: [
                 Icon(icon, size: 20, color: iconColor),
                 const SizedBox(width: 12),
-                Text(
-                  label,
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w400,
-                    color: fg,
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                      color: fg,
+                    ),
                   ),
                 ),
               ],

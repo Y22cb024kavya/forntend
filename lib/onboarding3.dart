@@ -1190,12 +1190,16 @@ class _AnalysisSection extends StatelessWidget {
                   children: [
                     Text(item.icon, style: const TextStyle(fontSize: 16)),
                     const SizedBox(width: 8),
-                    Text(
-                      item.label,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: c.text,
-                        fontWeight: FontWeight.w500,
+                    Flexible(
+                      child: Text(
+                        item.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: c.text,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                     if (item.swatchColor != null) ...[

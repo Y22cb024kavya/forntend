@@ -120,6 +120,7 @@ Future<_SavedBoardCategory?> _showSaveBoardPicker(
   final t = context.themeTokens;
   return showModalBottomSheet<_SavedBoardCategory>(
     context: context,
+    isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (ctx) => SafeArea(
       child: Container(
@@ -4775,6 +4776,7 @@ class _ChatScreenState extends State<ChatScreen>
                       : () {
                     showModalBottomSheet(
                       context: context,
+                      isScrollControlled: true,
                       backgroundColor: t.backgroundSecondary,
                       shape: const RoundedRectangleBorder(
                         borderRadius: BorderRadius.vertical(

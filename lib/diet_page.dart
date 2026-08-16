@@ -348,7 +348,7 @@ class _MainScreenState extends State<MainScreen> {
 
           if (!_isChatOpen)
             Positioned(
-              bottom: 30,
+              bottom: 30 + MediaQuery.of(context).padding.bottom,
               right: 20,
               child: _AskAhviFab(
                 onTap: () => setState(() => _isChatOpen = true),

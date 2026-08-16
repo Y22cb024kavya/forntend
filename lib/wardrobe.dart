@@ -5227,16 +5227,21 @@ class _AppHeader extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontFamily: GoogleFonts.inter().fontFamily,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                        color: t.textPrimary,
-                        letterSpacing: -0.5,
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: GoogleFonts.inter().fontFamily,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w700,
+                          color: t.textPrimary,
+                          letterSpacing: -0.5,
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 12),
                     _OfflineDimmer(
                       child: _HoverScaleButton(
                         scaleFactor: 1.02,

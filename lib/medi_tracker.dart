@@ -806,10 +806,11 @@ class _MediTrackScreenState extends State<MediTrackScreen>
                   ),
                 ],
               ),
-              if (activeScreen != 'medicines')
-                Positioned(bottom: 30, right: 18, child: _buildChatFab()),
-              if (activeScreen == 'medicines')
-                Positioned(bottom: 30, right: 18, child: _buildChatFab()),
+              Positioned(
+                bottom: 30 + MediaQuery.of(context).padding.bottom,
+                right: 18,
+                child: _buildChatFab(),
+              ),
             ],
           ),
         ),

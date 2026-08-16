@@ -1537,13 +1537,17 @@ class _Screen1State extends State<Screen1> with TickerProviderStateMixin {
                                           size: 13,
                                         ),
                                       ),
-                                    Text(
-                                      label,
-                                      style: const TextStyle(
-                                        color: textColor,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        fontFamily: 'DM Sans',
+                                    Flexible(
+                                      child: Text(
+                                        label,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: textColor,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          fontFamily: 'DM Sans',
+                                        ),
                                       ),
                                     ),
                                   ],

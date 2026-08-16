@@ -206,16 +206,20 @@ class _RoutineCard extends StatelessWidget {
                 ),
               ),
             ),
-            // 4 — one-line supporting context
+            // 4 — one-line supporting context. Flexible like the headline
+            // above — on a short card this yields (down to 0px) instead of
+            // overflowing the fixed icon row / CTA row below it.
             if (data.context.trim().isNotEmpty)
-              Text(
-                data.context,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: overdue ? const Color(0xFFE5484D) : p.textMuted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
+              Flexible(
+                child: Text(
+                  data.context,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: overdue ? const Color(0xFFE5484D) : p.textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             const SizedBox(height: 6),

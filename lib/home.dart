@@ -3889,7 +3889,10 @@ class _Screen4State extends State<Screen4>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
+                      // Text block yields first on a short card — the CTA
+                      // button below stays fully visible, never overflows.
+                      Flexible(
+                        child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           FittedBox(
@@ -3917,27 +3920,47 @@ class _Screen4State extends State<Screen4>
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 3),
-                          Text(
-                            AppLocalizations.t(context, 'prep_card_desc'),
-                            style: TextStyle(
-                              // 🆕 Blended a bit toward _textHeading (from plain
-                              // _textMuted) + bumped size/weight so the subtitle
-                              // is clearly legible instead of fading into the
-                              // background, while staying visually secondary
-                              // to the "Prep & Plan" title above it.
-                              color: Color.lerp(_textMuted, _textHeading, 0.35),
-                              fontSize:
-                                  9.0, // 🔧 Reduced from 9.5 to fit better
-                              fontWeight: FontWeight.w500,
-                              height: 1.15, // 🔧 Reduced line height from 1.2
+                          // Flexible + LayoutBuilder — on a short card this
+                          // hides cleanly once there's no room for even one
+                          // full line, instead of painting a clipped sliver.
+                          Flexible(
+                            child: LayoutBuilder(
+                              builder: (context, descConstraints) {
+                                const oneLineHeight = 9.0 * 1.15;
+                                if (descConstraints.maxHeight <
+                                    oneLineHeight) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Text(
+                                  AppLocalizations.t(context, 'prep_card_desc'),
+                                  style: TextStyle(
+                                    // 🆕 Blended a bit toward _textHeading (from plain
+                                    // _textMuted) + bumped size/weight so the subtitle
+                                    // is clearly legible instead of fading into the
+                                    // background, while staying visually secondary
+                                    // to the "Prep & Plan" title above it.
+                                    color: Color.lerp(
+                                      _textMuted,
+                                      _textHeading,
+                                      0.35,
+                                    ),
+                                    fontSize:
+                                        9.0, // 🔧 Reduced from 9.5 to fit better
+                                    fontWeight: FontWeight.w500,
+                                    height:
+                                        1.15, // 🔧 Reduced line height from 1.2
+                                  ),
+                                  // 🔧 FIX: Back to maxLines: 2 to prevent overflow
+                                  // This shows key info without bottom overflow
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  softWrap: true,
+                                );
+                              },
                             ),
-                            // 🔧 FIX: Back to maxLines: 2 to prevent overflow
-                            // This shows key info without bottom overflow
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            softWrap: true,
                           ),
                         ],
+                        ),
                       ),
                       Semantics(
                         button: true,

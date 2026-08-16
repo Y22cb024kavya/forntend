@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:appwrite/models.dart' as appwrite_models;
 
+import 'package:myapp/widgets/ahvi_unified_outfit_grid.dart';
 import 'package:myapp/widgets/offline_image.dart';
 import 'package:myapp/util/wardrobe_image_resolver.dart';
 import 'saved_board_images.dart';
 import 'saved_board_persistence.dart';
 import 'board_renderer.dart';
-import 'editorial_board_renderer.dart';
 
 class SavedBoardThumb extends StatelessWidget {
   /// Either an Appwrite Document or a `{id, data}` raw map.
@@ -162,12 +162,33 @@ class SavedBoardThumb extends StatelessWidget {
         'occasion': occasion,
         'items': items,
       };
+      // Uniform per-item-count grid (same layout system as the live Style
+      // This card's AhviUnifiedOutfitGrid) instead of the varied
+      // role-driven "premium" editorial templates, so every saved board
+      // reads with the same predictable composition regardless of which
+      // garment roles it happens to contain. FittedBox contains it safely:
+      // the grid's layouts size themselves from width alone and can exceed
+      // a fixed-height box (e.g. the detail sheet's 340px canvas) on wider
+      // screens, so this guarantees no overflow without touching those
+      // fixed boxes.
+      final board = boardDataFromMap(boardMap);
+      final gridItems = board.items
+          .map(
+            (item) => AhviUnifiedOutfitGridItem.fromStyleBoardItem(
+              item,
+              surface: 'style_board_saved',
+            ),
+          )
+          .toList(growable: false);
       return ClipRRect(
         borderRadius: radius,
         child: Container(
           color: const Color(0xFFFFFCF5),
           padding: const EdgeInsets.all(8),
-          child: EditorialBoardCanvas(board: boardDataFromMap(boardMap)),
+          child: FittedBox(
+            fit: BoxFit.contain,
+            child: AhviUnifiedOutfitGrid(items: gridItems),
+          ),
         ),
       );
     }

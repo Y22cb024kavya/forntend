@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/style_board/saved_board_card.dart';
-import 'package:myapp/style_board/editorial_board_renderer.dart';
 import 'package:myapp/theme/accent_palette.dart';
 import 'package:myapp/theme/theme_tokens.dart';
+import 'package:myapp/widgets/ahvi_unified_outfit_grid.dart';
 
 const _accent = AccentPalette(
   primary: Color(0xFFFF8EC7),
@@ -68,7 +68,7 @@ void main() {
     final canvas = find.byKey(const ValueKey('saved-board-canvas'));
     expect(title, findsOneWidget);
     expect(canvas, findsOneWidget);
-    expect(find.byType(EditorialBoardCanvas), findsOneWidget);
+    expect(find.byType(AhviUnifiedOutfitGrid), findsOneWidget);
     expect(tester.getTopLeft(title).dy, lessThan(tester.getTopLeft(canvas).dy));
     expect(tester.takeException(), isNull);
   });

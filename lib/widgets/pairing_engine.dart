@@ -325,6 +325,8 @@ class PairingEngine {
     'Gym',
     'Beach',
     'Party',
+    'Festive',
+    'Wedding',
   ];
 
   static List<String> bestFor(WardrobeItem item) {

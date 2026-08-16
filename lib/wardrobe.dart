@@ -2451,7 +2451,14 @@ class _AddItemModalState extends State<_AddItemModal>
     'Dinner',
     'Travel',
     'Sport',
+    'Party',
+    'Festive',
+    'Wedding',
   ];
+
+  // Swipe navigation between review cards (one item per page).
+  final PageController _reviewPageCtrl = PageController();
+  int _reviewPageIndex = 0;
 
   _ItemEditCtrls _ctrlsFor(_DetectedItem item) {
     final existing = _itemCtrls[item.id];
@@ -3210,6 +3217,7 @@ class _AddItemModalState extends State<_AddItemModal>
   void dispose() {
     _slideCtrl.dispose();
     _camCtrl?.dispose();
+    _reviewPageCtrl.dispose();
     _disposeItemCtrls();
     super.dispose();
   }
@@ -4114,112 +4122,164 @@ class _AddItemModalState extends State<_AddItemModal>
     final allSelected =
         saveableCount > 0 &&
         _detected.where((i) => i.isSaveable).every((i) => i.selected);
-    return SingleChildScrollView(
-      key: const ValueKey('review'),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_detectError != null)
-            Container(
-              margin: const EdgeInsets.only(bottom: 14),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: t.accent.primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: t.accent.primary.withValues(alpha: 0.2),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.info_outline,
-                        size: 15,
-                        color: t.accent.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _detectError!,
-                          style: TextStyle(
-                            fontFamily: GoogleFonts.inter().fontFamily,
-                            fontSize: 12,
-                            color: t.mutedText,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  GestureDetector(
-                    onTap: _tryAgain,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [t.accent.primary, t.accent.tertiary],
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
+    final pageIndex = multi
+        ? _reviewPageIndex.clamp(0, _detected.length - 1)
+        : 0;
+
+    final errorBanner = _detectError == null
+        ? null
+        : Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: t.accent.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.accent.primary.withValues(alpha: 0.2)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 15, color: t.accent.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
                       child: Text(
-                        AppLocalizations.t(context, 'wardrobe_try_again'),
+                        _detectError!,
                         style: TextStyle(
                           fontFamily: GoogleFonts.inter().fontFamily,
                           fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: t.textPrimary,
+                          color: t.mutedText,
                         ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-          Row(
-            children: [
-              Text(
-                multi ? '${_detected.length} items' : '1 of 1',
-                style: TextStyle(
-                  fontFamily: GoogleFonts.inter().fontFamily,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: t.mutedText,
+                  ],
                 ),
-              ),
-              const Spacer(),
-              if (multi && saveableCount > 0)
+                const SizedBox(height: 10),
                 GestureDetector(
-                  onTap: _isSavingWardrobe
-                      ? null
-                      : () => _toggleSelectAll(!allSelected),
-                  child: Text(
-                    allSelected
-                        ? AppLocalizations.t(context, 'wardrobe_deselect_all')
-                        : AppLocalizations.t(context, 'wardrobe_select_all'),
-                    style: TextStyle(
-                      fontFamily: GoogleFonts.inter().fontFamily,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: t.accent.primary,
+                  onTap: _tryAgain,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [t.accent.primary, t.accent.tertiary],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      AppLocalizations.t(context, 'wardrobe_try_again'),
+                      style: TextStyle(
+                        fontFamily: GoogleFonts.inter().fontFamily,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: t.textPrimary,
+                      ),
                     ),
                   ),
                 ),
+              ],
+            ),
+          );
+
+    final countRow = Row(
+      children: [
+        Text(
+          multi ? '${pageIndex + 1} of ${_detected.length}' : '1 of 1',
+          style: TextStyle(
+            fontFamily: GoogleFonts.inter().fontFamily,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: t.mutedText,
+          ),
+        ),
+        const Spacer(),
+        if (multi && saveableCount > 0)
+          GestureDetector(
+            onTap: _isSavingWardrobe
+                ? null
+                : () => _toggleSelectAll(!allSelected),
+            child: Text(
+              allSelected
+                  ? AppLocalizations.t(context, 'wardrobe_deselect_all')
+                  : AppLocalizations.t(context, 'wardrobe_select_all'),
+              style: TextStyle(
+                fontFamily: GoogleFonts.inter().fontFamily,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: t.accent.primary,
+              ),
+            ),
+          ),
+      ],
+    );
+
+    if (!multi) {
+      return SingleChildScrollView(
+        key: const ValueKey('review'),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ?errorBanner,
+            countRow,
+            const SizedBox(height: 10),
+            if (_detected.isNotEmpty) _buildItemCard(_detected.first, large: true),
+          ],
+        ),
+      );
+    }
+
+    // Multiple detected items: swipe between one item card per page instead
+    // of stacking every card in a single vertical scroll.
+    return Column(
+      key: const ValueKey('review'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ?errorBanner,
+              countRow,
             ],
           ),
-          const SizedBox(height: 10),
-          for (final item in _detected) ...[
-            _buildItemCard(item, large: !multi),
-            const SizedBox(height: 14),
-          ],
-        ],
-      ),
+        ),
+        const SizedBox(height: 10),
+        Expanded(
+          child: PageView.builder(
+            controller: _reviewPageCtrl,
+            itemCount: _detected.length,
+            onPageChanged: (i) => setState(() => _reviewPageIndex = i),
+            itemBuilder: (context, i) => SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              child: _buildItemCard(_detected[i], large: false),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(_detected.length, (i) {
+              final active = i == pageIndex;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: active ? 18 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(3),
+                  color: active ? t.accent.primary : t.cardBorder,
+                ),
+              );
+            }),
+          ),
+        ),
+      ],
     );
   }
 
@@ -4459,7 +4519,15 @@ class _AddItemModalState extends State<_AddItemModal>
                       humanizeOccasion(o).toLowerCase() == occ.toLowerCase(),
                 );
                 final disabled =
-                    privateWear && {'Work', 'Dinner', 'Travel'}.contains(occ);
+                    privateWear &&
+                    {
+                      'Work',
+                      'Dinner',
+                      'Travel',
+                      'Party',
+                      'Festive',
+                      'Wedding',
+                    }.contains(occ);
                 return GestureDetector(
                   onTap: disabled
                       ? null

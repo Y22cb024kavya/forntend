@@ -72,4 +72,77 @@ void main() {
     expect(tester.getTopLeft(title).dy, lessThan(tester.getTopLeft(canvas).dy));
     expect(tester.takeException(), isNull);
   });
+
+  // Regression: a 2-column saved-boards grid (childAspectRatio 0.54, as used
+  // by everything_else.dart/party_looks.dart/occasion.dart/vacation.dart)
+  // overflowed by ~7.4px on narrow screens with a scaled-up text size,
+  // because the title/description/button content was fixed-size while the
+  // AspectRatio(1) image box was not flexible.
+  for (final size in const [Size(360, 640), Size(360, 800), Size(412, 915)]) {
+    testWidgets(
+      'saved board grid cell does not overflow at ${size.width.toInt()}x'
+      '${size.height.toInt()} with 1.3x text scale',
+      (tester) async {
+        await tester.binding.setSurfaceSize(size);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(
+              useMaterial3: true,
+              extensions: [AppThemeTokens.light(_accent)],
+            ),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: const TextScaler.linear(1.3)),
+              child: child!,
+            ),
+            home: Scaffold(
+              body: GridView.builder(
+                padding: const EdgeInsets.all(12),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: 0.54,
+                ),
+                itemCount: 1,
+                itemBuilder: (context, index) => const SavedBoardCard(
+                  source: {
+                    'title': 'Monochrome Dressing',
+                    'boardCategoryLabel': 'Curated look',
+                    'description': 'AHVI saved style board',
+                    'items': [
+                      {
+                        'item_id': 'dress-1',
+                        'name': 'Gingham dress',
+                        'role': 'dress',
+                        'image_url': 'https://example.test/dress.png',
+                      },
+                      {
+                        'item_id': 'shoe-1',
+                        'name': 'Heel',
+                        'role': 'footwear',
+                        'image_url': 'https://example.test/shoe.png',
+                      },
+                      {
+                        'item_id': 'bag-1',
+                        'name': 'Clutch',
+                        'role': 'accessory',
+                        'image_url': 'https://example.test/bag.png',
+                      },
+                    ],
+                  },
+                  wardrobeById: {},
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 }

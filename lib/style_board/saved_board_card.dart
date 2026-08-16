@@ -500,13 +500,15 @@ class SavedBoardCard extends StatelessWidget {
                 ],
               ),
             ),
-            AspectRatio(
-              key: const ValueKey('saved-board-canvas'),
-              aspectRatio: 1,
-              child: SavedBoardThumb(
-                source: source,
-                wardrobeById: wardrobeById,
-                radius: BorderRadius.zero,
+            Expanded(
+              child: AspectRatio(
+                key: const ValueKey('saved-board-canvas'),
+                aspectRatio: 1,
+                child: SavedBoardThumb(
+                  source: source,
+                  wardrobeById: wardrobeById,
+                  radius: BorderRadius.zero,
+                ),
               ),
             ),
             Padding(
@@ -527,7 +529,6 @@ class SavedBoardCard extends StatelessWidget {
                 ],
               ),
             ),
-            const Spacer(),
             Padding(
               padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
               child: SizedBox(

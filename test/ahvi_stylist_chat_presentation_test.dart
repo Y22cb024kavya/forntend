@@ -88,7 +88,7 @@ void main() {
       );
       expect(
         find.descendant(of: _chatFinder, matching: find.byType(SafeArea)),
-        findsOneWidget,
+        findsNWidgets(2),
       );
 
       final devicePixelRatio = tester.view.devicePixelRatio;
@@ -170,7 +170,7 @@ void main() {
 
     final modalScaffold = tester.widget<Scaffold>(find.byType(Scaffold).last);
     expect(modalScaffold.backgroundColor, Colors.transparent);
-    expect(modalScaffold.resizeToAvoidBottomInset, isFalse);
+    expect(modalScaffold.resizeToAvoidBottomInset, isTrue);
     expect(tester.takeException(), isNull);
   });
 

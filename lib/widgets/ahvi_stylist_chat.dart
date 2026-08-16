@@ -581,24 +581,24 @@ Future<void> showAhviStylistChatSheet(
     useSafeArea: false,
     backgroundColor: Colors.transparent,
     builder: (ctx) {
-      final screenH = MediaQuery.of(ctx).size.height;
-      final topPad = MediaQuery.of(ctx).padding.top;
-      final kbH = MediaQuery.of(ctx).viewInsets.bottom;
-      final sheetH = (screenH - topPad) * 0.92;
-      return Padding(
-        padding: EdgeInsets.only(bottom: kbH),
-        child: SizedBox(
-          height: sheetH,
-          child: _AhviStylistChatSheet(
-            moduleContext: normalizedModuleContext,
-            contextData: contextData,
-            rootContext: context,
-            onRefresh: onRefresh,
-            initialPrompt: initialPrompt,
-            speechClient: speechClient,
-            isFullScreen: false,
-          ),
-        ),
+      return LayoutBuilder(
+        builder: (layoutContext, constraints) {
+          final availableHeight = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : MediaQuery.sizeOf(ctx).height;
+          return SizedBox(
+            height: availableHeight * 0.92,
+            child: _AhviStylistChatSheet(
+              moduleContext: normalizedModuleContext,
+              contextData: contextData,
+              rootContext: context,
+              onRefresh: onRefresh,
+              initialPrompt: initialPrompt,
+              speechClient: speechClient,
+              isFullScreen: false,
+            ),
+          );
+        },
       );
     },
   );
@@ -1608,8 +1608,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
               isPlanPackRequest
           ? '/api/module-chat'
           : '/api/text';
-      final mutationState =
-          (isBoardMutation || isBoardActionPhrase)
+      final mutationState = (isBoardMutation || isBoardActionPhrase)
           ? _currentMutationState()
           : null;
       if ((isBoardMutation || isBoardActionPhrase) &&
@@ -1619,7 +1618,8 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
           _typing = false;
           _messages.add(
             _SheetMessage(
-              text: 'Which look should I update? Tap the board you want to change first.',
+              text:
+                  'Which look should I update? Tap the board you want to change first.',
               isUser: false,
             ),
           );
@@ -2295,12 +2295,6 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
     final t = context.themeTokens;
     final quickPrompts = _config.quickPrompts(context);
 
-    // Prompt bar estimated height for ListView bottom padding
-    const double promptBarH = 72.0;
-    final double chipsH = _chipsVisible ? 38.0 : 0.0;
-    final double attachH = _pendingAttachment != null ? 52.0 : 0.0;
-    final double inputAreaH = promptBarH + chipsH + attachH + 8.0;
-
     final content = Container(
       decoration: BoxDecoration(
         color: t.backgroundPrimary,
@@ -2406,11 +2400,11 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
                     ),
                   ),
                 ),
-              // ── Messages — bottom pad clears the pinned input bar ─
+              // ── Messages — Expanded fills remaining space above footer ─
               Expanded(
                 child: ListView(
                   controller: _scrollController,
-                  padding: EdgeInsets.fromLTRB(16, 8, 16, inputAreaH + 12),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                   children: [
                     ..._messages.map(
                       (msg) => _Bubble(
@@ -2423,101 +2417,107 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
                   ],
                 ),
               ),
-            ],
-          ),
 
-          // ── Prompt bar — pinned to sheet bottom (sheet itself rises with keyboard) ────
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              decoration: BoxDecoration(
-                color: t.phoneShellInner,
-                borderRadius: widget.isFullScreen
-                    ? null
-                    : const BorderRadius.vertical(bottom: Radius.circular(28)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // ── Quick Prompts ───────────────────────────────
-                  if (_chipsVisible) ...[
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      height: 28,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        scrollDirection: Axis.horizontal,
-                        itemCount: quickPrompts.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 6),
-                        itemBuilder: (_, i) => GestureDetector(
-                          onTap: () => _sendMessage(quickPrompts[i]),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: t.panel,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: t.cardBorder),
-                            ),
-                            child: Text(
-                              quickPrompts[i],
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: t.accent.secondary,
-                                fontWeight: FontWeight.w600,
+              // ── Footer — quick prompts, attachment chip, composer ─
+              SafeArea(
+                top: false,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: t.phoneShellInner,
+                    borderRadius: widget.isFullScreen
+                        ? null
+                        : const BorderRadius.vertical(
+                            bottom: Radius.circular(28),
+                          ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // ── Quick Prompts ───────────────────────────────
+                      if (_chipsVisible) ...[
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          height: 28,
+                          child: ListView.separated(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            scrollDirection: Axis.horizontal,
+                            itemCount: quickPrompts.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(width: 6),
+                            itemBuilder: (_, i) => GestureDetector(
+                              onTap: () => _sendMessage(quickPrompts[i]),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: t.panel,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: t.cardBorder),
+                                ),
+                                child: Text(
+                                  quickPrompts[i],
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: t.accent.secondary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
+                        const SizedBox(height: 4),
+                      ],
+                      // ── Pending Attachment Chip ─────────────────────
+                      if (_pendingAttachment != null)
+                        _PendingAttachmentChip(
+                          attachment: _pendingAttachment!,
+                          onRemove: _clearPendingAttachment,
+                          onTap: () => _openAttachment(_pendingAttachment!),
+                          accent: context.themeTokens.accent.primary,
+                          panel: context.themeTokens.panel,
+                          cardBorder: context.themeTokens.cardBorder,
+                          textPrimary: context.themeTokens.textPrimary,
+                          mutedText: context.themeTokens.mutedText,
+                        ),
+                      // ── Input Bar ───────────────────────────────────
+                      AhviChatPromptBar(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        controller: _inputController,
+                        focusNode: _inputFocusNode,
+                        hintText: AppLocalizations.t(
+                          context,
+                          _config.hintTextKey,
+                        ),
+                        hasText: _chatHasText,
+                        surface: t.phoneShellInner,
+                        border: t.cardBorder,
+                        accent: t.accent.primary,
+                        accentSecondary: t.accent.secondary,
+                        textHeading: t.textPrimary,
+                        textMuted: t.mutedText,
+                        shadowMedium: t.backgroundPrimary.withValues(
+                          alpha: 0.20,
+                        ),
+                        onAccent: Colors.white,
+                        themeTokens: t,
+                        onSendMessage: (message) => _sendMessage(message),
+                        onVoiceTap: _toggleListening,
+                        isListening: _isListening,
+                        onVisualSearch: null,
+                        onFindSimilar: null,
+                        onAddToWardrobe: null,
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                  ],
-                  // ── Pending Attachment Chip ─────────────────────
-                  if (_pendingAttachment != null)
-                    _PendingAttachmentChip(
-                      attachment: _pendingAttachment!,
-                      onRemove: _clearPendingAttachment,
-                      onTap: () => _openAttachment(_pendingAttachment!),
-                      accent: context.themeTokens.accent.primary,
-                      panel: context.themeTokens.panel,
-                      cardBorder: context.themeTokens.cardBorder,
-                      textPrimary: context.themeTokens.textPrimary,
-                      mutedText: context.themeTokens.mutedText,
-                    ),
-                  // ── Input Bar ───────────────────────────────────
-                  AhviChatPromptBar(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    controller: _inputController,
-                    focusNode: _inputFocusNode,
-                    hintText: AppLocalizations.t(context, _config.hintTextKey),
-                    hasText: _chatHasText,
-                    surface: t.phoneShellInner,
-                    border: t.cardBorder,
-                    accent: t.accent.primary,
-                    accentSecondary: t.accent.secondary,
-                    textHeading: t.textPrimary,
-                    textMuted: t.mutedText,
-                    shadowMedium: t.backgroundPrimary.withValues(alpha: 0.20),
-                    onAccent: Colors.white,
-                    themeTokens: t,
-                    onSendMessage: (message) => _sendMessage(message),
-                    onVoiceTap: _toggleListening,
-                    isListening: _isListening,
-                    onVisualSearch: null,
-                    onFindSimilar: null,
-                    onAddToWardrobe: null,
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
 
           // ── Scrim — dismiss panel on outside tap ─────────────
@@ -2545,7 +2545,7 @@ class _AhviStylistChatSheetState extends State<_AhviStylistChatSheet>
       backgroundColor: widget.isFullScreen
           ? t.backgroundPrimary
           : Colors.transparent,
-      resizeToAvoidBottomInset: widget.isFullScreen,
+      resizeToAvoidBottomInset: true,
       body: widget.isFullScreen ? SafeArea(child: content) : content,
     );
   }
@@ -2695,8 +2695,7 @@ class _StyleBoardPayload {
   bool get hasBoards =>
       renderedBoards.isNotEmpty || cards.isNotEmpty || outfits.isNotEmpty;
 
-  int get boardCount =>
-      renderedBoards.length + cards.length + outfits.length;
+  int get boardCount => renderedBoards.length + cards.length + outfits.length;
 
   Map<String, dynamic> toJson() => {
     'cards': cards,
@@ -2719,10 +2718,7 @@ class _StyleBoardPayload {
 
   Map<String, dynamic>? get mutationState => renderedBoards.isEmpty
       ? null
-      : styleMutationStateFromBoards(
-          renderedBoards,
-          responseState: styleState,
-        );
+      : styleMutationStateFromBoards(renderedBoards, responseState: styleState);
 
   static _StyleBoardPayload fromResponse(Map<String, dynamic> response) {
     if (_isModuleResponse(response) || isAhviPackingEnvelope(response)) {
@@ -2770,11 +2766,7 @@ List<Map<String, dynamic>> _actionChipsFromResponse(
             value.trim().toLowerCase() == 'build_outfit' ||
             value.trim().toLowerCase() == 'build outfit';
         return isLegacyBuildOutfitChip
-            ? {
-                ...chip,
-                'label': 'Try-On',
-                'value': tryOnComingSoonAction,
-              }
+            ? {...chip, 'label': 'Try-On', 'value': tryOnComingSoonAction}
             : chip;
       })
       .toList(growable: false);
@@ -2810,10 +2802,7 @@ class _VisualDirectionPayload {
 
   Map<String, dynamic>? get mutationState => directions.isEmpty
       ? null
-      : styleMutationStateFromBoards(
-          directions,
-          responseState: styleState,
-        );
+      : styleMutationStateFromBoards(directions, responseState: styleState);
 
   factory _VisualDirectionPayload.fromJson(Map<String, dynamic> j) =>
       _VisualDirectionPayload(
@@ -3667,24 +3656,31 @@ class _StyleBoardCarousel extends StatelessWidget {
     );
     if (boards.isEmpty) return const SizedBox.shrink();
 
-    final width = math.min(MediaQuery.sizeOf(context).width - 72, 318.0);
-    final height = width * 1.72;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width - 72;
+        final width = math.min(availableWidth, 318.0);
+        final height = width * 1.72;
 
-    return Container(
-      width: width,
-      height: height,
-      margin: const EdgeInsets.only(top: 4, bottom: 14),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        itemCount: boards.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 12),
-        itemBuilder: (_, index) {
-          final board = boards[index];
+        return Container(
+          width: width,
+          height: height,
+          margin: const EdgeInsets.only(top: 4, bottom: 14),
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: boards.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            itemBuilder: (_, index) {
+              final board = boards[index];
 
-          return _PinterestStyleBoardCard(board: board, width: width);
-        },
-      ),
+              return _PinterestStyleBoardCard(board: board, width: width);
+            },
+          ),
+        );
+      },
     );
   }
 }
